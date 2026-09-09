@@ -1,0 +1,130 @@
+/**
+ * VoyageAI — Tour Guide API Service
+ * Handles communication over persistent WebSocket (wsClient).
+ */
+
+import { wsClient } from './wsClient';
+
+export interface TourPlace {
+  id: string;
+  name: string;
+  category: string;
+  latitude: number;
+  longitude: number;
+  distanceMeters: number;
+  description?: string;
+  address?: string;
+  openingHours?: string;
+  wikipedia?: string;
+  source: string;
+  dataReliability: 'VERIFIED' | 'ESTIMATED' | 'AI_INTERPRETATION';
+}
+
+export interface TourGuideMessage {
+  id: string;
+  role: 'user' | 'guide';
+  text: string;
+  timestamp: number;
+  placeId?: string;
+}
+
+export interface NearbyResponse {
+  places: TourPlace[];
+  center: { latitude: number; longitude: number };
+  radius_m: number;
+  count: number;
+  total_raw: number;
+  proactive_alert: TourPlace | null;
+}
+
+export type GuideMode = 'local' | 'trip';
+
+export interface ChatResponse {
+  reply: string;
+  suggestedActions: string[];
+  place: TourPlace | null;
+  mode?: GuideMode;
+  trip_id?: string | null;
+  source: string;
+}
+
+export async function fetchNearbyPlaces(
+  lat: number,
+  lng: number,
+  radius: number = 5000
+): Promise<NearbyResponse> {
+  const data = await wsClient.sendRequest('tour_guide:get_nearby', {
+    lat,
+    lng,
+    radius: Math.min(radius, 5000)
+  });
+
+  return {
+    places: data.places || [],
+    center: data.user_location || { latitude: lat, longitude: lng },
+    radius_m: data.radius_meters || radius,
+    count: data.total || (data.places ? data.places.length : 0),
+    total_raw: data.total || 0,
+    proactive_alert: data.proactive_alert || null
+  };
+}
+
+export async function sendTourGuideMessage(
+  message: string,
+  placeId?: string,
+  lat?: number,
+  lng?: number,
+  mode: GuideMode = 'local',
+  tripId?: string | null
+): Promise<ChatResponse> {
+  const payload: Record<string, unknown> = { message, mode };
+  if (placeId) payload.place_id = placeId;
+  if (tripId) payload.trip_id = tripId;
+  if (lat !== undefined) payload.latitude = lat;
+  if (lng !== undefined) payload.longitude = lng;
+
+  const data = await wsClient.sendRequest('tour_guide:chat', payload);
+
+  return {
+    reply: data.response || data.reply || 'No response received.',
+    suggestedActions: data.suggestedActions || ['Tell me more', 'What else is nearby?'],
+    place: data.active_place || null,
+    mode: data.mode || mode,
+    trip_id: data.trip_context ? data.trip_context.id : tripId,
+    source: 'websocket'
+  };
+}
+
+export async function setCurrentVisit(placeId: string): Promise<void> {
+  await wsClient.sendRequest('tour_guide:visit', { place_id: placeId });
+}
+
+// Category display config
+export const CATEGORY_CONFIG: Record<string, { emoji: string; label: string; color: string }> = {
+  historic: { emoji: '🏛️', label: 'Historic', color: '#F59E0B' },
+  monument: { emoji: '🗿', label: 'Monument', color: '#F59E0B' },
+  fort: { emoji: '🏰', label: 'Fort', color: '#EF4444' },
+  palace: { emoji: '👑', label: 'Palace', color: '#A855F7' },
+  museum: { emoji: '🏛️', label: 'Museum', color: '#3B82F6' },
+  religious: { emoji: '🙏', label: 'Religious', color: '#F97316' },
+  temple: { emoji: '🛕', label: 'Temple', color: '#F97316' },
+  mosque: { emoji: '🕌', label: 'Mosque', color: '#10B981' },
+  church: { emoji: '⛪', label: 'Church', color: '#8B5CF6' },
+  cultural: { emoji: '🎭', label: 'Cultural', color: '#EC4899' },
+  viewpoint: { emoji: '🌄', label: 'Viewpoint', color: '#14B8A6' },
+  park: { emoji: '🌳', label: 'Park', color: '#22C55E' },
+  market: { emoji: '🛍️', label: 'Market', color: '#F59E0B' },
+  ruins: { emoji: '🏚️', label: 'Ruins', color: '#78716C' },
+  archaeological: { emoji: '⛏️', label: 'Archaeological', color: '#92400E' },
+  tourism: { emoji: '📍', label: 'Attraction', color: '#14B8A6' },
+  food_landmark: { emoji: '🍽️', label: 'Food Landmark', color: '#EF4444' },
+};
+
+export function getCategoryDisplay(cat: string) {
+  return CATEGORY_CONFIG[cat] || CATEGORY_CONFIG.tourism;
+}
+
+export function formatDistance(meters: number): string {
+  if (meters < 1000) return `${meters}m`;
+  return `${(meters / 1000).toFixed(1)}km`;
+}

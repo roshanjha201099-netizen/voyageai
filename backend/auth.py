@@ -1,0 +1,330 @@
+import uuid
+import json
+import hashlib
+import os
+from datetime import datetime, timedelta, timezone
+from typing import Tuple, Optional
+from sqlalchemy.orm import Session
+
+from database import engine, Base
+from models import AuthUser, UserProfile, UserPreferences, LoginRequest, OnboardingRequest
+from models_db import AuthUserModel, UserProfileModel, UserPreferencesModel, SessionModel
+
+# Create database tables automatically if they don't exist
+Base.metadata.create_all(bind=engine)
+
+SESSION_TTL_DAYS = int(os.getenv("SESSION_TTL_DAYS", "7"))
+
+def get_current_iso_time() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+def hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+def get_expiry_iso_time(days: int = SESSION_TTL_DAYS) -> str:
+    return (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
+
+def to_pydantic_auth_user(db_user: AuthUserModel) -> AuthUser:
+    return AuthUser(
+        id=db_user.id,
+        provider=db_user.provider,
+        providerUserId=db_user.provider_user_id,
+        email=db_user.email,
+        phone=db_user.phone,
+        emailVerified=db_user.email_verified,
+        phoneVerified=db_user.phone_verified,
+        status=db_user.status,
+        createdAt=db_user.created_at,
+        lastLoginAt=db_user.last_login_at
+    )
+
+def to_pydantic_user_profile(db_profile: UserProfileModel) -> UserProfile:
+    return UserProfile(
+        userId=db_profile.user_id,
+        firstName=db_profile.first_name,
+        lastName=db_profile.last_name,
+        avatarUrl=db_profile.avatar_url,
+        preferredLanguage=db_profile.preferred_language,
+        preferredCurrency=db_profile.preferred_currency,
+        timezone=db_profile.timezone,
+        onboardingStatus=db_profile.onboarding_status,
+        onboardingStep=db_profile.onboarding_step,
+        createdAt=db_profile.created_at,
+        updatedAt=db_profile.updated_at
+    )
+
+def to_pydantic_user_prefs(db_prefs: UserPreferencesModel) -> UserPreferences:
+    return UserPreferences(
+        userId=db_prefs.user_id,
+        travelStyles=db_prefs.travel_styles,
+        transportPreferences=db_prefs.transport_preferences,
+        dietaryPreferences=db_prefs.dietary_preferences,
+        foodInterests=db_prefs.food_interests,
+        activityInterests=db_prefs.activity_interests,
+        budgetLevel=db_prefs.budget_level or "MODERATE",
+        createdAt=db_prefs.created_at,
+        updatedAt=db_prefs.updated_at
+    )
+
+def create_session_record(db: Session, user_id: str) -> Tuple[str, SessionModel]:
+    raw_token = f"token_{uuid.uuid4().hex}"
+    t_hash = hash_token(raw_token)
+    session_id = f"sid_{uuid.uuid4().hex[:12]}"
+    now = get_current_iso_time()
+    expires_at = get_expiry_iso_time(SESSION_TTL_DAYS)
+
+    session_record = SessionModel(
+        id=session_id,
+        token_hash=t_hash,
+        user_id=user_id,
+        created_at=now,
+        expires_at=expires_at,
+        last_used_at=now,
+        revoked_at=None
+    )
+    db.add(session_record)
+    return raw_token, session_record
+
+def authenticate_or_create_user(db: Session, req: LoginRequest) -> Tuple[str, AuthUser, UserProfile, UserPreferences]:
+    clean_email = req.email.strip().lower()
+
+    # Basic Email Validation
+    if not clean_email or "@" not in clean_email or "." not in clean_email.split("@")[-1] or len(clean_email) < 5:
+        raise ValueError("Invalid email format. Please enter a valid email address.")
+
+    provider_id = f"email_{clean_email}"
+    now = get_current_iso_time()
+
+    # Search existing user by email or provider_user_id
+    db_user = db.query(AuthUserModel).filter(
+        (AuthUserModel.provider_user_id == provider_id) | (AuthUserModel.email == clean_email)
+    ).first()
+
+    if db_user:
+        db_user.last_login_at = now
+        raw_token, _ = create_session_record(db, db_user.id)
+
+        db_profile = db.query(UserProfileModel).filter(UserProfileModel.user_id == db_user.id).first()
+        if not db_profile:
+            first_name = req.name.split()[0] if req.name else clean_email.split('@')[0].capitalize()
+            db_profile = UserProfileModel(
+                user_id=db_user.id,
+                first_name=first_name,
+                avatar_url=req.avatarUrl or "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80",
+                created_at=now,
+                updated_at=now
+            )
+            db.add(db_profile)
+
+        db_prefs = db.query(UserPreferencesModel).filter(UserPreferencesModel.user_id == db_user.id).first()
+        if not db_prefs:
+            db_prefs = UserPreferencesModel(
+                user_id=db_user.id,
+                travel_styles_json=json.dumps(["RELAXED", "FOODIE", "NIGHTLIFE"]),
+                transport_preferences_json=json.dumps(["CAB", "AUTO"]),
+                dietary_preferences_json=json.dumps(["EVERYTHING"]),
+                food_interests_json=json.dumps(["LOCAL", "STREET_FOOD"]),
+                activity_interests_json=json.dumps(["BEACHES", "FOOD"]),
+                budget_level="MODERATE",
+                created_at=now,
+                updated_at=now
+            )
+            db.add(db_prefs)
+
+        db.commit()
+
+        return (
+            raw_token,
+            to_pydantic_auth_user(db_user),
+            to_pydantic_user_profile(db_profile),
+            to_pydantic_user_prefs(db_prefs)
+        )
+
+    # User does NOT exist in database
+    if not getattr(req, "isRegister", False) and req.provider != "GUEST":
+        raise ValueError("No account found with this email address. Please switch to 'Create Account' to register.")
+
+    # Create new user in PostgreSQL
+    user_id = f"usr_{uuid.uuid4().hex[:10]}"
+    name_parts = req.name.split() if req.name else []
+    first_name = name_parts[0] if name_parts else clean_email.split('@')[0].capitalize()
+    last_name = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
+    avatar = req.avatarUrl or "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80"
+
+    db_user = AuthUserModel(
+        id=user_id,
+        provider="EMAIL",
+        provider_user_id=provider_id,
+        email=clean_email,
+        phone=None,
+        email_verified=True,
+        phone_verified=True,
+        status="ACTIVE",
+        created_at=now,
+        last_login_at=now
+    )
+
+    db_profile = UserProfileModel(
+        user_id=user_id,
+        first_name=first_name,
+        last_name=last_name,
+        avatar_url=avatar,
+        preferred_language="en",
+        preferred_currency="INR",
+        timezone="Asia/Kolkata",
+        onboarding_status="NOT_STARTED",
+        onboarding_step="welcome",
+        created_at=now,
+        updated_at=now
+    )
+
+    db_prefs = UserPreferencesModel(
+        user_id=user_id,
+        travel_styles_json=json.dumps(["RELAXED", "FOODIE", "NIGHTLIFE"]),
+        transport_preferences_json=json.dumps(["CAB", "AUTO"]),
+        dietary_preferences_json=json.dumps(["EVERYTHING"]),
+        food_interests_json=json.dumps(["LOCAL", "STREET_FOOD", "FINE_DINING"]),
+        activity_interests_json=json.dumps(["BEACHES", "NIGHTLIFE", "FOOD"]),
+        budget_level="MODERATE",
+        created_at=now,
+        updated_at=now
+    )
+
+    raw_token, _ = create_session_record(db, user_id)
+
+    db.add(db_user)
+    db.add(db_profile)
+    db.add(db_prefs)
+    db.commit()
+
+    return (
+        raw_token,
+        to_pydantic_auth_user(db_user),
+        to_pydantic_user_profile(db_profile),
+        to_pydantic_user_prefs(db_prefs)
+    )
+
+def get_session_user(db: Session, token: str) -> Tuple[AuthUser, UserProfile, UserPreferences]:
+    if not token or not token.strip():
+        raise ValueError("Missing session token")
+
+    t_hash = hash_token(token)
+    session_record = db.query(SessionModel).filter(SessionModel.token_hash == t_hash).first()
+
+    if not session_record:
+        raise ValueError("Invalid or expired session token")
+
+    if session_record.revoked_at is not None:
+        raise ValueError("Session token has been revoked")
+
+    # Verify session expiration
+    now = datetime.now(timezone.utc)
+    is_expired = False
+    if session_record.expires_at:
+        try:
+            iso_str = session_record.expires_at.replace("Z", "+00:00")
+            expires_dt = datetime.fromisoformat(iso_str)
+            if expires_dt.tzinfo is None:
+                expires_dt = expires_dt.replace(tzinfo=timezone.utc)
+            if expires_dt < now:
+                is_expired = True
+        except Exception as e:
+            pass
+
+    if is_expired:
+        raise ValueError("Session token has expired")
+
+    # Update last used timestamp (sliding activity window)
+    now_iso = get_current_iso_time()
+    session_record.last_used_at = now_iso
+
+    db_user = db.query(AuthUserModel).filter(AuthUserModel.id == session_record.user_id).first()
+    if not db_user:
+        raise ValueError("Auth user record not found in database")
+
+    db_profile = db.query(UserProfileModel).filter(UserProfileModel.user_id == db_user.id).first()
+    if not db_profile:
+        db_profile = UserProfileModel(
+            user_id=db_user.id,
+            first_name="Traveler",
+            created_at=now_iso,
+            updated_at=now_iso
+        )
+        db.add(db_profile)
+
+    db_prefs = db.query(UserPreferencesModel).filter(UserPreferencesModel.user_id == db_user.id).first()
+    if not db_prefs:
+        db_prefs = UserPreferencesModel(
+            user_id=db_user.id,
+            travel_styles_json=json.dumps(["RELAXED", "FOODIE"]),
+            transport_preferences_json=json.dumps(["CAB"]),
+            dietary_preferences_json=json.dumps(["EVERYTHING"]),
+            food_interests_json=json.dumps(["LOCAL"]),
+            activity_interests_json=json.dumps(["BEACHES"]),
+            budget_level="MODERATE",
+            created_at=now_iso,
+            updated_at=now_iso
+        )
+        db.add(db_prefs)
+
+    db.commit()
+
+    return (
+        to_pydantic_auth_user(db_user),
+        to_pydantic_user_profile(db_profile),
+        to_pydantic_user_prefs(db_prefs)
+    )
+
+def revoke_session(db: Session, token: str):
+    if not token or not token.strip():
+        return
+    t_hash = hash_token(token)
+    session_record = db.query(SessionModel).filter(SessionModel.token_hash == t_hash).first()
+    if session_record:
+        session_record.revoked_at = get_current_iso_time()
+        db.commit()
+
+def logout_user(db: Session, token: str):
+    revoke_session(db, token)
+
+
+def update_user_onboarding(db: Session, user_id: str, req: OnboardingRequest) -> Tuple[UserProfile, UserPreferences]:
+    db_profile = db.query(UserProfileModel).filter(UserProfileModel.user_id == user_id).first()
+    db_prefs = db.query(UserPreferencesModel).filter(UserPreferencesModel.user_id == user_id).first()
+
+    if not db_profile or not db_prefs:
+        raise ValueError("User profile or preferences record not found")
+
+    now = get_current_iso_time()
+
+    if req.firstName is not None:
+        db_profile.first_name = req.firstName
+    if req.lastName is not None:
+        db_profile.last_name = req.lastName
+    if req.onboardingStep is not None:
+        db_profile.onboarding_step = req.onboardingStep
+    if req.onboardingStatus is not None:
+        db_profile.onboarding_status = req.onboardingStatus
+
+    db_profile.updated_at = now
+
+    if req.travelStyles is not None:
+        db_prefs.travel_styles = req.travelStyles
+    if req.transportPreferences is not None:
+        db_prefs.transport_preferences = req.transportPreferences
+    if req.dietaryPreferences is not None:
+        db_prefs.dietary_preferences = req.dietaryPreferences
+    if req.foodInterests is not None:
+        db_prefs.food_interests = req.foodInterests
+    if req.activityInterests is not None:
+        db_prefs.activity_interests = req.activityInterests
+    if req.budgetLevel is not None:
+        db_prefs.budget_level = req.budgetLevel
+
+    db_prefs.updated_at = now
+    db.commit()
+
+    return (
+        to_pydantic_user_profile(db_profile),
+        to_pydantic_user_prefs(db_prefs)
+    )

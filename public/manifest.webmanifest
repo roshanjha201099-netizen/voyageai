@@ -1,0 +1,16 @@
+{
+  "name": "VoyageAI OS",
+  "short_name": "VoyageAI",
+  "description": "AI-Powered Personal Travel Operating System",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#090D16",
+  "theme_color": "#0D9488",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
