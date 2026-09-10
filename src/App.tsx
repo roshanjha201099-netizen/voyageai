@@ -38,8 +38,8 @@ const MainContent: React.FC = () => {
   if (appUIState === 'loading') {
     return (
       <div className="py-16 text-center space-y-3">
-        <RefreshCw className="w-8 h-8 text-teal-400 animate-spin mx-auto" />
-        <h2 className="text-base font-bold text-white">Loading your trip context...</h2>
+        <RefreshCw className="w-8 h-8 text-[#487C74] animate-spin mx-auto" />
+        <h2 className="text-base font-bold text-[#1F2522]">Loading your trip context...</h2>
       </div>
     );
   }
@@ -47,12 +47,12 @@ const MainContent: React.FC = () => {
   if (appUIState === 'error') {
     return (
       <div className="py-16 text-center space-y-3">
-        <AlertTriangle className="w-10 h-10 text-rose-400 mx-auto" />
-        <h2 className="text-lg font-bold text-white font-mono">Connection error</h2>
-        <p className="text-meta text-[13px] max-w-xs mx-auto">We couldn't connect. Your trip data is safe in LocalStorage.</p>
+        <AlertTriangle className="w-10 h-10 text-rose-600 mx-auto" />
+        <h2 className="text-lg font-bold text-[#1F2522]">Connection error</h2>
+        <p className="text-meta text-[13px] max-w-xs mx-auto text-[#5F6863]">We couldn't connect. Your trip data is safe in LocalStorage.</p>
         <button
           onClick={() => setAppUIState('ready')}
-          className="px-5 py-2 rounded-xl bg-teal-500 text-slate-950 font-bold text-xs"
+          className="px-5 py-2 rounded-xl bg-[#355F58] text-white font-bold text-xs"
         >
           Try again
         </button>
@@ -102,7 +102,7 @@ const MainContent: React.FC = () => {
 
 const AppShell: React.FC = () => {
   return (
-    <div className="min-h-dvh bg-[#080B10] text-slate-100 flex flex-col antialiased">
+    <div className="min-h-dvh bg-[#F6F7F5] text-[#1F2522] flex flex-col antialiased">
       {/* Mobile Lightweight Header */}
       <MobileHeader />
 

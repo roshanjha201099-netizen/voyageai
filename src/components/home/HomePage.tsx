@@ -31,7 +31,6 @@ export const HomePage: React.FC = () => {
   // Fetch or mock nearby POIs based on current location
   useEffect(() => {
     setIsLoadingNearby(true);
-    // Fetch from tour guide service or fallback mock POIs for current location
     const timer = setTimeout(() => {
       setNearbyPlaces([
         {
@@ -85,10 +84,10 @@ export const HomePage: React.FC = () => {
       
       {/* 1. Calm Personal Greeting */}
       <div className="space-y-1 pt-1">
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-          {getGreeting()}, <span className="text-teal-400">{firstName}</span>
+        <h1 className="text-2xl sm:text-3xl font-extrabold text-[#1F2522] tracking-tight">
+          {getGreeting()}, <span className="text-[#355F58]">{firstName}</span>
         </h1>
-        <p className="text-sm font-medium text-slate-400">
+        <p className="text-sm font-medium text-[#5F6863]">
           Where would you like to explore today?
         </p>
       </div>
@@ -103,13 +102,13 @@ export const HomePage: React.FC = () => {
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <MapPin className="w-5 h-5 text-teal-400" />
-            <h2 className="text-xl font-extrabold text-white">Near You</h2>
+            <MapPin className="w-5 h-5 text-[#355F58]" />
+            <h2 className="text-xl font-extrabold text-[#1F2522]">Near You</h2>
           </div>
           <button
             type="button"
             onClick={() => navigate('/map')}
-            className="text-xs font-extrabold text-teal-400 hover:underline flex items-center gap-1"
+            className="text-xs font-extrabold text-[#355F58] hover:underline flex items-center gap-1"
           >
             <span>View Full Map</span>
             <ArrowRight className="w-3.5 h-3.5" />
@@ -117,31 +116,31 @@ export const HomePage: React.FC = () => {
         </div>
 
         {isLoadingNearby ? (
-          <div className="surface-card p-6 text-center space-y-2">
-            <RefreshCw className="w-6 h-6 text-teal-400 animate-spin mx-auto" />
-            <p className="text-xs text-slate-400 font-semibold">Finding places near you...</p>
+          <div className="bg-white border border-[#D9DEDA] rounded-3xl p-6 text-center space-y-2 shadow-xs">
+            <RefreshCw className="w-6 h-6 text-[#355F58] animate-spin mx-auto" />
+            <p className="text-xs text-[#5F6863] font-semibold">Finding places near you...</p>
           </div>
         ) : (
           <div className="space-y-3">
             {nearbyPlaces.map((poi) => (
               <div
                 key={poi.id}
-                className="surface-card p-4 space-y-3 hover:border-teal-500/40 transition-all rounded-2xl shadow-md"
+                className="bg-white border border-[#D9DEDA] hover:border-[#355F58]/40 p-4 space-y-3 transition-all rounded-3xl shadow-xs"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 space-y-0.5">
-                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-teal-400 block">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#355F58] block">
                       {poi.category}
                     </span>
-                    <h3 className="text-lg font-bold text-white truncate">{poi.name}</h3>
-                    <p className="text-xs text-slate-400 truncate">{poi.address}</p>
+                    <h3 className="text-base sm:text-lg font-bold text-[#1F2522] truncate">{poi.name}</h3>
+                    <p className="text-xs text-[#5F6863] truncate">{poi.address}</p>
                   </div>
 
                   <div className="text-right shrink-0">
-                    <span className="text-sm font-extrabold text-teal-400 block">{poi.distanceText}</span>
+                    <span className="text-sm font-extrabold text-[#355F58] block">{poi.distanceText}</span>
                     {poi.rating && (
-                      <div className="flex items-center gap-1 text-xs font-bold text-amber-400 justify-end">
-                        <Star className="w-3 h-3 fill-amber-400" />
+                      <div className="flex items-center gap-1 text-xs font-bold text-amber-700 justify-end">
+                        <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
                         <span>{poi.rating}</span>
                       </div>
                     )}
@@ -157,18 +156,18 @@ export const HomePage: React.FC = () => {
                       locationName: poi.address || poi.name,
                       coordinates: [poi.latitude || 25.6, poi.longitude || 85.1]
                     })}
-                    className="py-3 px-3 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-md press-scale"
+                    className="py-3 px-3 rounded-2xl bg-[#355F58] hover:bg-[#2C504A] text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-xs press-scale min-h-[48px]"
                   >
-                    <Navigation className="w-4 h-4 fill-slate-950" />
+                    <Navigation className="w-4 h-4 text-white" />
                     <span>Directions</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setSelectedPlace(poi)}
-                    className="py-3 px-3 rounded-xl bg-slate-900 border border-slate-800 text-slate-200 font-bold text-xs flex items-center justify-center gap-1.5 hover:border-slate-700"
+                    className="py-3 px-3 rounded-2xl bg-[#F0F2EF] border border-[#D9DEDA] hover:border-[#355F58]/40 text-[#1F2522] font-bold text-xs flex items-center justify-center gap-1.5 transition-all min-h-[48px]"
                   >
-                    <Sparkles className="w-4 h-4 text-teal-400" />
+                    <Sparkles className="w-4 h-4 text-[#355F58]" />
                     <span>Tell Me More</span>
                   </button>
                 </div>
@@ -180,21 +179,21 @@ export const HomePage: React.FC = () => {
 
       {/* 5. YOUR TRIP Section (Upcoming / Active Trip) */}
       {currentTrip && (
-        <div className="surface-card p-5 space-y-4 border-blue-500/30 bg-blue-950/20 rounded-3xl">
+        <div className="bg-white border border-[#D9DEDA] p-5 space-y-4 rounded-3xl shadow-xs">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-xs font-extrabold text-blue-400 uppercase tracking-wider">
+            <div className="flex items-center gap-2 text-xs font-extrabold text-[#355F58] uppercase tracking-wider">
               <Calendar className="w-4 h-4" />
-              <span>Your Upcoming Adventure</span>
+              <span>Upcoming Travel</span>
             </div>
 
-            <span className="px-3 py-1 rounded-full bg-blue-500/20 text-blue-300 font-extrabold text-xs">
+            <span className="px-3 py-1 rounded-full bg-[#E8F0EE] text-[#355F58] font-bold text-xs border border-[#D9DEDA]">
               {currentTrip.destination.name}
             </span>
           </div>
 
           <div className="space-y-1">
-            <h3 className="text-2xl font-extrabold text-white">{currentTrip.title}</h3>
-            <p className="text-xs text-slate-300 font-medium">
+            <h3 className="text-xl sm:text-2xl font-extrabold text-[#1F2522]">{currentTrip.title}</h3>
+            <p className="text-xs text-[#5F6863] font-medium">
               {currentTrip.startDate} → {currentTrip.endDate} ({currentTrip.totalDays} Days)
             </p>
           </div>
@@ -202,10 +201,10 @@ export const HomePage: React.FC = () => {
           <button
             type="button"
             onClick={() => navigate('/trip')}
-            className="w-full py-4 rounded-2xl bg-blue-500 hover:bg-blue-400 text-slate-950 font-extrabold text-base flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 press-scale"
+            className="w-full py-4 rounded-2xl bg-[#355F58] hover:bg-[#2C504A] text-white font-extrabold text-base flex items-center justify-center gap-2 shadow-xs press-scale min-h-[54px]"
           >
-            <span>View Complete Trip Plan</span>
-            <ArrowRight className="w-5 h-5" />
+            <span>View Trip Plan</span>
+            <ArrowRight className="w-5 h-5 text-white" />
           </button>
         </div>
       )}

@@ -41,7 +41,7 @@ export const DesktopSidebar: React.FC = () => {
   const tripDates = currentTrip ? `${currentTrip.startDate} to ${currentTrip.endDate}` : 'Active Journey';
 
   return (
-    <aside className="hidden lg:flex flex-col w-60 sticky top-14 h-[calc(100dvh-56px)] border-r border-white/[0.06] bg-[#0D1117] p-4 justify-between">
+    <aside className="hidden lg:flex flex-col w-60 sticky top-14 h-[calc(100dvh-56px)] border-r border-[#D9DEDA] bg-white p-4 justify-between">
       <div className="space-y-5">
         <nav className="space-y-1">
           {navItems.map(({ id, label, path, icon: Icon }) => {
@@ -53,11 +53,11 @@ export const DesktopSidebar: React.FC = () => {
                 onClick={() => handleNavClick(id, path)}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
                   isActive
-                    ? 'bg-teal-500/15 text-teal-300 font-bold border border-teal-500/30'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
+                    ? 'bg-[#E8F0EE] text-[#355F58] font-bold border border-[#D9DEDA]'
+                    : 'text-[#5F6863] hover:text-[#1F2522] hover:bg-[#F0F2EF]'
                 }`}
               >
-                <Icon className={`w-[18px] h-[18px] ${isActive ? 'text-teal-400' : ''}`} />
+                <Icon className={`w-[18px] h-[18px] ${isActive ? 'text-[#355F58]' : ''}`} />
                 <span>{label}</span>
               </button>
             );
@@ -65,15 +65,15 @@ export const DesktopSidebar: React.FC = () => {
         </nav>
 
         {/* Active Trip Widget with Sub-View Shortcut Buttons */}
-        <div className="p-3.5 rounded-2xl bg-[#111622] border border-white/[0.08] space-y-2.5">
+        <div className="p-3.5 rounded-2xl bg-[#F0F2EF] border border-[#D9DEDA] space-y-2.5">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase tracking-wider text-teal-400">Active Journey</span>
-            <span className="text-[10px] font-mono text-slate-400 font-bold">Day 2</span>
+            <span className="text-[10px] font-black uppercase tracking-wider text-[#355F58]">Active Journey</span>
+            <span className="text-[10px] font-mono text-[#5F6863] font-bold">Day 2</span>
           </div>
 
           <div>
-            <div className="text-sm font-extrabold text-white truncate">{destinationName} Trip</div>
-            <div className="text-[11px] text-slate-400 truncate">{tripDates}</div>
+            <div className="text-sm font-extrabold text-[#1F2522] truncate">{destinationName} Trip</div>
+            <div className="text-[11px] text-[#5F6863] truncate">{tripDates}</div>
           </div>
 
           {/* Sub Navigation Tools */}
@@ -84,13 +84,13 @@ export const DesktopSidebar: React.FC = () => {
                 setActiveTab('trips');
                 navigate('/trip/map');
               }}
-              className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-800 text-xs font-bold text-slate-300 hover:text-teal-300 border border-white/5 transition-all"
+              className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white hover:bg-[#E8F0EE] text-xs font-bold text-[#1F2522] border border-[#D9DEDA] transition-all"
             >
               <span className="flex items-center gap-2">
                 <span>📍</span>
                 <span>Route Map</span>
               </span>
-              <span className="text-[10px] text-teal-400 font-mono font-bold">Live</span>
+              <span className="text-[10px] text-[#355F58] font-mono font-bold">Live</span>
             </button>
 
             <button
@@ -98,13 +98,13 @@ export const DesktopSidebar: React.FC = () => {
               onClick={() => {
                 navigate('/trip/food');
               }}
-              className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-800 text-xs font-bold text-slate-300 hover:text-teal-300 border border-white/5 transition-all"
+              className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white hover:bg-[#E8F0EE] text-xs font-bold text-[#1F2522] border border-[#D9DEDA] transition-all"
             >
               <span className="flex items-center gap-2">
                 <span>🍽️</span>
                 <span>Food Guide</span>
               </span>
-              <span className="text-[10px] text-amber-400 font-mono font-bold">Local</span>
+              <span className="text-[10px] text-amber-700 font-mono font-bold">Local</span>
             </button>
 
             <button
@@ -112,13 +112,13 @@ export const DesktopSidebar: React.FC = () => {
               onClick={() => {
                 navigate('/trip/rides');
               }}
-              className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-800 text-xs font-bold text-slate-300 hover:text-teal-300 border border-white/5 transition-all"
+              className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white hover:bg-[#E8F0EE] text-xs font-bold text-[#1F2522] border border-[#D9DEDA] transition-all"
             >
               <span className="flex items-center gap-2">
                 <span>🚕</span>
                 <span>Rides & Cabs</span>
               </span>
-              <span className="text-[10px] text-teal-400 font-mono font-bold">Instant</span>
+              <span className="text-[10px] text-[#355F58] font-mono font-bold">Instant</span>
             </button>
 
             <button
@@ -127,13 +127,13 @@ export const DesktopSidebar: React.FC = () => {
                 setActiveTab('trips');
                 navigate('/trip/expenses');
               }}
-              className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-800 text-xs font-bold text-slate-300 hover:text-teal-300 border border-white/5 transition-all"
+              className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white hover:bg-[#E8F0EE] text-xs font-bold text-[#1F2522] border border-[#D9DEDA] transition-all"
             >
               <span className="flex items-center gap-2">
                 <span>💰</span>
                 <span>Expense Ledger</span>
               </span>
-              <span className="text-[10px] text-teal-400 font-mono font-bold">Budget</span>
+              <span className="text-[10px] text-[#355F58] font-mono font-bold">Budget</span>
             </button>
           </div>
         </div>
@@ -142,13 +142,13 @@ export const DesktopSidebar: React.FC = () => {
       <button
         type="button"
         onClick={() => openAiAssistant()}
-        className="p-3.5 rounded-2xl bg-[#111622] border border-white/[0.08] hover:bg-[#171E2B] transition-colors group text-left"
+        className="p-3.5 rounded-2xl bg-[#F0F2EF] border border-[#D9DEDA] hover:bg-[#E8F0EE] transition-colors group text-left"
       >
         <div className="flex items-center gap-2 mb-1">
-          <Sparkles className="w-4 h-4 text-teal-400" />
-          <span className="text-xs font-bold text-white">AI Concierge</span>
+          <Sparkles className="w-4 h-4 text-[#355F58]" />
+          <span className="text-xs font-bold text-[#1F2522]">AI Concierge</span>
         </div>
-        <p className="text-[11px] text-slate-400 leading-snug">Ask for recommendations, plan updates or trip help</p>
+        <p className="text-[11px] text-[#5F6863] leading-snug">Ask for recommendations, plan updates or trip help</p>
       </button>
     </aside>
   );

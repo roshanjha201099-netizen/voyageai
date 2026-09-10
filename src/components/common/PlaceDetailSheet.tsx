@@ -46,27 +46,27 @@ export const PlaceDetailSheet: React.FC<PlaceDetailSheetProps> = ({ item, onClos
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-      <div className="w-full max-w-lg bg-[#0D1117] border border-slate-800 rounded-t-3xl sm:rounded-3xl p-6 space-y-5 shadow-2xl animate-slideUp">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-[#1F2522]/40 backdrop-blur-xs animate-fadeIn">
+      <div className="w-full max-w-lg bg-white border border-[#D9DEDA] rounded-t-3xl sm:rounded-3xl p-6 space-y-5 shadow-xl animate-slideUp text-[#1F2522]">
         
         {/* Header */}
-        <div className="flex items-start justify-between gap-4 border-b border-slate-800 pb-4">
+        <div className="flex items-start justify-between gap-4 border-b border-[#D9DEDA] pb-4">
           <div className="space-y-1 min-w-0">
             <div className="flex items-center gap-2">
-              <span className="px-2.5 py-0.5 rounded-md bg-teal-500/20 text-teal-300 font-extrabold text-[11px] uppercase tracking-wider">
+              <span className="px-2.5 py-0.5 rounded-md bg-[#E8F0EE] text-[#355F58] font-bold text-[11px] uppercase tracking-wider border border-[#D9DEDA]">
                 {item.category || 'Attraction'}
               </span>
               {item.rating && (
-                <div className="flex items-center gap-1 text-xs font-bold text-amber-400">
-                  <Star className="w-3.5 h-3.5 fill-amber-400" />
+                <div className="flex items-center gap-1 text-xs font-bold text-amber-700">
+                  <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
                   <span>{item.rating}</span>
                 </div>
               )}
             </div>
-            <h2 className="text-2xl font-extrabold text-white truncate leading-tight">{item.name}</h2>
+            <h2 className="text-xl sm:text-2xl font-extrabold text-[#1F2522] truncate leading-tight">{item.name}</h2>
             {item.address && (
-              <p className="text-xs text-slate-400 flex items-center gap-1">
-                <MapPin className="w-3.5 h-3.5 text-teal-400 shrink-0" />
+              <p className="text-xs text-[#5F6863] flex items-center gap-1 font-medium">
+                <MapPin className="w-3.5 h-3.5 text-[#355F58] shrink-0" />
                 <span className="truncate">{item.address}</span>
               </p>
             )}
@@ -75,28 +75,28 @@ export const PlaceDetailSheet: React.FC<PlaceDetailSheetProps> = ({ item, onClos
           <button
             type="button"
             onClick={onClose}
-            className="w-10 h-10 rounded-full bg-slate-900 flex items-center justify-center text-slate-400 hover:text-white shrink-0"
+            className="w-10 h-10 rounded-full bg-[#F0F2EF] flex items-center justify-center text-[#5F6863] hover:text-[#1F2522] shrink-0"
             aria-label="Close details"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Info Pills */}
+        {/* Info Blocks */}
         <div className="grid grid-cols-3 gap-2">
-          <div className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 text-center">
-            <span className="text-[10px] font-bold text-slate-400 uppercase block">Distance</span>
-            <span className="text-sm font-extrabold text-white">{item.distanceText || 'Near you'}</span>
+          <div className="p-3 rounded-2xl bg-[#F0F2EF] border border-[#D9DEDA] text-center">
+            <span className="text-[10px] font-bold text-[#5F6863] uppercase block">Distance</span>
+            <span className="text-sm font-extrabold text-[#1F2522]">{item.distanceText || 'Near you'}</span>
           </div>
 
-          <div className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 text-center">
-            <span className="text-[10px] font-bold text-slate-400 uppercase block">Duration</span>
-            <span className="text-sm font-extrabold text-white">{item.durationText || '1 - 2 hrs'}</span>
+          <div className="p-3 rounded-2xl bg-[#F0F2EF] border border-[#D9DEDA] text-center">
+            <span className="text-[10px] font-bold text-[#5F6863] uppercase block">Duration</span>
+            <span className="text-sm font-extrabold text-[#1F2522]">{item.durationText || '1 - 2 hrs'}</span>
           </div>
 
-          <div className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 text-center">
-            <span className="text-[10px] font-bold text-slate-400 uppercase block">Est. Cost</span>
-            <span className="text-sm font-extrabold text-teal-400">
+          <div className="p-3 rounded-2xl bg-[#F0F2EF] border border-[#D9DEDA] text-center">
+            <span className="text-[10px] font-bold text-[#5F6863] uppercase block">Est. Cost</span>
+            <span className="text-sm font-extrabold text-[#355F58]">
               {item.estimatedCost ? `₹${item.estimatedCost}` : 'Free'}
             </span>
           </div>
@@ -104,21 +104,21 @@ export const PlaceDetailSheet: React.FC<PlaceDetailSheetProps> = ({ item, onClos
 
         {/* Description */}
         <div className="space-y-1">
-          <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">About This Place</h4>
-          <p className="text-sm text-slate-300 leading-relaxed">
+          <h4 className="text-xs font-bold text-[#5F6863] uppercase tracking-wider">About This Place</h4>
+          <p className="text-sm text-[#1F2522] leading-relaxed font-medium">
             {item.description || 'Popular destination recommended for travelers. Beautiful views and cultural significance.'}
           </p>
         </div>
 
         {/* Action Buttons (Large, Thumb-Friendly) */}
         <div className="space-y-2.5 pt-2">
-          {/* Primary Action Button (56px min height) */}
+          {/* Primary Action Button */}
           <button
             type="button"
             onClick={handleNavigate}
-            className="w-full py-4 rounded-2xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-extrabold text-base flex items-center justify-center gap-2 shadow-lg shadow-teal-500/20 press-scale"
+            className="w-full py-4 rounded-2xl bg-[#355F58] hover:bg-[#2C504A] text-white font-extrabold text-base flex items-center justify-center gap-2 shadow-xs press-scale min-h-[54px]"
           >
-            <Navigation className="w-5 h-5 fill-slate-950" />
+            <Navigation className="w-5 h-5 text-white" />
             <span>Navigate / Get Directions</span>
           </button>
 
@@ -126,18 +126,18 @@ export const PlaceDetailSheet: React.FC<PlaceDetailSheetProps> = ({ item, onClos
             <button
               type="button"
               onClick={handleBookCab}
-              className="py-3.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-200 font-bold text-xs flex items-center justify-center gap-1.5 hover:border-slate-700"
+              className="py-3.5 rounded-2xl bg-[#F0F2EF] border border-[#D9DEDA] text-[#1F2522] font-bold text-xs flex items-center justify-center gap-1.5 hover:border-[#355F58]/40 min-h-[48px]"
             >
-              <Car className="w-4 h-4 text-blue-400" />
+              <Car className="w-4 h-4 text-[#355F58]" />
               <span>Book Ride</span>
             </button>
 
             <button
               type="button"
               onClick={handleAskAI}
-              className="py-3.5 rounded-xl bg-slate-900 border border-slate-800 text-teal-400 font-bold text-xs flex items-center justify-center gap-1.5 hover:border-teal-500/50"
+              className="py-3.5 rounded-2xl bg-[#F0F2EF] border border-[#D9DEDA] text-[#355F58] font-bold text-xs flex items-center justify-center gap-1.5 hover:border-[#355F58]/40 min-h-[48px]"
             >
-              <Sparkles className="w-4 h-4 text-teal-400" />
+              <Sparkles className="w-4 h-4 text-[#355F58]" />
               <span>Ask AI Guide</span>
             </button>
           </div>

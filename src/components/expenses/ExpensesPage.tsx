@@ -107,29 +107,29 @@ export const ExpensesPage: React.FC = () => {
             setActiveTab('trips');
             navigate('/');
           }}
-          className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-teal-300 text-xs font-black flex items-center gap-1.5 border border-white/10 transition-all press-scale"
+          className="px-3 py-1.5 rounded-xl bg-white hover:bg-[#E8F0EE] text-[#355F58] text-xs font-black flex items-center gap-1.5 border border-[#D9DEDA] transition-all press-scale"
         >
-          <ArrowLeft className="w-4 h-4" />
+          <ArrowLeft className="w-4 h-4 text-[#355F58]" />
           <span>Back to Trip</span>
         </button>
 
-        <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-500/20 text-teal-300 border border-teal-500/30 text-xs font-bold">
-          <Wallet className="w-3.5 h-3.5" />
+        <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E8F0EE] text-[#355F58] border border-[#D9DEDA] text-xs font-bold">
+          <Wallet className="w-3.5 h-3.5 text-[#355F58]" />
           <span>{activeDestName} Expenses</span>
         </div>
       </div>
 
       {/* Hero Financial Overview */}
-      <div className="relative rounded-3xl p-6 bg-gradient-to-br from-teal-950/40 via-[#0D1117] to-[#080B11] border border-teal-500/30 shadow-2xl space-y-4 overflow-hidden">
+      <div className="relative rounded-3xl p-6 bg-white border border-[#D9DEDA] shadow-xs space-y-4 overflow-hidden">
         <div className="flex items-center justify-between">
           <div>
-            <span className="text-[10px] font-black uppercase tracking-wider text-teal-400">Total Spent</span>
-            <div className="text-3xl font-black font-mono text-white mt-0.5">₹{totalSpent.toLocaleString()}</div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[#5F6863]">Total Spent</span>
+            <div className="text-3xl font-extrabold font-mono text-[#1F2522] mt-0.5">₹{totalSpent.toLocaleString()}</div>
           </div>
 
           <div className="text-right">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Remaining Budget</span>
-            <div className={`text-xl font-black font-mono mt-0.5 ${budgetRemaining < 5000 ? 'text-amber-400' : 'text-teal-400'}`}>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[#5F6863]">Remaining Budget</span>
+            <div className={`text-xl font-extrabold font-mono mt-0.5 ${budgetRemaining < 5000 ? 'text-amber-700' : 'text-[#355F58]'}`}>
               ₹{budgetRemaining.toLocaleString()}
             </div>
           </div>
@@ -138,13 +138,13 @@ export const ExpensesPage: React.FC = () => {
         {/* Budget Progress Meter */}
         <div className="space-y-1.5">
           <div className="flex items-center justify-between text-xs font-bold">
-            <span className="text-slate-400">Budget Progress ({progressPct}%)</span>
-            <span className="text-teal-300 font-mono">Target: ₹{targetBudget.toLocaleString()}</span>
+            <span className="text-[#5F6863]">Budget Spent ({progressPct}%)</span>
+            <span className="text-[#355F58] font-mono">Target: ₹{targetBudget.toLocaleString()}</span>
           </div>
-          <div className="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden p-0.5 border border-white/10">
+          <div className="w-full bg-[#F0F2EF] h-2.5 rounded-full overflow-hidden p-0.5 border border-[#D9DEDA]">
             <div
               className={`h-full rounded-full transition-all duration-500 ${
-                progressPct > 90 ? 'bg-rose-500' : progressPct > 75 ? 'bg-amber-400' : 'bg-teal-400'
+                progressPct > 90 ? 'bg-rose-600' : progressPct > 75 ? 'bg-amber-600' : 'bg-[#355F58]'
               }`}
               style={{ width: `${progressPct}%` }}
             />
@@ -156,18 +156,18 @@ export const ExpensesPage: React.FC = () => {
           <button
             type="button"
             onClick={() => setShowAddModal(true)}
-            className="flex-1 py-3 rounded-2xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-xs shadow-lg transition-all flex items-center justify-center gap-1.5 press-scale"
+            className="flex-1 py-3.5 rounded-2xl bg-[#355F58] hover:bg-[#2C504A] text-white font-extrabold text-sm shadow-xs transition-all flex items-center justify-center gap-2 press-scale min-h-[50px]"
           >
-            <Plus className="w-4 h-4" />
-            <span>Log New Expense</span>
+            <Plus className="w-5 h-5 text-white" />
+            <span>Add Expense</span>
           </button>
 
           <button
             type="button"
             onClick={() => openAiAssistant(`Analyze my current ${activeDestName} trip expenses of ₹${totalSpent} and suggest money-saving tips.`)}
-            className="px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-teal-300 font-extrabold text-xs border border-white/10 transition-all flex items-center gap-1.5"
+            className="px-4 py-3.5 rounded-2xl bg-[#F0F2EF] border border-[#D9DEDA] hover:border-[#355F58]/40 text-[#355F58] font-bold text-xs flex items-center gap-1.5 transition-all min-h-[50px]"
           >
-            <Sparkles className="w-4 h-4 text-teal-400" />
+            <Sparkles className="w-4 h-4 text-[#355F58]" />
             <span>AI Budget Advice</span>
           </button>
         </div>
@@ -175,24 +175,24 @@ export const ExpensesPage: React.FC = () => {
 
       {/* Category Breakdown */}
       <div className="space-y-3">
-        <h2 className="text-sm font-black uppercase tracking-wider text-teal-400 flex items-center gap-1.5">
-          <PieChart className="w-4 h-4" />
+        <h2 className="text-xs font-bold uppercase tracking-wider text-[#5F6863] flex items-center gap-1.5">
+          <PieChart className="w-4 h-4 text-[#355F58]" />
           Category Expense Breakdown
         </h2>
 
         <div className="grid grid-cols-2 gap-2.5">
           {Object.entries(categoryTotals).map(([cat, val]) => (
-            <div key={cat} className="p-3.5 rounded-2xl bg-[#0D1117] border border-white/10 space-y-1">
+            <div key={cat} className="p-3.5 rounded-2xl bg-white border border-[#D9DEDA] space-y-1 shadow-xs">
               <div className="flex items-center justify-between text-xs">
-                <span className="font-bold text-slate-300 flex items-center gap-1">
+                <span className="font-bold text-[#1F2522] flex items-center gap-1">
                   <span>{getCatEmoji(cat)}</span>
                   <span>{cat}</span>
                 </span>
-                <span className="font-extrabold font-mono text-teal-300">₹{val.toLocaleString()}</span>
+                <span className="font-extrabold font-mono text-[#355F58]">₹{val.toLocaleString()}</span>
               </div>
-              <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+              <div className="w-full bg-[#F0F2EF] h-1.5 rounded-full overflow-hidden">
                 <div
-                  className="bg-teal-400 h-full rounded-full"
+                  className="bg-[#355F58] h-full rounded-full"
                   style={{ width: `${totalSpent > 0 ? Math.min(100, Math.round((val / totalSpent) * 100)) : 0}%` }}
                 />
               </div>
@@ -204,31 +204,31 @@ export const ExpensesPage: React.FC = () => {
       {/* Detailed Expense History List */}
       <div className="space-y-3 pt-2">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-black uppercase tracking-wider text-slate-300">
+          <h2 className="text-sm font-black uppercase tracking-wider text-[#1F2522]">
             Trip Expense History ({combinedExpenses.length})
           </h2>
-          <span className="text-xs text-slate-400 font-mono">Sorted by Latest</span>
+          <span className="text-xs text-[#5F6863] font-mono">Sorted by Latest</span>
         </div>
 
         <div className="space-y-2">
           {combinedExpenses.map((exp) => (
             <div
               key={exp.id}
-              className="p-3.5 rounded-2xl bg-[#0D1117] border border-white/10 hover:border-teal-500/30 transition-all flex items-center justify-between gap-3 shadow-md"
+              className="p-3.5 rounded-2xl bg-white border border-[#D9DEDA] hover:border-[#355F58]/30 transition-all flex items-center justify-between gap-3 shadow-xs"
             >
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-2xl bg-slate-800 flex items-center justify-center text-lg shrink-0 border border-white/10">
+                <div className="w-10 h-10 rounded-2xl bg-[#F0F2EF] flex items-center justify-center text-lg shrink-0 border border-[#D9DEDA]">
                   {getCatEmoji(exp.category)}
                 </div>
 
                 <div className="min-w-0">
-                  <h4 className="font-extrabold text-sm text-white truncate">{exp.title}</h4>
-                  <div className="text-xs text-slate-400 flex items-center gap-1.5 mt-0.5">
+                  <h4 className="font-extrabold text-sm text-[#1F2522] truncate">{exp.title}</h4>
+                  <div className="text-xs text-[#5F6863] flex items-center gap-1.5 mt-0.5">
                     <span>{exp.paidBy}</span>
                     <span>·</span>
                     <span>{exp.date}</span>
                     {exp.isSplit && (
-                      <span className="px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-300 text-[10px] font-bold border border-teal-500/30">
+                      <span className="px-1.5 py-0.5 rounded bg-[#E8F0EE] text-[#355F58] text-[10px] font-bold border border-[#D9DEDA]">
                         Split
                       </span>
                     )}
@@ -236,7 +236,7 @@ export const ExpensesPage: React.FC = () => {
                 </div>
               </div>
 
-              <span className="text-base font-black font-mono text-teal-300 shrink-0">
+              <span className="text-base font-black font-mono text-[#355F58] shrink-0">
                 ₹{exp.amount.toLocaleString()}
               </span>
             </div>
@@ -246,52 +246,52 @@ export const ExpensesPage: React.FC = () => {
 
       {/* Log Expense Modal Overlay */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 animate-fadeIn">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-[#1F2522]/40 backdrop-blur-xs p-4 animate-fadeIn">
           <form
             onSubmit={handleCreate}
-            className="w-full max-w-md bg-[#0D1117] border border-teal-500/40 rounded-3xl p-6 space-y-4 shadow-2xl animate-slideUp text-white"
+            className="w-full max-w-md bg-white border border-[#D9DEDA] rounded-3xl p-6 space-y-4 shadow-xl animate-slideUp text-[#1F2522]"
           >
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-black text-white">Log Trip Expense</h3>
+              <h3 className="text-lg font-black text-[#1F2522]">Log Trip Expense</h3>
               <button
                 type="button"
                 onClick={() => setShowAddModal(false)}
-                className="text-slate-400 hover:text-white"
+                className="text-[#5F6863] hover:text-[#1F2522]"
               >
                 ✕
               </button>
             </div>
 
             <div className="space-y-1">
-              <label className="text-xs font-bold text-slate-400">Title / Purpose</label>
+              <label className="text-xs font-bold text-[#5F6863]">Title / Purpose</label>
               <input
                 type="text"
                 value={title}
                 onChange={e => setTitle(e.target.value)}
                 placeholder="e.g. Dinner at Beach Shacks"
-                className="w-full bg-slate-900 border border-white/15 focus:border-teal-400 rounded-2xl px-3.5 py-3 text-xs text-white outline-none"
+                className="w-full bg-[#F0F2EF] border border-[#D9DEDA] focus:border-[#355F58] rounded-2xl px-3.5 py-3 text-xs text-[#1F2522] outline-none"
                 required
               />
             </div>
 
             <div className="space-y-1">
-              <label className="text-xs font-bold text-slate-400">Amount (₹)</label>
+              <label className="text-xs font-bold text-[#5F6863]">Amount (₹)</label>
               <input
                 type="number"
                 value={amount}
                 onChange={e => setAmount(e.target.value)}
                 placeholder="e.g. 1450"
-                className="w-full bg-slate-900 border border-white/15 focus:border-teal-400 rounded-2xl px-3.5 py-3 text-xs text-white font-mono outline-none"
+                className="w-full bg-[#F0F2EF] border border-[#D9DEDA] focus:border-[#355F58] rounded-2xl px-3.5 py-3 text-xs text-[#1F2522] font-mono outline-none"
                 required
               />
             </div>
 
             <div className="space-y-1">
-              <label className="text-xs font-bold text-slate-400">Category</label>
+              <label className="text-xs font-bold text-[#5F6863]">Category</label>
               <select
                 value={category}
                 onChange={e => setCategory(e.target.value as Expense['category'])}
-                className="w-full bg-slate-900 border border-white/15 focus:border-teal-400 rounded-2xl px-3.5 py-3 text-xs text-white outline-none cursor-pointer"
+                className="w-full bg-[#F0F2EF] border border-[#D9DEDA] focus:border-[#355F58] rounded-2xl px-3.5 py-3 text-xs text-[#1F2522] outline-none cursor-pointer"
               >
                 <option value="Food">Food & Dining</option>
                 <option value="Transport">Transport & Rides</option>
@@ -302,12 +302,12 @@ export const ExpensesPage: React.FC = () => {
               </select>
             </div>
 
-            <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer pt-1">
+            <label className="flex items-center gap-2 text-xs text-[#5F6863] cursor-pointer pt-1">
               <input
                 type="checkbox"
                 checked={isSplit}
                 onChange={e => setIsSplit(e.target.checked)}
-                className="w-4 h-4 rounded text-teal-500 bg-slate-900 border-white/20"
+                className="w-4 h-4 rounded text-[#355F58] bg-[#F0F2EF] border-[#D9DEDA]"
               />
               <span>Split cost evenly among trip members</span>
             </label>
@@ -316,13 +316,13 @@ export const ExpensesPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setShowAddModal(false)}
-                className="flex-1 py-3 rounded-2xl bg-slate-800 text-slate-300 font-bold text-xs"
+                className="flex-1 py-3 rounded-2xl bg-[#F0F2EF] text-[#1F2522] border border-[#D9DEDA] font-bold text-xs"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="flex-1 py-3 rounded-2xl bg-teal-500 text-slate-950 font-black text-xs shadow-lg"
+                className="flex-1 py-3 rounded-2xl bg-[#355F58] hover:bg-[#2C504A] text-white font-black text-xs shadow-xs"
               >
                 Save Expense
               </button>

@@ -42,26 +42,26 @@ export const MyTripsPage: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 pb-24 max-w-xl mx-auto">
+    <div className="space-y-6 pb-24 max-w-xl mx-auto animate-fadeIn">
 
       {/* Confirmation Bottom Sheet */}
       {confirmActionModal.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fadeIn">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4 text-center shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-[#1F2522]/40 backdrop-blur-xs p-4 animate-fadeIn">
+          <div className="w-full max-w-md bg-white border border-[#D9DEDA] rounded-3xl p-6 space-y-4 text-center shadow-xl">
             <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mx-auto ${
               confirmActionModal.actionType === 'DELETE'
-                ? 'bg-rose-500/20 text-rose-400'
-                : 'bg-amber-500/20 text-amber-400'
+                ? 'bg-rose-100 text-rose-600'
+                : 'bg-amber-100 text-amber-600'
             }`}>
               <AlertTriangle className="w-6 h-6" />
             </div>
 
             <div className="space-y-1">
-              <h3 className="text-lg font-bold text-white">
+              <h3 className="text-lg font-bold text-[#1F2522]">
                 {confirmActionModal.actionType === 'DELETE' ? 'Delete Trip?' : confirmActionModal.actionType === 'CANCEL' ? 'Cancel Trip?' : 'Archive Trip?'}
               </h3>
-              <p className="text-xs text-slate-400">
-                Are you sure you want to {confirmActionModal.actionType.toLowerCase()} <span className="text-slate-200 font-semibold">{confirmActionModal.tripTitle}</span>?
+              <p className="text-xs text-[#5F6863]">
+                Are you sure you want to {confirmActionModal.actionType.toLowerCase()} <span className="text-[#1F2522] font-semibold">{confirmActionModal.tripTitle}</span>?
               </p>
             </div>
 
@@ -69,10 +69,10 @@ export const MyTripsPage: React.FC = () => {
               <button
                 type="button"
                 onClick={handleConfirmAction}
-                className={`w-full py-3.5 font-bold text-sm rounded-xl shadow-lg transition-all ${
+                className={`w-full py-3.5 font-bold text-sm rounded-xl shadow-xs transition-all ${
                   confirmActionModal.actionType === 'DELETE'
-                    ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/20'
-                    : 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-amber-500/20'
+                    ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                    : 'bg-amber-600 hover:bg-amber-700 text-white'
                 }`}
               >
                 Confirm {confirmActionModal.actionType}
@@ -80,7 +80,7 @@ export const MyTripsPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setConfirmActionModal({ isOpen: false, tripId: '', tripTitle: '', actionType: 'DELETE' })}
-                className="w-full py-2 text-xs text-slate-400 hover:text-slate-200"
+                className="w-full py-2 text-xs text-[#5F6863] hover:text-[#1F2522]"
               >
                 Keep Trip
               </button>
@@ -92,21 +92,21 @@ export const MyTripsPage: React.FC = () => {
       {/* Header */}
       <div className="flex items-center justify-between pt-1">
         <div>
-          <h1 className="text-2xl font-extrabold text-white">My Trips</h1>
-          <p className="text-xs text-slate-400">Manage, switch & plan your adventures</p>
+          <h1 className="text-2xl font-extrabold text-[#1F2522]">My Trips</h1>
+          <p className="text-xs text-[#5F6863]">Manage, switch & plan your adventures</p>
         </div>
 
         <button
           onClick={() => navigate('/trips/new')}
-          className="px-3.5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-teal-500/20 press-scale"
+          className="px-3.5 py-2 rounded-xl bg-[#355F58] hover:bg-[#2C504A] text-white font-bold text-xs flex items-center gap-1.5 shadow-xs press-scale"
         >
-          <Plus className="w-4 h-4" />
+          <Plus className="w-4 h-4 text-white" />
           <span>New Trip</span>
         </button>
       </div>
 
       {/* Tab Controls */}
-      <div className="flex gap-1.5 p-1 rounded-2xl bg-white/5 border border-white/10 text-xs font-semibold overflow-x-auto no-scrollbar">
+      <div className="flex gap-1.5 p-1.5 rounded-2xl bg-[#F0F2EF] border border-[#D9DEDA] text-xs font-bold overflow-x-auto no-scrollbar">
         {[
           { id: 'ACTIVE', label: 'Active / Planning' },
           { id: 'UPCOMING', label: 'Upcoming' },
@@ -118,8 +118,8 @@ export const MyTripsPage: React.FC = () => {
             onClick={() => setActiveTab(tab.id as any)}
             className={`flex-1 py-2.5 px-3 rounded-xl transition-all whitespace-nowrap text-center ${
               activeTab === tab.id
-                ? 'bg-teal-500 text-slate-950 font-bold shadow-md'
-                : 'text-slate-400 hover:text-white'
+                ? 'bg-[#355F58] text-white font-extrabold shadow-xs'
+                : 'text-[#5F6863] hover:text-[#1F2522]'
             }`}
           >
             {tab.label}
@@ -130,19 +130,19 @@ export const MyTripsPage: React.FC = () => {
       {/* Trip List */}
       <div className="space-y-4">
         {filteredTrips.length === 0 ? (
-          <div className="surface-card p-8 text-center space-y-3">
-            <div className="w-12 h-12 rounded-2xl bg-slate-800 text-slate-400 flex items-center justify-center mx-auto">
+          <div className="bg-white border border-[#D9DEDA] rounded-3xl p-8 text-center space-y-3 shadow-xs">
+            <div className="w-12 h-12 rounded-2xl bg-[#F0F2EF] text-[#5F6863] flex items-center justify-center mx-auto">
               <Calendar className="w-6 h-6" />
             </div>
-            <h3 className="text-base font-bold text-white">No {activeTab.toLowerCase()} trips found</h3>
-            <p className="text-xs text-slate-400 max-w-xs mx-auto">
+            <h3 className="text-base font-bold text-[#1F2522]">No {activeTab.toLowerCase()} trips found</h3>
+            <p className="text-xs text-[#5F6863] max-w-xs mx-auto font-medium">
               You don't have any trips in this tab right now. Ready to start planning?
             </p>
             <button
               onClick={() => navigate('/trips/new')}
-              className="cta-primary text-xs py-2.5 px-4 mx-auto inline-flex"
+              className="py-3 px-5 rounded-2xl bg-[#355F58] hover:bg-[#2C504A] text-white font-extrabold text-xs inline-flex items-center gap-1.5 shadow-xs press-scale"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-4 h-4 text-white" />
               <span>Plan a Trip</span>
             </button>
           </div>
@@ -153,29 +153,29 @@ export const MyTripsPage: React.FC = () => {
               <div
                 key={trip.id}
                 className={`
-                  surface-card overflow-hidden transition-all border
-                  ${isCurrent ? 'border-teal-500 shadow-xl shadow-teal-500/10' : 'border-slate-800 hover:border-slate-700'}
+                  bg-white rounded-3xl overflow-hidden transition-all border shadow-xs
+                  ${isCurrent ? 'border-[#355F58]' : 'border-[#D9DEDA] hover:border-[#355F58]/30'}
                 `}
               >
                 {/* Cover Image */}
-                <div className="relative h-32 w-full overflow-hidden">
+                <div className="relative h-36 w-full overflow-hidden">
                   <img src={trip.coverImage} alt={trip.title} className="w-full h-full object-cover" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-[#0F172A] via-[#0F172A]/40 to-transparent" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-white via-white/30 to-transparent" />
                   
                   <div className="absolute top-3 left-3 flex items-center gap-2">
                     <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider backdrop-blur-md ${
                       trip.status === 'ACTIVE'
-                        ? 'bg-teal-500/90 text-slate-950'
+                        ? 'bg-[#355F58] text-white'
                         : trip.status === 'UPCOMING'
-                        ? 'bg-blue-500/90 text-white'
+                        ? 'bg-[#487C74] text-white'
                         : trip.status === 'COMPLETED'
-                        ? 'bg-emerald-500/90 text-slate-950'
-                        : 'bg-slate-800/90 text-slate-300'
+                        ? 'bg-emerald-700 text-white'
+                        : 'bg-[#F0F2EF] text-[#1F2522]'
                     }`}>
                       {trip.status}
                     </span>
                     {isCurrent && (
-                      <span className="px-2.5 py-1 rounded-full bg-teal-400 text-slate-950 font-extrabold text-[10px] uppercase">
+                      <span className="px-2.5 py-1 rounded-full bg-[#E8F0EE] text-[#355F58] border border-[#355F58]/30 font-extrabold text-[10px] uppercase">
                         Current Context
                       </span>
                     )}
@@ -186,9 +186,9 @@ export const MyTripsPage: React.FC = () => {
                 <div className="p-4 space-y-3">
                   <div className="flex items-start justify-between">
                     <div>
-                      <h3 className="font-extrabold text-lg text-white">{trip.title}</h3>
-                      <div className="flex items-center gap-1.5 text-xs text-slate-400 mt-0.5">
-                        <MapPin className="w-3.5 h-3.5 text-teal-400" />
+                      <h3 className="font-extrabold text-lg text-[#1F2522]">{trip.title}</h3>
+                      <div className="flex items-center gap-1.5 text-xs text-[#5F6863] mt-0.5 font-medium">
+                        <MapPin className="w-3.5 h-3.5 text-[#355F58] shrink-0" />
                         <span>{trip.destination.name}</span>
                         <span>·</span>
                         <span>{trip.startDate} to {trip.endDate}</span>
@@ -197,25 +197,25 @@ export const MyTripsPage: React.FC = () => {
                   </div>
 
                   {/* Actions */}
-                  <div className="flex items-center justify-between pt-2 border-t border-slate-800/60">
+                  <div className="flex items-center justify-between pt-2 border-t border-[#D9DEDA]">
                     {!isCurrent ? (
                       <button
                         onClick={() => {
                           setCurrentTripId(trip.id);
                           navigate('/');
                         }}
-                        className="px-3.5 py-1.5 rounded-xl bg-teal-500/10 hover:bg-teal-500/20 text-teal-300 font-bold text-xs flex items-center gap-1.5 border border-teal-500/20"
+                        className="px-4 py-2.5 rounded-2xl bg-[#F0F2EF] border border-[#D9DEDA] text-[#355F58] font-bold text-xs flex items-center gap-1.5 hover:border-[#355F58]/40"
                       >
-                        <span>Switch Context</span>
+                        <span>Set Active Context</span>
                         <ArrowRight className="w-3.5 h-3.5" />
                       </button>
                     ) : (
                       <button
                         onClick={() => navigate('/')}
-                        className="px-3.5 py-1.5 rounded-xl bg-teal-500 text-slate-950 font-bold text-xs flex items-center gap-1.5"
+                        className="px-4 py-2.5 rounded-2xl bg-[#355F58] text-white font-extrabold text-xs flex items-center gap-1.5 press-scale shadow-xs"
                       >
-                        <span>Open Trip Home</span>
-                        <ArrowRight className="w-3.5 h-3.5" />
+                        <span>View Trip Home</span>
+                        <ArrowRight className="w-3.5 h-3.5 text-white" />
                       </button>
                     )}
 
@@ -229,9 +229,9 @@ export const MyTripsPage: React.FC = () => {
                             actionType: 'ARCHIVE'
                           })}
                           title="Archive Trip"
-                          className="p-2 rounded-xl text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-colors"
+                          className="p-2.5 rounded-xl text-[#5F6863] hover:text-amber-700 hover:bg-[#F0F2EF] transition-colors"
                         >
-                          <Archive className="w-4 h-4" />
+                          <Archive className="w-4.5 h-4.5" />
                         </button>
                       )}
 
@@ -243,9 +243,9 @@ export const MyTripsPage: React.FC = () => {
                           actionType: 'DELETE'
                         })}
                         title="Delete Trip"
-                        className="p-2 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition-colors"
+                        className="p-2.5 rounded-xl text-[#5F6863] hover:text-rose-600 hover:bg-[#F0F2EF] transition-colors"
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-4.5 h-4.5" />
                       </button>
                     </div>
                   </div>

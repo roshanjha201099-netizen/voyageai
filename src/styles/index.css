@@ -1,30 +1,30 @@
 @import "tailwindcss";
 
-/* ── Semantic Design Tokens ── */
+/* ── Semantic Design Tokens (Light Warm Elderly-Friendly Palette) ── */
 :root {
-  --color-background: #080B11;
-  --color-surface: #0D1117;
-  --color-surface-elevated: #141A24;
-  --color-surface-card: #171E2B;
-  --color-border: rgba(255, 255, 255, 0.08);
-  --color-border-hover: rgba(20, 184, 166, 0.4);
+  --color-background: #F6F7F5;
+  --color-surface: #FFFFFF;
+  --color-surface-elevated: #F0F2EF;
+  --color-surface-card: #FFFFFF;
+  --color-border: #D9DEDA;
+  --color-border-hover: #487C74;
   
-  --color-primary: #0D9488;
-  --color-primary-light: #14B8A6;
-  --color-primary-glow: rgba(13, 148, 136, 0.25);
+  --color-primary: #355F58;
+  --color-primary-light: #487C74;
+  --color-primary-glow: rgba(72, 124, 116, 0.18);
   
-  --color-success: #10B981;
-  --color-warning: #F59E0B;
-  --color-danger: #EF4444;
+  --color-success: #2E7D32;
+  --color-warning: #D97706;
+  --color-danger: #DC2626;
   
-  --color-text-primary: #F8FAFC;
-  --color-text-secondary: #94A3B8;
-  --color-text-tertiary: #64748B;
+  --color-text-primary: #1F2522;
+  --color-text-secondary: #5F6863;
+  --color-text-tertiary: #7C8580;
   
-  --bottom-nav-h: 60px;
+  --bottom-nav-h: 64px;
   --header-h: 56px;
-  --touch-target-min: 48px;
-  --cta-primary-h: 54px;
+  --touch-target-min: 52px;
+  --cta-primary-h: 56px;
 
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -57,13 +57,13 @@ h1, h2, h3, h4, h5, h6 {
 
 /* ── Utility Surface Cards ── */
 .surface-card {
-  background: var(--color-surface-elevated);
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 20px;
 }
 
 .surface-card-interactive {
-  background: var(--color-surface-elevated);
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 20px;
   transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
@@ -88,9 +88,9 @@ h1, h2, h3, h4, h5, h6 {
   border-radius: 16px;
   font-weight: 700;
   font-size: 15px;
-  background: linear-gradient(135deg, var(--color-primary-light), var(--color-primary));
-  color: #040D1A;
-  box-shadow: 0 8px 24px var(--color-primary-glow);
+  background: var(--color-primary);
+  color: #FFFFFF;
+  box-shadow: 0 4px 14px var(--color-primary-glow);
   transition: transform 0.12s ease, opacity 0.12s ease;
   display: flex;
   align-items: center;
@@ -109,7 +109,7 @@ h1, h2, h3, h4, h5, h6 {
   border-radius: 16px;
   font-weight: 600;
   font-size: 14px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--color-surface-elevated);
   border: 1px solid var(--color-border);
   color: var(--color-text-primary);
   display: flex;
@@ -120,7 +120,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .cta-secondary:active {
-  background: rgba(255, 255, 255, 0.12);
+  background: #E4E8E4;
   transform: scale(0.97);
 }
 
@@ -155,7 +155,7 @@ h1, h2, h3, h4, h5, h6 {
 .sheet-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(15, 23, 20, 0.4);
   backdrop-filter: blur(4px);
   z-index: 50;
   opacity: 0;
@@ -182,7 +182,7 @@ h1, h2, h3, h4, h5, h6 {
   display: flex;
   flex-direction: column;
   overscroll-behavior: contain;
-  box-shadow: 0 -12px 36px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.08);
   touch-action: none;
 }
 
@@ -206,7 +206,7 @@ h1, h2, h3, h4, h5, h6 {
   width: 40px;
   height: 5px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.25);
+  background: #C0C7C2;
 }
 
 /* ── Custom Scrollbars ── */
@@ -218,7 +218,7 @@ h1, h2, h3, h4, h5, h6 {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
+  background: #C0C7C2;
   border-radius: 999px;
 }
 ::-webkit-scrollbar-thumb:hover {
@@ -229,10 +229,10 @@ h1, h2, h3, h4, h5, h6 {
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
 /* ── Typography System ── */
-.text-destination { font-size: 30px; line-height: 1.15; font-weight: 800; letter-spacing: -0.03em; }
-.text-screen-title { font-size: 22px; line-height: 1.25; font-weight: 700; letter-spacing: -0.02em; }
-.text-section { font-size: 16px; line-height: 1.35; font-weight: 600; }
-.text-body { font-size: 14px; line-height: 1.5; }
+.text-destination { font-size: 30px; line-height: 1.15; font-weight: 800; letter-spacing: -0.03em; color: var(--color-text-primary); }
+.text-screen-title { font-size: 22px; line-height: 1.25; font-weight: 700; letter-spacing: -0.02em; color: var(--color-text-primary); }
+.text-section { font-size: 16px; line-height: 1.35; font-weight: 600; color: var(--color-text-primary); }
+.text-body { font-size: 14px; line-height: 1.5; color: var(--color-text-primary); }
 .text-meta { font-size: 13px; line-height: 1.4; color: var(--color-text-secondary); }
 .text-micro { font-size: 12px; line-height: 1.3; color: var(--color-text-tertiary); letter-spacing: 0.02em; }
 
@@ -254,20 +254,20 @@ h1, h2, h3, h4, h5, h6 {
 .animate-slideUp { animation: slideUp 0.25s ease forwards; }
 .animate-pulseGlow { animation: pulseGlow 2s infinite ease-in-out; }
 
-/* ── Leaflet Dark Map Overrides ── */
+/* ── Leaflet Light Map Overrides ── */
 .leaflet-container {
-  background-color: var(--color-background) !important;
+  background-color: #F0F2EF !important;
   font-family: 'Inter', sans-serif !important;
 }
 .leaflet-popup-content-wrapper {
-  background: var(--color-surface-elevated) !important;
-  color: var(--color-text-primary) !important;
-  border: 1px solid var(--color-border) !important;
+  background: #FFFFFF !important;
+  color: #1F2522 !important;
+  border: 1px solid #D9DEDA !important;
   border-radius: 16px !important;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.6) !important;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.08) !important;
   padding: 4px !important;
 }
-.leaflet-popup-tip { background: var(--color-surface-elevated) !important; }
+.leaflet-popup-tip { background: #FFFFFF !important; }
 
 /* ── Live GPS Pulse Animation (used in Leaflet marker HTML) ── */
 @keyframes livePulse {

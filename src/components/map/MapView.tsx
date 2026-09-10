@@ -164,11 +164,11 @@ export const MapView: React.FC = () => {
     if (!mapInstanceRef.current) {
       const map = L.map(mapContainerRef.current, { zoomControl: false }).setView(liveUserPos, 14);
 
-      L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+      L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
         attribution: '© Esri', maxZoom: 16
       }).addTo(map);
 
-      L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
+      L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
         attribution: '© Esri', maxZoom: 16
       }).addTo(map);
 
@@ -194,10 +194,10 @@ export const MapView: React.FC = () => {
 
     const pulseHtml = isLiveTracking
       ? `<div style="position:relative; width:22px; height:22px;">
-           <div style="position:absolute; top:0; left:0; width:22px; height:22px; background:rgba(16,185,129,0.25); border-radius:50%; animation:livePulse 2s ease-out infinite;"></div>
-           <div style="position:absolute; top:4px; left:4px; width:14px; height:14px; background:#10B981; border-radius:50%; border:3px solid #fff; box-shadow:0 0 12px #10B981;"></div>
+           <div style="position:absolute; top:0; left:0; width:22px; height:22px; background:rgba(53,95,88,0.25); border-radius:50%; animation:livePulse 2s ease-out infinite;"></div>
+           <div style="position:absolute; top:4px; left:4px; width:14px; height:14px; background:#355F58; border-radius:50%; border:3px solid #fff; box-shadow:0 0 10px rgba(53,95,88,0.5);"></div>
          </div>`
-      : `<div style="background:#0D9488; width:18px; height:18px; border-radius:50%; border:3px solid #fff; box-shadow:0 0 14px #0D9488;"></div>`;
+      : `<div style="background:#355F58; width:18px; height:18px; border-radius:50%; border:3px solid #fff; box-shadow:0 0 10px rgba(53,95,88,0.5);"></div>`;
 
     userMarkerRef.current = L.marker(liveUserPos, {
       icon: L.divIcon({
@@ -213,8 +213,8 @@ export const MapView: React.FC = () => {
     if (accuracyM < 5000) {
       accuracyCircleRef.current = L.circle(liveUserPos, {
         radius: accuracyM,
-        color: isLiveTracking ? '#10B981' : '#0D9488',
-        fillColor: isLiveTracking ? '#10B981' : '#0D9488',
+        color: isLiveTracking ? '#355F58' : '#487C74',
+        fillColor: isLiveTracking ? '#355F58' : '#487C74',
         fillOpacity: 0.08,
         weight: 1,
         opacity: 0.3
@@ -225,7 +225,7 @@ export const MapView: React.FC = () => {
       const marker = L.marker(spot.coordinates, {
         icon: L.divIcon({
           className: '',
-          html: `<div style="background:${color}; color:#fff; padding:4px 10px; border-radius:20px; font-weight:700; font-size:11px; white-space:nowrap; box-shadow:0 3px 10px rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.3);">${spot.title.split(' ')[0]}</div>`,
+          html: `<div style="background:${color}; color:#fff; padding:4px 10px; border-radius:20px; font-weight:700; font-size:11px; white-space:nowrap; box-shadow:0 3px 10px rgba(0,0,0,0.15); border:1px solid rgba(255,255,255,0.6);">${spot.title.split(' ')[0]}</div>`,
           iconSize: [80, 24],
           iconAnchor: [40, 12]
         })
@@ -241,7 +241,7 @@ export const MapView: React.FC = () => {
         type: 'Hotel', title: h.name, location: h.location, rating: h.rating,
         price: `₹${h.pricePerNight.toLocaleString()}/night`, image: h.photos[0],
         distanceKm: '1.2 km', coordinates: h.coordinates
-      }, '#0D9488'));
+      }, '#355F58'));
     }
 
     if (filterCategory === 'All' || filterCategory === 'Food') {
@@ -249,7 +249,7 @@ export const MapView: React.FC = () => {
         type: 'Restaurant', title: r.name, location: r.location, rating: r.rating,
         price: r.priceRange, image: r.photos[0], distanceKm: `${r.distanceKm} km`,
         coordinates: r.coordinates
-      }, '#F59E0B'));
+      }, '#D97706'));
     }
 
     if (filterCategory === 'All' || filterCategory === 'Activities') {
@@ -263,7 +263,7 @@ export const MapView: React.FC = () => {
           image: 'https://images.unsplash.com/photo-1542296332-2e4473faf563?auto=format&fit=crop&w=800&q=80',
           distanceKm: `${(1 + i * 0.8).toFixed(1)} km`,
           coordinates: t.coordinates
-        }, '#818CF8');
+        }, '#2563EB');
       });
     }
   }, [mapMode, filterCategory, destInfo, currentGPSLocation, defaultUserLocation, tripNavigationTargets, isLiveTracking, userLocationAccuracy]);
@@ -316,12 +316,12 @@ export const MapView: React.FC = () => {
 
   return (
     <div
-      className="relative -mx-4 lg:mx-0 rounded-3xl overflow-hidden border border-white/10"
+      className="relative -mx-4 lg:mx-0 rounded-3xl overflow-hidden border border-[#D9DEDA]"
       style={{ height: 'calc(100dvh - 170px)' }}
     >
       {/* Map Canvas: Render Embedded Google Maps Route Frame in 'route' mode, or Leaflet in 'explore' mode */}
       {mapMode === 'route' ? (
-        <div className="w-full h-full relative bg-[#0D1117] rounded-3xl overflow-hidden">
+        <div className="w-full h-full relative bg-[#F0F2EF] rounded-3xl overflow-hidden">
           <iframe
             title="Google Maps Interactive Route"
             width="100%"
@@ -341,7 +341,7 @@ export const MapView: React.FC = () => {
       {/* TOP FLOATING HEADER WITH TRIP BACK BUTTON & ACTIVITY QUICK SELECTOR */}
       <div className="absolute top-3 left-3 right-3 z-[1000] space-y-2">
         {/* Main Bar */}
-        <div className="flex items-center justify-between p-2.5 rounded-2xl bg-[#0D1117]/95 border border-teal-500/40 backdrop-blur-md shadow-2xl gap-2">
+        <div className="flex items-center justify-between p-2.5 rounded-2xl bg-white/95 border border-[#D9DEDA] backdrop-blur-md shadow-xs gap-2">
           <button
             type="button"
             onClick={() => {
@@ -350,21 +350,21 @@ export const MapView: React.FC = () => {
               setActiveTab('trips');
               navigate('/');
             }}
-            className="px-3 py-1.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-black flex items-center gap-1.5 shadow-md transition-all press-scale shrink-0"
+            className="px-3 py-1.5 rounded-xl bg-[#355F58] hover:bg-[#2C504A] text-white text-xs font-black flex items-center gap-1.5 shadow-xs transition-all press-scale shrink-0"
           >
-            <ArrowLeft className="w-4 h-4" />
+            <ArrowLeft className="w-4 h-4 text-white" />
             <span>Back to Active Trip</span>
           </button>
 
           {/* Map Mode Switcher */}
-          <div className="flex bg-slate-800/90 p-1 rounded-xl border border-white/10 shrink-0">
+          <div className="flex bg-[#F0F2EF] p-1 rounded-xl border border-[#D9DEDA] shrink-0">
             <button
               type="button"
               onClick={() => setMapMode('route')}
               className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold flex items-center gap-1 transition-all ${
                 mapMode === 'route'
-                  ? 'bg-teal-500 text-slate-950 shadow'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-[#355F58] text-white shadow-xs'
+                  : 'text-[#5F6863] hover:text-[#1F2522]'
               }`}
             >
               <Route className="w-3.5 h-3.5" />
@@ -375,8 +375,8 @@ export const MapView: React.FC = () => {
               onClick={() => setMapMode('explore')}
               className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold flex items-center gap-1 transition-all ${
                 mapMode === 'explore'
-                  ? 'bg-teal-500 text-slate-950 shadow'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-[#355F58] text-white shadow-xs'
+                  : 'text-[#5F6863] hover:text-[#1F2522]'
               }`}
             >
               <MapIcon className="w-3.5 h-3.5" />
@@ -397,13 +397,13 @@ export const MapView: React.FC = () => {
                     setSelectedActivityId(target.activityId || null);
                     setNavigationTarget(target);
                   }}
-                  className={`press-scale shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold shadow-lg backdrop-blur-md transition-all border flex items-center gap-1.5 ${
+                  className={`press-scale shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold shadow-xs backdrop-blur-md transition-all border flex items-center gap-1.5 ${
                     isSelected
-                      ? 'bg-teal-500 text-slate-950 font-black border-teal-300'
-                      : 'bg-[#0D1117]/90 text-slate-200 border-white/10 hover:border-teal-500/50'
+                      ? 'bg-[#355F58] text-white font-black border-[#355F58]'
+                      : 'bg-white/90 text-[#1F2522] border-[#D9DEDA] hover:border-[#355F58]/50'
                   }`}
                 >
-                  <MapPin className={`w-3.5 h-3.5 ${isSelected ? 'text-slate-950' : 'text-teal-400'}`} />
+                  <MapPin className={`w-3.5 h-3.5 ${isSelected ? 'text-white' : 'text-[#355F58]'}`} />
                   <span>Day {target.dayNumber}: {target.title}</span>
                 </button>
               );
@@ -418,10 +418,10 @@ export const MapView: React.FC = () => {
               <button
                 key={cat}
                 onClick={() => setFilterCategory(cat)}
-                className={`press-scale shrink-0 px-3.5 py-1.5 rounded-full text-xs font-bold shadow-lg backdrop-blur-md transition-all ${
+                className={`press-scale shrink-0 px-3.5 py-1.5 rounded-full text-xs font-bold shadow-xs backdrop-blur-md transition-all ${
                   filterCategory === cat
-                    ? 'bg-teal-500 text-slate-950 font-extrabold'
-                    : 'bg-[#0D1117]/90 text-slate-200 border border-white/10'
+                    ? 'bg-[#355F58] text-white font-extrabold'
+                    : 'bg-white/90 text-[#1F2522] border border-[#D9DEDA]'
                 }`}
               >
                 {cat}
@@ -432,16 +432,16 @@ export const MapView: React.FC = () => {
 
         {/* Smart Origin Switcher when user GPS is far away */}
         {mapMode === 'route' && isFar && (
-          <div className="p-2 rounded-xl bg-[#0D1117]/95 border border-teal-500/30 backdrop-blur-md flex items-center justify-between gap-2 shadow-lg">
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Start point:</span>
+          <div className="p-2 rounded-xl bg-white/95 border border-[#D9DEDA] backdrop-blur-md flex items-center justify-between gap-2 shadow-xs">
+            <span className="text-[10px] text-[#5F6863] font-bold uppercase tracking-wider">Start point:</span>
             <div className="flex gap-1.5">
               <button
                 type="button"
                 onClick={() => setOriginMode('stay')}
                 className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
                   originMode === 'stay'
-                    ? 'bg-teal-500 text-slate-950 font-black shadow'
-                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700'
+                    ? 'bg-[#355F58] text-white font-black shadow-xs'
+                    : 'bg-[#F0F2EF] text-[#1F2522] border border-[#D9DEDA]'
                 }`}
               >
                 🏨 Trip Base / Stay
@@ -451,8 +451,8 @@ export const MapView: React.FC = () => {
                 onClick={() => setOriginMode('live')}
                 className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
                   originMode === 'live'
-                    ? 'bg-teal-500 text-slate-950 font-black shadow'
-                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700'
+                    ? 'bg-[#355F58] text-white font-black shadow-xs'
+                    : 'bg-[#F0F2EF] text-[#1F2522] border border-[#D9DEDA]'
                 }`}
               >
                 📍 Live GPS ({distKm.toFixed(0)} km)
@@ -464,8 +464,8 @@ export const MapView: React.FC = () => {
 
       {/* Non-blocking Location Error Notice */}
       {locationError && (
-        <div className="absolute top-28 left-3 right-3 z-[1000] p-2.5 rounded-xl bg-slate-900/90 border border-amber-500/30 text-amber-300 text-[11px] font-semibold backdrop-blur-md shadow-lg flex items-center gap-2">
-          <Compass className="w-4 h-4 text-amber-400 shrink-0" />
+        <div className="absolute top-28 left-3 right-3 z-[1000] p-2.5 rounded-xl bg-white/90 border border-amber-500/30 text-amber-800 text-[11px] font-semibold backdrop-blur-md shadow-xs flex items-center gap-2">
+          <Compass className="w-4 h-4 text-amber-600 shrink-0" />
           <span className="truncate">{locationError}</span>
         </div>
       )}
@@ -480,10 +480,10 @@ export const MapView: React.FC = () => {
               toggleFollowMode();
             }
           }}
-          className={`absolute bottom-24 right-4 z-[1000] px-3.5 py-2 rounded-full border backdrop-blur-md shadow-xl flex items-center gap-1.5 text-xs font-extrabold transition-all press-scale ${
+          className={`absolute bottom-24 right-4 z-[1000] px-3.5 py-2 rounded-full border backdrop-blur-md shadow-md flex items-center gap-1.5 text-xs font-extrabold transition-all press-scale ${
             isFollowMode
-              ? 'bg-teal-500 text-slate-950 border-teal-300 shadow-teal-500/30'
-              : 'bg-[#0D1117]/95 text-teal-400 border-teal-500/40 hover:bg-teal-500/20'
+              ? 'bg-[#355F58] text-white border-[#355F58]'
+              : 'bg-white/95 text-[#355F58] border-[#D9DEDA] hover:bg-[#E8F0EE]'
           }`}
           title={isFollowMode ? "Camera following active location (click to unlock)" : "Center map & follow location"}
         >
@@ -494,17 +494,17 @@ export const MapView: React.FC = () => {
 
       {/* ROUTE GUIDANCE BOTTOM PANEL SHEET */}
       {mapMode === 'route' && activeTarget && (
-        <div className="absolute bottom-4 left-3 right-3 z-[1000] p-4 rounded-3xl bg-[#080B11]/95 border border-teal-500/40 backdrop-blur-md shadow-2xl space-y-3 animate-slideUp">
+        <div className="absolute bottom-4 left-3 right-3 z-[1000] p-4 rounded-3xl bg-white border border-[#D9DEDA] backdrop-blur-md shadow-lg space-y-3 animate-slideUp">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-xs font-bold text-white min-w-0">
-              <Navigation className="w-4 h-4 text-teal-400 shrink-0" />
+            <div className="flex items-center gap-2 text-xs font-bold text-[#1F2522] min-w-0">
+              <Navigation className="w-4 h-4 text-[#355F58] shrink-0" />
               <div className="truncate">
-                <div className="font-extrabold truncate text-teal-300">{activeTarget.title}</div>
-                <div className="text-[11px] text-slate-400 truncate font-normal">{activeTarget.locationName}</div>
+                <div className="font-extrabold truncate text-[#1F2522]">{activeTarget.title}</div>
+                <div className="text-[11px] text-[#5F6863] truncate font-medium">{activeTarget.locationName}</div>
               </div>
             </div>
 
-            <div className="flex items-center gap-1.5 text-xs font-bold text-teal-300 font-mono shrink-0 ml-2">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-[#355F58] font-mono shrink-0 ml-2">
               <span>{distKm.toFixed(1)} km</span>
               <span>•</span>
               <span>~{etaMinutes} min</span>
@@ -518,18 +518,18 @@ export const MapView: React.FC = () => {
                 const query = encodeURIComponent(activeTarget.locationName || activeTarget.title);
                 window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
               }}
-              className="flex-1 py-2.5 bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-xs rounded-2xl shadow-lg transition-all flex items-center justify-center gap-1.5"
+              className="flex-1 py-3.5 bg-[#355F58] hover:bg-[#2C504A] text-white font-extrabold text-xs rounded-2xl shadow-xs transition-all flex items-center justify-center gap-1.5 press-scale min-h-[48px]"
             >
-              <ExternalLink className="w-4 h-4" />
-              <span>Open in Google Maps App</span>
+              <ExternalLink className="w-4 h-4 text-white" />
+              <span>Open in Maps App</span>
             </button>
 
             <button
               type="button"
               onClick={() => openCabModal(activeTarget.title)}
-              className="py-2.5 px-4 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-2xl shadow-lg transition-all flex items-center justify-center gap-1.5"
+              className="py-3.5 px-4 bg-[#F0F2EF] border border-[#D9DEDA] hover:border-[#355F58]/40 text-[#355F58] font-bold text-xs rounded-2xl transition-all flex items-center justify-center gap-1.5 min-h-[48px]"
             >
-              <Car className="w-4 h-4" />
+              <Car className="w-4 h-4 text-[#355F58]" />
               <span>Book Ride</span>
             </button>
           </div>
