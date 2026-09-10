@@ -30,8 +30,8 @@ export const PreferenceOption: React.FC<PreferenceOptionProps> = ({
         relative w-full text-left p-4 rounded-2xl border transition-all duration-200 flex items-center justify-between gap-3
         min-h-[56px] select-none touch-manipulation active:scale-[0.98]
         ${selected
-          ? 'bg-teal-500/10 border-teal-500 text-white shadow-lg shadow-teal-500/10 ring-1 ring-teal-500/40'
-          : 'bg-slate-900/70 border-slate-800 text-slate-300 hover:border-slate-700 hover:bg-slate-900'
+          ? 'bg-[#E8F0EE] border-[#355F58] text-[#1F2522] shadow-xs ring-1 ring-[#355F58]/30 font-bold'
+          : 'bg-white border-[#D9DEDA] text-[#1F2522] hover:border-[#355F58]/40 hover:bg-[#F0F2EF]'
         }
       `}
     >
@@ -42,11 +42,11 @@ export const PreferenceOption: React.FC<PreferenceOptionProps> = ({
           </span>
         )}
         <div className="flex-1 min-w-0">
-          <div className={`font-semibold text-base leading-tight ${selected ? 'text-teal-300 font-bold' : 'text-slate-100'}`}>
+          <div className={`font-bold text-sm leading-tight ${selected ? 'text-[#355F58]' : 'text-[#1F2522]'}`}>
             {label}
           </div>
           {subtitle && (
-            <p className="text-xs text-slate-400 mt-0.5 leading-snug line-clamp-1">
+            <p className="text-xs text-[#5F6863] mt-0.5 leading-snug line-clamp-1 font-medium">
               {subtitle}
             </p>
           )}
@@ -56,8 +56,8 @@ export const PreferenceOption: React.FC<PreferenceOptionProps> = ({
       <div className={`
         w-6 h-6 rounded-full border flex items-center justify-center transition-all flex-shrink-0
         ${selected
-          ? 'bg-teal-500 border-teal-400 text-slate-950 scale-100'
-          : 'border-slate-700 bg-slate-800/50 text-transparent scale-90'
+          ? 'bg-[#355F58] border-[#355F58] text-white scale-100'
+          : 'border-[#D9DEDA] bg-[#F0F2EF] text-transparent scale-90'
         }
       `}>
         <Check className="w-3.5 h-3.5 stroke-[3]" />
