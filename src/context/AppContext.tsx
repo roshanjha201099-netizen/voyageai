@@ -202,7 +202,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         accuracy_meters: accuracyMeters !== undefined ? accuracyMeters : 10,
         address_name: addressName || 'User Location',
         source
-      }).catch(err => console.warn('📍 [LOCATION SYNC WS ERROR]', err));
+      }).catch(err => console.warn('[LOCATION SYNC WS ERROR]', err));
     }
   }, [activeTrip?.id]);
 
@@ -244,7 +244,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setIsLiveTracking(true);
 
         if (shouldSyncBackend) {
-          console.log(`[LIVE TRACKING] 📡 Syncing position — Lat: ${point.latitude.toFixed(5)}, Lng: ${point.longitude.toFixed(5)}, Accuracy: ${point.accuracy.toFixed(0)}m`);
+          console.log(`[LIVE TRACKING] Syncing position — Lat: ${point.latitude.toFixed(5)}, Lng: ${point.longitude.toFixed(5)}, Accuracy: ${point.accuracy.toFixed(0)}m`);
           await syncUserLocation(point.latitude, point.longitude, point.accuracy, 'Live GPS (Continuous)', 'gps');
         }
       },

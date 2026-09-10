@@ -5,36 +5,38 @@ import { PreferenceOption } from '../components/preferences/PreferenceOption';
 import { PreferenceProgress } from '../components/preferences/PreferenceProgress';
 import { PreferenceFooter } from '../components/preferences/PreferenceFooter';
 
+import { UtensilsCrossed, Apple, Leaf, Utensils, Wheat, Coffee, Wine, Cake, Fish } from 'lucide-react';
+
 interface DietItem {
   id: DietaryPreference;
   label: string;
-  icon: string;
+  icon: React.ReactNode;
 }
 
 interface FoodTypeItem {
   id: FoodInterest;
   label: string;
-  icon: string;
+  icon: React.ReactNode;
 }
 
 const DIETARY_OPTIONS: DietItem[] = [
-  { id: 'EVERYTHING', label: 'Everything', icon: '🍲' },
-  { id: 'VEGETARIAN', label: 'Vegetarian', icon: '🥗' },
-  { id: 'VEGAN', label: 'Vegan', icon: '🌱' },
-  { id: 'JAIN', label: 'Jain', icon: '🥦' },
-  { id: 'HALAL', label: 'Halal', icon: '🥩' },
-  { id: 'GLUTEN_FREE', label: 'Gluten Free', icon: '🌾' },
-  { id: 'OTHER', label: 'Other', icon: '🍽️' },
+  { id: 'EVERYTHING', label: 'Everything', icon: <UtensilsCrossed className="w-5 h-5 text-teal-400" /> },
+  { id: 'VEGETARIAN', label: 'Vegetarian', icon: <Apple className="w-5 h-5 text-teal-400" /> },
+  { id: 'VEGAN', label: 'Vegan', icon: <Leaf className="w-5 h-5 text-teal-400" /> },
+  { id: 'JAIN', label: 'Jain', icon: <Leaf className="w-5 h-5 text-teal-400" /> },
+  { id: 'HALAL', label: 'Halal', icon: <Utensils className="w-5 h-5 text-teal-400" /> },
+  { id: 'GLUTEN_FREE', label: 'Gluten Free', icon: <Wheat className="w-5 h-5 text-teal-400" /> },
+  { id: 'OTHER', label: 'Other', icon: <Utensils className="w-5 h-5 text-teal-400" /> },
 ];
 
 const FOOD_INTERESTS: FoodTypeItem[] = [
-  { id: 'LOCAL', label: 'Local Food', icon: '🍛' },
-  { id: 'STREET_FOOD', label: 'Street Food', icon: '🍢' },
-  { id: 'CAFE', label: 'Cafes & Bakery', icon: '☕' },
-  { id: 'FINE_DINING', label: 'Fine Dining', icon: '🍷' },
-  { id: 'FAST_FOOD', label: 'Fast Food', icon: '🍔' },
-  { id: 'DESSERTS', label: 'Desserts', icon: '🍰' },
-  { id: 'SEAFOOD', label: 'Seafood', icon: '🦐' },
+  { id: 'LOCAL', label: 'Local Food', icon: <Utensils className="w-5 h-5 text-teal-400" /> },
+  { id: 'STREET_FOOD', label: 'Street Food', icon: <UtensilsCrossed className="w-5 h-5 text-teal-400" /> },
+  { id: 'CAFE', label: 'Cafes & Bakery', icon: <Coffee className="w-5 h-5 text-teal-400" /> },
+  { id: 'FINE_DINING', label: 'Fine Dining', icon: <Wine className="w-5 h-5 text-teal-400" /> },
+  { id: 'FAST_FOOD', label: 'Fast Food', icon: <Utensils className="w-5 h-5 text-teal-400" /> },
+  { id: 'DESSERTS', label: 'Desserts', icon: <Cake className="w-5 h-5 text-teal-400" /> },
+  { id: 'SEAFOOD', label: 'Seafood', icon: <Fish className="w-5 h-5 text-teal-400" /> },
 ];
 
 export const FoodScreen: React.FC = () => {

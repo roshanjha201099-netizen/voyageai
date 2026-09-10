@@ -41,7 +41,7 @@ export const ContextSwitcher: React.FC = () => {
 
           <div className="text-left min-w-0">
             <span className="text-[11px] font-bold uppercase tracking-wider text-[#5F6863] block leading-tight">
-              {activeContextMode === 'near_you' ? '📍 Current Context' : '✈️ Trip Context'}
+              {activeContextMode === 'near_you' ? 'Current Context' : 'Trip Context'}
             </span>
             <span className="text-sm sm:text-base font-extrabold text-[#1F2522] truncate block">
               {activeContextMode === 'near_you' ? locationText : tripTitle}

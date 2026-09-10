@@ -56,7 +56,7 @@ class WebSocketClient {
       this.ws = new WebSocket(this.url);
 
       this.ws.onopen = () => {
-        console.log('🔌 [WS] Connected to ws://127.0.0.1:8000/ws/tour-app');
+        console.log('[WS] Connected to ws://127.0.0.1:8000/ws/tour-app');
         this.isConnecting = false;
         if (this.resolveReady) {
           this.resolveReady();
@@ -68,21 +68,21 @@ class WebSocketClient {
           const frame: WsResponseFrame = JSON.parse(event.data);
           this.handleIncomingFrame(frame);
         } catch (err) {
-          console.error('❌ [WS] Invalid JSON frame received:', event.data, err);
+          console.error('[WS] Invalid JSON frame received:', event.data, err);
         }
       };
 
       this.ws.onerror = (err) => {
-        console.warn('⚠️ [WS] Socket error:', err);
+        console.warn('[WS] Socket error:', err);
       };
 
       this.ws.onclose = () => {
-        console.warn('🔌 [WS] Disconnected from server. Reconnecting in 2 seconds...');
+        console.warn('[WS] Disconnected from server. Reconnecting in 2 seconds...');
         this.isConnecting = false;
         this.scheduleReconnect();
       };
     } catch (err) {
-      console.error('❌ [WS] Failed to establish WebSocket connection:', err);
+      console.error('[WS] Failed to establish WebSocket connection:', err);
       this.scheduleReconnect();
     }
   }

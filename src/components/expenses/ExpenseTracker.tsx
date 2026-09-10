@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useTrip } from '../../features/trip/TripContext';
-import { Plus } from 'lucide-react';
+import { Plus, Car, Building2, UtensilsCrossed, ShoppingBag, Compass, CreditCard } from 'lucide-react';
 import type { Expense } from '../../types';
 
 export const ExpenseTracker: React.FC = () => {
@@ -58,14 +58,14 @@ export const ExpenseTracker: React.FC = () => {
     setTitle(''); setAmount(''); setShowAddModal(false);
   };
 
-  const getCatEmoji = (cat: string) => {
+  const getCatIcon = (cat: string) => {
     switch (cat) {
-      case 'Transport': return '🚕';
-      case 'Hotel': return '🏨';
-      case 'Food': return '🍽️';
-      case 'Shopping': return '🛍️';
-      case 'Activities': return '🎯';
-      default: return '💰';
+      case 'Transport': return <Car className="w-4 h-4 text-emerald-500" />;
+      case 'Hotel': return <Building2 className="w-4 h-4 text-emerald-500" />;
+      case 'Food': return <UtensilsCrossed className="w-4 h-4 text-emerald-500" />;
+      case 'Shopping': return <ShoppingBag className="w-4 h-4 text-emerald-500" />;
+      case 'Activities': return <Compass className="w-4 h-4 text-emerald-500" />;
+      default: return <CreditCard className="w-4 h-4 text-emerald-500" />;
     }
   };
 
@@ -113,7 +113,7 @@ export const ExpenseTracker: React.FC = () => {
           <div key={exp.id} className="flex items-center justify-between py-3 border-b border-white/[0.04] last:border-0">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-white/[0.04] flex items-center justify-center text-sm shrink-0">
-                {getCatEmoji(exp.category)}
+                {getCatIcon(exp.category)}
               </div>
               <div>
                 <p className="text-body text-sm font-medium text-slate-200">{exp.title}</p>

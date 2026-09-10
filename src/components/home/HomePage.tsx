@@ -92,7 +92,7 @@ export const HomePage: React.FC = () => {
         </p>
       </div>
 
-      {/* 2. One-Tap Context Switcher (📍 Near You vs ✈️ Active Trip) */}
+      {/* 2. One-Tap Context Switcher (Near You vs Active Trip) */}
       <ContextSwitcher />
 
       {/* 3. Prominent Ask VoyageAI Interactive Assistant */}

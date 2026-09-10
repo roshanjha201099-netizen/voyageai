@@ -5,22 +5,24 @@ import { PreferenceOption } from '../components/preferences/PreferenceOption';
 import { PreferenceProgress } from '../components/preferences/PreferenceProgress';
 import { PreferenceFooter } from '../components/preferences/PreferenceFooter';
 
+import { Sun, Compass, UtensilsCrossed, Landmark, Trees, Sparkles, Wallet, Moon } from 'lucide-react';
+
 interface OptionItem {
   id: TravelStyle;
   label: string;
   subtitle: string;
-  icon: string;
+  icon: React.ReactNode;
 }
 
 const TRAVEL_STYLES: OptionItem[] = [
-  { id: 'RELAXED', label: 'Relaxed', subtitle: 'Unwind, beaches, slow pace', icon: '🌴' },
-  { id: 'ADVENTURE', label: 'Adventure', subtitle: 'Hiking, sports, thrill-seeking', icon: '🏄' },
-  { id: 'FOODIE', label: 'Foodie', subtitle: 'Street food, fine dining, cafes', icon: '🍜' },
-  { id: 'CULTURE', label: 'Culture', subtitle: 'History, museums, traditions', icon: '🏛' },
-  { id: 'NATURE', label: 'Nature', subtitle: 'Wildlife, mountains, scenic views', icon: '🌿' },
-  { id: 'LUXURY', label: 'Luxury', subtitle: 'Resorts, spas, premium comfort', icon: '✨' },
-  { id: 'BUDGET', label: 'Budget', subtitle: 'Smart spends, hostels, local routes', icon: '🎒' },
-  { id: 'NIGHTLIFE', label: 'Nightlife', subtitle: 'Clubs, lounge bars, evening vibe', icon: '🌃' },
+  { id: 'RELAXED', label: 'Relaxed', subtitle: 'Unwind, beaches, slow pace', icon: <Sun className="w-5 h-5 text-teal-400" /> },
+  { id: 'ADVENTURE', label: 'Adventure', subtitle: 'Hiking, sports, thrill-seeking', icon: <Compass className="w-5 h-5 text-teal-400" /> },
+  { id: 'FOODIE', label: 'Foodie', subtitle: 'Street food, fine dining, cafes', icon: <UtensilsCrossed className="w-5 h-5 text-teal-400" /> },
+  { id: 'CULTURE', label: 'Culture', subtitle: 'History, museums, traditions', icon: <Landmark className="w-5 h-5 text-teal-400" /> },
+  { id: 'NATURE', label: 'Nature', subtitle: 'Wildlife, mountains, scenic views', icon: <Trees className="w-5 h-5 text-teal-400" /> },
+  { id: 'LUXURY', label: 'Luxury', subtitle: 'Resorts, spas, premium comfort', icon: <Sparkles className="w-5 h-5 text-teal-400" /> },
+  { id: 'BUDGET', label: 'Budget', subtitle: 'Smart spends, hostels, local routes', icon: <Wallet className="w-5 h-5 text-teal-400" /> },
+  { id: 'NIGHTLIFE', label: 'Nightlife', subtitle: 'Clubs, lounge bars, evening vibe', icon: <Moon className="w-5 h-5 text-teal-400" /> },
 ];
 
 export const TravelStyleScreen: React.FC = () => {

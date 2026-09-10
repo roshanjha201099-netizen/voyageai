@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { QrCode, Ticket } from 'lucide-react';
+import { QrCode, Ticket, Building2, Plane, Car } from 'lucide-react';
 
 export const BookingsPage: React.FC = () => {
   const { bookings, cancelBooking } = useApp();
@@ -12,12 +12,12 @@ export const BookingsPage: React.FC = () => {
     return b.status === 'confirmed';
   });
 
-  const getTypeEmoji = (type: string) => {
+  const getTypeIcon = (type: string) => {
     switch (type) {
-      case 'hotel': return '🏨';
-      case 'flight': return '✈️';
-      case 'cab': return '🚕';
-      default: return '🎯';
+      case 'hotel': return <Building2 className="w-5 h-5 text-emerald-400" />;
+      case 'flight': return <Plane className="w-5 h-5 text-emerald-400" />;
+      case 'cab': return <Car className="w-5 h-5 text-emerald-400" />;
+      default: return <Ticket className="w-5 h-5 text-emerald-400" />;
     }
   };
 
@@ -59,7 +59,7 @@ export const BookingsPage: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-white/[0.04] flex items-center justify-center text-lg shrink-0">
-                    {getTypeEmoji(b.type)}
+                    {getTypeIcon(b.type)}
                   </div>
                   <div>
                     <h3 className="text-body font-semibold text-white line-clamp-1">{b.title}</h3>

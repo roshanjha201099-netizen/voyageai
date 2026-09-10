@@ -122,7 +122,7 @@ export const TourGuidePage: React.FC = () => {
     const systemNotice: TourGuideMessage = {
       id: `sys_${Date.now()}`,
       role: 'guide',
-      text: `📍 Context switched to ${contextLabel}. What would you like to explore?`,
+      text: `Context switched to ${contextLabel}. What would you like to explore?`,
       timestamp: Date.now()
     };
     setMessages(prev => [...prev, systemNotice]);
@@ -235,12 +235,12 @@ export const TourGuidePage: React.FC = () => {
             {guideMode === 'local' ? (
               <>
                 <MapPin className="w-3.5 h-3.5 text-[#487C74] shrink-0" />
-                <span>📍 Near You · Patna, Bihar</span>
+                <span>Near You · Patna, Bihar</span>
               </>
             ) : (
               <>
                 <Plane className="w-3.5 h-3.5 text-[#487C74] shrink-0" />
-                <span className="truncate max-w-[130px]">✈️ {activeTrip?.destination?.name || activeTrip?.title || 'Goa Trip'}</span>
+                <span className="truncate max-w-[130px]">{activeTrip?.destination?.name || activeTrip?.title || 'Goa Trip'}</span>
               </>
             )}
             <ChevronDown className={`w-3.5 h-3.5 text-[#487C74] transition-transform ${isContextDropdownOpen ? 'rotate-180' : ''}`} />
@@ -308,7 +308,7 @@ export const TourGuidePage: React.FC = () => {
       <div className="bg-white border border-[#D9DEDA] rounded-3xl p-5 space-y-2 shadow-sm">
         <div className="flex items-center gap-2 text-[#487C74] font-bold text-xs">
           <Sparkles className="w-4 h-4" />
-          <span>✦ VoyageAI</span>
+          <span>VoyageAI</span>
         </div>
         <h1 className="text-xl sm:text-2xl font-extrabold text-[#1F2522] tracking-tight">
           Your local travel guide
@@ -364,8 +364,8 @@ export const TourGuidePage: React.FC = () => {
       {/* 5. Proactive Alert Toast */}
       {proactiveAlert && guideMode === 'local' && (
         <div className="p-4 rounded-2xl bg-[#E8F0EE] border border-[#487C74]/30 flex items-center gap-3 animate-slideUp shadow-sm">
-          <div className="w-10 h-10 rounded-xl bg-[#487C74]/20 flex items-center justify-center text-lg shrink-0">
-            {getCategoryDisplay(proactiveAlert.category).emoji}
+          <div className="w-10 h-10 rounded-xl bg-[#487C74]/20 flex items-center justify-center shrink-0">
+            <MapPin className="w-5 h-5 text-[#355F58]" />
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-xs font-bold text-[#355F58]">You're near something interesting!</div>

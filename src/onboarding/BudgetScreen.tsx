@@ -5,18 +5,20 @@ import { PreferenceOption } from '../components/preferences/PreferenceOption';
 import { PreferenceProgress } from '../components/preferences/PreferenceProgress';
 import { PreferenceFooter } from '../components/preferences/PreferenceFooter';
 
+import { Wallet, Scale, Sparkles, Crown } from 'lucide-react';
+
 interface OptionItem {
   id: BudgetLevel;
   label: string;
   subtitle: string;
-  icon: string;
+  icon: React.ReactNode;
 }
 
 const BUDGET_TIERS: OptionItem[] = [
-  { id: 'BUDGET', label: '₹ Budget', subtitle: 'Keep it practical & economical', icon: '🎒' },
-  { id: 'MODERATE', label: '₹₹ Moderate', subtitle: 'Comfort without overspending', icon: '⚖️' },
-  { id: 'PREMIUM', label: '₹₹₹ Premium', subtitle: 'Spend for convenience & quality', icon: '🌟' },
-  { id: 'LUXURY', label: '₹₹₹₹ Luxury', subtitle: 'Best available stay & services', icon: '💎' },
+  { id: 'BUDGET', label: '₹ Budget', subtitle: 'Keep it practical & economical', icon: <Wallet className="w-5 h-5 text-teal-400" /> },
+  { id: 'MODERATE', label: '₹₹ Moderate', subtitle: 'Comfort without overspending', icon: <Scale className="w-5 h-5 text-teal-400" /> },
+  { id: 'PREMIUM', label: '₹₹₹ Premium', subtitle: 'Spend for convenience & quality', icon: <Sparkles className="w-5 h-5 text-teal-400" /> },
+  { id: 'LUXURY', label: '₹₹₹₹ Luxury', subtitle: 'Best available stay & services', icon: <Crown className="w-5 h-5 text-teal-400" /> },
 ];
 
 export const BudgetScreen: React.FC = () => {

@@ -27,7 +27,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onNext, onSkip }) 
 
       <div className="space-y-2">
         <h2 className="text-3xl font-extrabold text-white">
-          Welcome, {name} 👋
+          Welcome, {name}
         </h2>
         <p className="text-sm text-slate-400 max-w-xs mx-auto">
           Let's make VoyageAI work better for you in 30 seconds.

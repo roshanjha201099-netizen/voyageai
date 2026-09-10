@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useTrip } from '../../features/trip/TripContext';
 import {
-  Car, ArrowLeft, Navigation, CheckCircle2, Phone, Zap
+  Car, ArrowLeft, Navigation, CheckCircle2, Phone, Zap, Bike, Bus
 } from 'lucide-react';
 
 interface CabOption {
@@ -13,7 +13,7 @@ interface CabOption {
   capacity: string;
   etaMinutes: number;
   estimatedFare: number;
-  image: string;
+  icon: React.ElementType;
   description: string;
 }
 
@@ -65,7 +65,7 @@ export const RidesPage: React.FC = () => {
       capacity: '3 Seats',
       etaMinutes: 2,
       estimatedFare: 120,
-      image: '🛺',
+      icon: Car,
       description: 'Quick & easy local auto for short distances'
     },
     {
@@ -75,7 +75,7 @@ export const RidesPage: React.FC = () => {
       capacity: '1 Seat',
       etaMinutes: 2,
       estimatedFare: 85,
-      image: '🛵',
+      icon: Bike,
       description: 'Fastest single rider transit through traffic'
     },
     {
@@ -85,7 +85,7 @@ export const RidesPage: React.FC = () => {
       capacity: '4 Seats · AC',
       etaMinutes: 4,
       estimatedFare: 260,
-      image: '🚗',
+      icon: Car,
       description: 'Affordable everyday rides for small groups'
     },
     {
@@ -95,7 +95,7 @@ export const RidesPage: React.FC = () => {
       capacity: '4 Seats · AC · Extra Boot',
       etaMinutes: 3,
       estimatedFare: 380,
-      image: '🚘',
+      icon: Car,
       description: 'Top-rated spacious sedans with experienced drivers'
     },
     {
@@ -105,7 +105,7 @@ export const RidesPage: React.FC = () => {
       capacity: '6 Seats · AC · Heavy Luggage',
       etaMinutes: 6,
       estimatedFare: 650,
-      image: '🚐',
+      icon: Bus,
       description: 'Spacious 6-seater for family & group outings'
     }
   ];
@@ -262,6 +262,7 @@ export const RidesPage: React.FC = () => {
         <div className="space-y-2.5">
           {vehicleOptions.map((v) => {
             const isSelected = selectedVehicleType === v.type;
+            const VehicleIcon = v.icon;
             return (
               <div
                 key={v.id}
@@ -273,7 +274,9 @@ export const RidesPage: React.FC = () => {
                 }`}
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="text-3xl shrink-0">{v.image}</div>
+                  <div className="w-10 h-10 rounded-xl bg-[#F0F2EF] border border-[#D9DEDA] flex items-center justify-center shrink-0">
+                    <VehicleIcon className="w-5 h-5 text-[#355F58]" />
+                  </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <h3 className="font-extrabold text-sm text-[#1F2522] truncate">{v.name}</h3>

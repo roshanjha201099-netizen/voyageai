@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useTrip } from '../../features/trip/TripContext';
 import type { NavTab } from '../../types';
-import { Home, MapPin, Compass, Sparkles } from 'lucide-react';
+import { Home, MapPin, Compass, Sparkles, UtensilsCrossed, Car, Wallet } from 'lucide-react';
 
 export const DesktopSidebar: React.FC = () => {
   const { activeTab, setActiveTab, openAiAssistant } = useApp();
@@ -87,7 +87,7 @@ export const DesktopSidebar: React.FC = () => {
               className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white hover:bg-[#E8F0EE] text-xs font-bold text-[#1F2522] border border-[#D9DEDA] transition-all"
             >
               <span className="flex items-center gap-2">
-                <span>📍</span>
+                <MapPin className="w-3.5 h-3.5 text-[#355F58]" />
                 <span>Route Map</span>
               </span>
               <span className="text-[10px] text-[#355F58] font-mono font-bold">Live</span>
@@ -101,7 +101,7 @@ export const DesktopSidebar: React.FC = () => {
               className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white hover:bg-[#E8F0EE] text-xs font-bold text-[#1F2522] border border-[#D9DEDA] transition-all"
             >
               <span className="flex items-center gap-2">
-                <span>🍽️</span>
+                <UtensilsCrossed className="w-3.5 h-3.5 text-[#355F58]" />
                 <span>Food Guide</span>
               </span>
               <span className="text-[10px] text-amber-700 font-mono font-bold">Local</span>
@@ -115,7 +115,7 @@ export const DesktopSidebar: React.FC = () => {
               className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white hover:bg-[#E8F0EE] text-xs font-bold text-[#1F2522] border border-[#D9DEDA] transition-all"
             >
               <span className="flex items-center gap-2">
-                <span>🚕</span>
+                <Car className="w-3.5 h-3.5 text-[#355F58]" />
                 <span>Rides & Cabs</span>
               </span>
               <span className="text-[10px] text-[#355F58] font-mono font-bold">Instant</span>
@@ -130,7 +130,7 @@ export const DesktopSidebar: React.FC = () => {
               className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white hover:bg-[#E8F0EE] text-xs font-bold text-[#1F2522] border border-[#D9DEDA] transition-all"
             >
               <span className="flex items-center gap-2">
-                <span>💰</span>
+                <Wallet className="w-3.5 h-3.5 text-[#355F58]" />
                 <span>Expense Ledger</span>
               </span>
               <span className="text-[10px] text-[#355F58] font-mono font-bold">Budget</span>

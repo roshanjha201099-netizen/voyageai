@@ -126,7 +126,7 @@ class LocationService {
         onLocationUpdate(point, shouldSync);
       },
       (err) => {
-        console.warn('[LOCATION SERVICE] ⚠️ Watcher error:', err.message);
+        console.warn('[LOCATION SERVICE] Watcher error:', err.message);
         if (onError) onError(err);
       },
       {

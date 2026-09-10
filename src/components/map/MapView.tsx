@@ -444,7 +444,7 @@ export const MapView: React.FC = () => {
                     : 'bg-[#F0F2EF] text-[#1F2522] border border-[#D9DEDA]'
                 }`}
               >
-                🏨 Trip Base / Stay
+                Trip Base / Stay
               </button>
               <button
                 type="button"
@@ -455,7 +455,7 @@ export const MapView: React.FC = () => {
                     : 'bg-[#F0F2EF] text-[#1F2522] border border-[#D9DEDA]'
                 }`}
               >
-                📍 Live GPS ({distKm.toFixed(0)} km)
+                Live GPS ({distKm.toFixed(0)} km)
               </button>
             </div>
           </div>

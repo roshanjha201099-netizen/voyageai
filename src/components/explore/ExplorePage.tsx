@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Compass, Star, Sparkles, MapPin, ArrowRight } from 'lucide-react';
+import { Compass, Star, Sparkles, MapPin, ArrowRight, Building2, Car } from 'lucide-react';
 import { mockTourPackages } from '../../data/mockData';
 import { PackageDetailView } from '../travel/PackageDetailView';
 import type { TourPackage } from '../../types';
@@ -91,12 +91,12 @@ export const ExplorePage: React.FC = () => {
               <p className="text-xs text-slate-300 line-clamp-2">{pkg.tagline}</p>
 
               {/* Package Inclusions Preview */}
-              <div className="p-2.5 rounded-xl bg-white/5 border border-white/5 text-xs text-slate-300 flex flex-wrap gap-2">
-                <span>🏨 {pkg.inclusions.hotelName.split(' ')[0]}</span>
+              <div className="p-2.5 rounded-xl bg-white/5 border border-white/5 text-xs text-slate-300 flex items-center flex-wrap gap-2">
+                <span className="flex items-center gap-1"><Building2 className="w-3.5 h-3.5 text-teal-400" /> {pkg.inclusions.hotelName.split(' ')[0]}</span>
                 <span>•</span>
-                <span>✈️ {pkg.inclusions.transfersCount} Transfers</span>
+                <span className="flex items-center gap-1"><Car className="w-3.5 h-3.5 text-teal-400" /> {pkg.inclusions.transfersCount} Transfers</span>
                 <span>•</span>
-                <span>🏖 {pkg.inclusions.activitiesCount} Activities</span>
+                <span className="flex items-center gap-1"><Compass className="w-3.5 h-3.5 text-teal-400" /> {pkg.inclusions.activitiesCount} Activities</span>
               </div>
 
               {/* Pricing & CTA */}

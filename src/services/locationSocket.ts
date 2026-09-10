@@ -72,13 +72,13 @@ class LocationSocketClient {
       url += `?${params.toString()}`;
     }
 
-    console.log(`🔌 [LOCATION SOCKET] Connecting to ${url}...`);
+    console.log(`[LOCATION SOCKET] Connecting to ${url}...`);
 
     try {
       this.ws = new WebSocket(url);
 
       this.ws.onopen = () => {
-        console.log('✅ [LOCATION SOCKET] Connected successfully!');
+        console.log('[LOCATION SOCKET] Connected successfully!');
         this.isConnecting = false;
         this.reconnectAttempts = 0;
 
@@ -97,16 +97,16 @@ class LocationSocketClient {
             this.broadcastListeners.forEach(cb => cb(data));
           }
         } catch (err) {
-          console.warn('⚠️ [LOCATION SOCKET] Message parse error:', err);
+          console.warn('[LOCATION SOCKET] Message parse error:', err);
         }
       };
 
       this.ws.onerror = (err) => {
-        console.warn('⚠️ [LOCATION SOCKET] Error:', err);
+        console.warn('[LOCATION SOCKET] Error:', err);
       };
 
       this.ws.onclose = (event) => {
-        console.log(`🔌 [LOCATION SOCKET] Closed (code: ${event.code})`);
+        console.log(`[LOCATION SOCKET] Closed (code: ${event.code})`);
         this.ws = null;
         this.isConnecting = false;
 
@@ -116,7 +116,7 @@ class LocationSocketClient {
         }
       };
     } catch (err) {
-      console.warn('⚠️ [LOCATION SOCKET] Connection exception:', err);
+      console.warn('[LOCATION SOCKET] Connection exception:', err);
       this.isConnecting = false;
       this.scheduleReconnect();
     }
@@ -126,7 +126,7 @@ class LocationSocketClient {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectAttempts++;
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts - 1), 10000);
-    console.log(`🔄 [LOCATION SOCKET] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
+    console.log(`[LOCATION SOCKET] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
     this.reconnectTimer = setTimeout(() => {
       this.connect();
     }, delay);
@@ -140,7 +140,7 @@ class LocationSocketClient {
         this.ws.send(JSON.stringify(payload));
         return true;
       } catch (err) {
-        console.warn('⚠️ [LOCATION SOCKET] Send error:', err);
+        console.warn('[LOCATION SOCKET] Send error:', err);
         return false;
       }
     } else {

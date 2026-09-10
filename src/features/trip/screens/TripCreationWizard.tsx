@@ -240,7 +240,7 @@ export const TripCreationWizard: React.FC = () => {
                   Where are you going?
                 </h2>
                 <span className="px-2.5 py-1 rounded-full bg-teal-500/20 text-teal-300 text-[10px] font-extrabold border border-teal-500/30">
-                  🇮🇳 India Region Only
+                  India Region Only
                 </span>
               </div>
               <p className="text-sm text-slate-400">
@@ -433,10 +433,10 @@ export const TripCreationWizard: React.FC = () => {
 
             <div className="grid grid-cols-2 gap-2.5">
               {[
-                { label: 'Just me 👤', count: 1 },
-                { label: '2 travelers 👥', count: 2 },
-                { label: '3–5 travelers 👨‍👩‍👧', count: 4 },
-                { label: '6+ travelers 🚌', count: 6 },
+                { label: 'Just me', count: 1 },
+                { label: '2 travelers', count: 2 },
+                { label: '3–5 travelers', count: 4 },
+                { label: '6+ travelers', count: 6 },
               ].map(preset => (
                 <button
                   key={preset.count}
@@ -502,12 +502,12 @@ export const TripCreationWizard: React.FC = () => {
 
             <div className="grid grid-cols-2 gap-2.5">
               {[
-                { id: 'RELAXED', label: 'Relaxed 🌴' },
-                { id: 'ADVENTURE', label: 'Adventure 🏄' },
-                { id: 'FOODIE', label: 'Foodie 🍜' },
-                { id: 'CULTURE', label: 'Culture 🏛' },
-                { id: 'NATURE', label: 'Nature 🌿' },
-                { id: 'LUXURY', label: 'Luxury ✨' },
+                { id: 'RELAXED', label: 'Relaxed' },
+                { id: 'ADVENTURE', label: 'Adventure' },
+                { id: 'FOODIE', label: 'Foodie' },
+                { id: 'CULTURE', label: 'Culture' },
+                { id: 'NATURE', label: 'Nature' },
+                { id: 'LUXURY', label: 'Luxury' },
               ].map(item => (
                 <PreferenceOption
                   key={item.id}

@@ -100,24 +100,24 @@ export async function setCurrentVisit(placeId: string): Promise<void> {
 }
 
 // Category display config
-export const CATEGORY_CONFIG: Record<string, { emoji: string; label: string; color: string }> = {
-  historic: { emoji: '🏛️', label: 'Historic', color: '#F59E0B' },
-  monument: { emoji: '🗿', label: 'Monument', color: '#F59E0B' },
-  fort: { emoji: '🏰', label: 'Fort', color: '#EF4444' },
-  palace: { emoji: '👑', label: 'Palace', color: '#A855F7' },
-  museum: { emoji: '🏛️', label: 'Museum', color: '#3B82F6' },
-  religious: { emoji: '🙏', label: 'Religious', color: '#F97316' },
-  temple: { emoji: '🛕', label: 'Temple', color: '#F97316' },
-  mosque: { emoji: '🕌', label: 'Mosque', color: '#10B981' },
-  church: { emoji: '⛪', label: 'Church', color: '#8B5CF6' },
-  cultural: { emoji: '🎭', label: 'Cultural', color: '#EC4899' },
-  viewpoint: { emoji: '🌄', label: 'Viewpoint', color: '#14B8A6' },
-  park: { emoji: '🌳', label: 'Park', color: '#22C55E' },
-  market: { emoji: '🛍️', label: 'Market', color: '#F59E0B' },
-  ruins: { emoji: '🏚️', label: 'Ruins', color: '#78716C' },
-  archaeological: { emoji: '⛏️', label: 'Archaeological', color: '#92400E' },
-  tourism: { emoji: '📍', label: 'Attraction', color: '#14B8A6' },
-  food_landmark: { emoji: '🍽️', label: 'Food Landmark', color: '#EF4444' },
+export const CATEGORY_CONFIG: Record<string, { label: string; color: string }> = {
+  historic: { label: 'Historic', color: '#F59E0B' },
+  monument: { label: 'Monument', color: '#F59E0B' },
+  fort: { label: 'Fort', color: '#EF4444' },
+  palace: { label: 'Palace', color: '#A855F7' },
+  museum: { label: 'Museum', color: '#3B82F6' },
+  religious: { label: 'Religious', color: '#F97316' },
+  temple: { label: 'Temple', color: '#F97316' },
+  mosque: { label: 'Mosque', color: '#10B981' },
+  church: { label: 'Church', color: '#8B5CF6' },
+  cultural: { label: 'Cultural', color: '#EC4899' },
+  viewpoint: { label: 'Viewpoint', color: '#14B8A6' },
+  park: { label: 'Park', color: '#22C55E' },
+  market: { label: 'Market', color: '#F59E0B' },
+  ruins: { label: 'Ruins', color: '#78716C' },
+  archaeological: { label: 'Archaeological', color: '#92400E' },
+  tourism: { label: 'Attraction', color: '#14B8A6' },
+  food_landmark: { label: 'Food Landmark', color: '#EF4444' },
 };
 
 export function getCategoryDisplay(cat: string) {

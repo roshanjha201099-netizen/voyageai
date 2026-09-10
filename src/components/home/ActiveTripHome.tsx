@@ -233,21 +233,21 @@ export const ActiveTripHome: React.FC<ActiveTripHomeProps> = ({ trip }) => {
             onClick={() => handleContextualAiAction('Make today more relaxed with less travel')}
             className="px-3 py-1.5 rounded-xl bg-slate-900 text-teal-300 text-xs font-semibold border border-teal-500/30 hover:bg-teal-500/20 whitespace-nowrap"
           >
-            ✨ Make More Relaxed
+            Make More Relaxed
           </button>
           <button
             type="button"
             onClick={() => handleContextualAiAction('Find affordable local food options near my current activities')}
             className="px-3 py-1.5 rounded-xl bg-slate-900 text-teal-300 text-xs font-semibold border border-teal-500/30 hover:bg-teal-500/20 whitespace-nowrap"
           >
-            🍜 Find Cheap Local Food
+            Find Cheap Local Food
           </button>
           <button
             type="button"
             onClick={() => handleContextualAiAction('Optimize schedule to avoid peak afternoon heat')}
             className="px-3 py-1.5 rounded-xl bg-slate-900 text-teal-300 text-xs font-semibold border border-teal-500/30 hover:bg-teal-500/20 whitespace-nowrap"
           >
-            ☀️ Avoid Afternoon Heat
+            Avoid Afternoon Heat
           </button>
         </div>
       </div>

@@ -5,19 +5,21 @@ import { PreferenceOption } from '../components/preferences/PreferenceOption';
 import { PreferenceProgress } from '../components/preferences/PreferenceProgress';
 import { PreferenceFooter } from '../components/preferences/PreferenceFooter';
 
+import { Footprints, Bike, Car, Bus } from 'lucide-react';
+
 interface OptionItem {
   id: TransportPreference;
   label: string;
   subtitle: string;
-  icon: string;
+  icon: React.ReactNode;
 }
 
 const TRANSPORTS: OptionItem[] = [
-  { id: 'WALK', label: 'Walk', subtitle: 'Explore streets on foot', icon: '🚶' },
-  { id: 'BIKE', label: 'Bike / Scooter', subtitle: 'Self-ride two wheelers', icon: '🏍️' },
-  { id: 'AUTO', label: 'Auto Rickshaw', subtitle: 'Quick local rides', icon: '🛺' },
-  { id: 'CAB', label: 'Cab / Taxi', subtitle: 'Comfortable air-con rides', icon: '🚕' },
-  { id: 'PUBLIC_TRANSPORT', label: 'Public Transport', subtitle: 'Buses, trains & metros', icon: '🚆' },
+  { id: 'WALK', label: 'Walk', subtitle: 'Explore streets on foot', icon: <Footprints className="w-5 h-5 text-teal-400" /> },
+  { id: 'BIKE', label: 'Bike / Scooter', subtitle: 'Self-ride two wheelers', icon: <Bike className="w-5 h-5 text-teal-400" /> },
+  { id: 'AUTO', label: 'Auto Rickshaw', subtitle: 'Quick local rides', icon: <Car className="w-5 h-5 text-teal-400" /> },
+  { id: 'CAB', label: 'Cab / Taxi', subtitle: 'Comfortable air-con rides', icon: <Car className="w-5 h-5 text-teal-400" /> },
+  { id: 'PUBLIC_TRANSPORT', label: 'Public Transport', subtitle: 'Buses, trains & metros', icon: <Bus className="w-5 h-5 text-teal-400" /> },
 ];
 
 export const TransportScreen: React.FC = () => {

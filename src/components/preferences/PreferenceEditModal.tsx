@@ -9,7 +9,10 @@ import type {
   BudgetLevel
 } from '../../auth/types';
 import { PreferenceOption } from './PreferenceOption';
-import { X, Check } from 'lucide-react';
+import {
+  X, Check, Sun, Compass, UtensilsCrossed, Landmark, Trees, Sparkles, Wallet, Moon,
+  Footprints, Bike, Car, Bus, Apple, Leaf, Utensils, Coffee, Wine, Fish, Scale, Crown, Theater
+} from 'lucide-react';
 
 interface PreferenceEditModalProps {
   isOpen: boolean;
@@ -58,20 +61,20 @@ export const PreferenceEditModal: React.FC<PreferenceEditModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-full bg-slate-800/80 text-slate-400 hover:text-white transition-colors"
+            className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-400 hover:text-white transition-all"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Tab Pills */}
         <div className="flex items-center gap-1.5 p-3 overflow-x-auto no-scrollbar border-b border-slate-800/60 bg-slate-900/40">
           {[
-            { id: 'vibe', label: 'Vibe 🌴' },
-            { id: 'transport', label: 'Transport 🚕' },
-            { id: 'food', label: 'Food 🍲' },
-            { id: 'activities', label: 'Activities 🏄' },
-            { id: 'budget', label: 'Budget 💎' },
+            { id: 'vibe', label: 'Vibe' },
+            { id: 'transport', label: 'Transport' },
+            { id: 'food', label: 'Food' },
+            { id: 'activities', label: 'Activities' },
+            { id: 'budget', label: 'Budget' },
           ].map(tab => (
             <button
               key={tab.id}
@@ -97,14 +100,14 @@ export const PreferenceEditModal: React.FC<PreferenceEditModalProps> = ({
               <span className="text-xs font-semibold text-slate-400 uppercase">Travel Vibe</span>
               <div className="grid grid-cols-2 gap-2.5">
                 {[
-                  { id: 'RELAXED', label: 'Relaxed', icon: '🌴' },
-                  { id: 'ADVENTURE', label: 'Adventure', icon: '🏄' },
-                  { id: 'FOODIE', label: 'Foodie', icon: '🍜' },
-                  { id: 'CULTURE', label: 'Culture', icon: '🏛' },
-                  { id: 'NATURE', label: 'Nature', icon: '🌿' },
-                  { id: 'LUXURY', label: 'Luxury', icon: '✨' },
-                  { id: 'BUDGET', label: 'Budget', icon: '🎒' },
-                  { id: 'NIGHTLIFE', label: 'Nightlife', icon: '🌃' },
+                  { id: 'RELAXED', label: 'Relaxed', icon: <Sun className="w-5 h-5 text-teal-400" /> },
+                  { id: 'ADVENTURE', label: 'Adventure', icon: <Compass className="w-5 h-5 text-teal-400" /> },
+                  { id: 'FOODIE', label: 'Foodie', icon: <UtensilsCrossed className="w-5 h-5 text-teal-400" /> },
+                  { id: 'CULTURE', label: 'Culture', icon: <Landmark className="w-5 h-5 text-teal-400" /> },
+                  { id: 'NATURE', label: 'Nature', icon: <Trees className="w-5 h-5 text-teal-400" /> },
+                  { id: 'LUXURY', label: 'Luxury', icon: <Sparkles className="w-5 h-5 text-teal-400" /> },
+                  { id: 'BUDGET', label: 'Budget', icon: <Wallet className="w-5 h-5 text-teal-400" /> },
+                  { id: 'NIGHTLIFE', label: 'Nightlife', icon: <Moon className="w-5 h-5 text-teal-400" /> },
                 ].map(item => (
                   <PreferenceOption
                     key={item.id}
@@ -127,11 +130,11 @@ export const PreferenceEditModal: React.FC<PreferenceEditModalProps> = ({
               <span className="text-xs font-semibold text-slate-400 uppercase">Getting Around</span>
               <div className="space-y-2.5">
                 {[
-                  { id: 'WALK', label: 'Walk', icon: '🚶' },
-                  { id: 'BIKE', label: 'Bike / Scooter', icon: '🏍️' },
-                  { id: 'AUTO', label: 'Auto Rickshaw', icon: '🛺' },
-                  { id: 'CAB', label: 'Cab / Taxi', icon: '🚕' },
-                  { id: 'PUBLIC_TRANSPORT', label: 'Public Transport', icon: '🚆' },
+                  { id: 'WALK', label: 'Walk', icon: <Footprints className="w-5 h-5 text-teal-400" /> },
+                  { id: 'BIKE', label: 'Bike / Scooter', icon: <Bike className="w-5 h-5 text-teal-400" /> },
+                  { id: 'AUTO', label: 'Auto Rickshaw', icon: <Car className="w-5 h-5 text-teal-400" /> },
+                  { id: 'CAB', label: 'Cab / Taxi', icon: <Car className="w-5 h-5 text-teal-400" /> },
+                  { id: 'PUBLIC_TRANSPORT', label: 'Public Transport', icon: <Bus className="w-5 h-5 text-teal-400" /> },
                 ].map(item => (
                   <PreferenceOption
                     key={item.id}
@@ -155,10 +158,10 @@ export const PreferenceEditModal: React.FC<PreferenceEditModalProps> = ({
                 <span className="text-xs font-semibold text-slate-400 uppercase">Primary Diet</span>
                 <div className="grid grid-cols-2 gap-2">
                   {[
-                    { id: 'EVERYTHING', label: 'Everything', icon: '🍲' },
-                    { id: 'VEGETARIAN', label: 'Vegetarian', icon: '🥗' },
-                    { id: 'VEGAN', label: 'Vegan', icon: '🌱' },
-                    { id: 'HALAL', label: 'Halal', icon: '🥩' },
+                    { id: 'EVERYTHING', label: 'Everything', icon: <UtensilsCrossed className="w-5 h-5 text-teal-400" /> },
+                    { id: 'VEGETARIAN', label: 'Vegetarian', icon: <Apple className="w-5 h-5 text-teal-400" /> },
+                    { id: 'VEGAN', label: 'Vegan', icon: <Leaf className="w-5 h-5 text-teal-400" /> },
+                    { id: 'HALAL', label: 'Halal', icon: <Utensils className="w-5 h-5 text-teal-400" /> },
                   ].map(item => (
                     <PreferenceOption
                       key={item.id}
@@ -179,10 +182,10 @@ export const PreferenceEditModal: React.FC<PreferenceEditModalProps> = ({
                 <span className="text-xs font-semibold text-slate-400 uppercase">Food Interests</span>
                 <div className="grid grid-cols-2 gap-2">
                   {[
-                    { id: 'LOCAL', label: 'Local Food', icon: '🍛' },
-                    { id: 'STREET_FOOD', label: 'Street Food', icon: '🍢' },
-                    { id: 'FINE_DINING', label: 'Fine Dining', icon: '🍷' },
-                    { id: 'SEAFOOD', label: 'Seafood', icon: '🦐' },
+                    { id: 'LOCAL', label: 'Local Food', icon: <Utensils className="w-5 h-5 text-teal-400" /> },
+                    { id: 'STREET_FOOD', label: 'Street Food', icon: <Coffee className="w-5 h-5 text-teal-400" /> },
+                    { id: 'FINE_DINING', label: 'Fine Dining', icon: <Wine className="w-5 h-5 text-teal-400" /> },
+                    { id: 'SEAFOOD', label: 'Seafood', icon: <Fish className="w-5 h-5 text-teal-400" /> },
                   ].map(item => (
                     <PreferenceOption
                       key={item.id}
@@ -206,12 +209,12 @@ export const PreferenceEditModal: React.FC<PreferenceEditModalProps> = ({
               <span className="text-xs font-semibold text-slate-400 uppercase">Activities</span>
               <div className="grid grid-cols-2 gap-2.5">
                 {[
-                  { id: 'BEACHES', label: 'Beaches', icon: '🏖️' },
-                  { id: 'NATURE', label: 'Nature', icon: '🌿' },
-                  { id: 'HISTORY', label: 'History', icon: '🏛️' },
-                  { id: 'CULTURE', label: 'Culture', icon: '🎭' },
-                  { id: 'ADVENTURE', label: 'Adventure', icon: '🏄‍♂️' },
-                  { id: 'NIGHTLIFE', label: 'Nightlife', icon: '🌃' },
+                  { id: 'BEACHES', label: 'Beaches', icon: <Sun className="w-5 h-5 text-teal-400" /> },
+                  { id: 'NATURE', label: 'Nature', icon: <Trees className="w-5 h-5 text-teal-400" /> },
+                  { id: 'HISTORY', label: 'History', icon: <Landmark className="w-5 h-5 text-teal-400" /> },
+                  { id: 'CULTURE', label: 'Culture', icon: <Theater className="w-5 h-5 text-teal-400" /> },
+                  { id: 'ADVENTURE', label: 'Adventure', icon: <Compass className="w-5 h-5 text-teal-400" /> },
+                  { id: 'NIGHTLIFE', label: 'Nightlife', icon: <Moon className="w-5 h-5 text-teal-400" /> },
                 ].map(item => (
                   <PreferenceOption
                     key={item.id}
@@ -234,10 +237,10 @@ export const PreferenceEditModal: React.FC<PreferenceEditModalProps> = ({
               <span className="text-xs font-semibold text-slate-400 uppercase">Budget Tier</span>
               <div className="space-y-2.5">
                 {[
-                  { id: 'BUDGET', label: '₹ Budget', subtitle: 'Keep it practical & economical', icon: '🎒' },
-                  { id: 'MODERATE', label: '₹₹ Moderate', subtitle: 'Comfort without overspending', icon: '⚖️' },
-                  { id: 'PREMIUM', label: '₹₹₹ Premium', subtitle: 'Spend for convenience & quality', icon: '🌟' },
-                  { id: 'LUXURY', label: '₹₹₹₹ Luxury', subtitle: 'Best available stay & services', icon: '💎' },
+                  { id: 'BUDGET', label: '₹ Budget', subtitle: 'Keep it practical & economical', icon: <Wallet className="w-5 h-5 text-teal-400" /> },
+                  { id: 'MODERATE', label: '₹₹ Moderate', subtitle: 'Comfort without overspending', icon: <Scale className="w-5 h-5 text-teal-400" /> },
+                  { id: 'PREMIUM', label: '₹₹₹ Premium', subtitle: 'Spend for convenience & quality', icon: <Sparkles className="w-5 h-5 text-teal-400" /> },
+                  { id: 'LUXURY', label: '₹₹₹₹ Luxury', subtitle: 'Best available stay & services', icon: <Crown className="w-5 h-5 text-teal-400" /> },
                 ].map(item => (
                   <PreferenceOption
                     key={item.id}

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useTrip } from '../../features/trip/TripContext';
-import { Sparkles, ArrowRight, RefreshCw } from 'lucide-react';
+import { Sparkles, ArrowRight, RefreshCw, AlertCircle } from 'lucide-react';
 
 export const AIPlannerPage: React.FC = () => {
   const { setActiveTab } = useApp();
@@ -68,26 +68,26 @@ export const AIPlannerPage: React.FC = () => {
   };
 
   return (
-    <div className="space-y-8 pb-16 max-w-4xl mx-auto">
+    <div className="space-y-8 pb-16 max-w-4xl mx-auto animate-fadeIn">
       
       {/* Header */}
       <div className="text-center space-y-3">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-slate-300 text-xs font-semibold">
-          <Sparkles className="w-3.5 h-3.5 text-teal-400" />
+        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#E8F0EE] border border-[#D9DEDA] text-[#355F58] text-xs font-bold shadow-xs">
+          <Sparkles className="w-3.5 h-3.5 text-[#355F58]" />
           <span>Interactive AI Travel Planner</span>
         </div>
-        <h1 className="text-3xl sm:text-4xl font-extrabold text-white">
-          Plan your next trip with <span className="text-teal-400">AI</span>
+        <h1 className="text-2xl sm:text-4xl font-extrabold text-[#1F2522] tracking-tight">
+          Plan your trip with <span className="text-[#355F58]">VoyageAI</span>
         </h1>
-        <p className="text-xs sm:text-sm text-slate-400 max-w-xl mx-auto">
-          Describe in natural language or customize preferences. Our AI engine generates complete structured itineraries with stays, cabs, and activities.
+        <p className="text-xs sm:text-sm text-[#5F6863] max-w-xl mx-auto font-medium">
+          Describe in natural language or customize options below. Our AI engine builds personalized itineraries with stays, rides, and activities.
         </p>
       </div>
 
       {/* Input Box */}
-      <div className="glass-panel p-6 rounded-3xl border border-white/10 space-y-4 bg-[#111622]">
-        <div className="flex items-center gap-2 text-xs font-bold text-slate-300 uppercase tracking-wider">
-          <Sparkles className="w-3.5 h-3.5 text-teal-400" />
+      <div className="p-6 rounded-3xl border border-[#D9DEDA] space-y-4 bg-white shadow-xs text-[#1F2522]">
+        <div className="flex items-center gap-2 text-xs font-extrabold text-[#355F58] uppercase tracking-wider">
+          <Sparkles className="w-3.5 h-3.5 text-[#355F58]" />
           <span>Natural Language Prompt</span>
         </div>
 
@@ -96,68 +96,68 @@ export const AIPlannerPage: React.FC = () => {
           value={naturalPrompt}
           onChange={(e) => setNaturalPrompt(e.target.value)}
           placeholder="e.g. I want to visit Goa for 4 days with 3 friends. Budget is ₹25,000 per person. We love beaches, seafood, and historic forts."
-          className="w-full glass-input rounded-2xl p-4 text-xs sm:text-sm focus:border-teal-500 text-white"
+          className="w-full bg-[#F0F2EF] border border-[#D9DEDA] focus:border-[#355F58] rounded-2xl p-4 text-xs sm:text-sm text-[#1F2522] font-medium outline-none"
         />
 
         {/* Form Fields */}
-        <div className="pt-4 border-t border-white/10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
+        <div className="pt-4 border-t border-[#D9DEDA] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
           
           <div className="space-y-1">
-            <label className="text-slate-400 font-medium">Destination</label>
+            <label className="text-[#5F6863] font-bold">Destination</label>
             <input 
               type="text" 
               value={destination} 
               onChange={(e) => setDestination(e.target.value)} 
-              className="w-full glass-input rounded-xl px-3 py-2 text-white"
+              className="w-full bg-[#F0F2EF] border border-[#D9DEDA] focus:border-[#355F58] rounded-2xl px-3.5 py-2.5 text-[#1F2522] font-semibold outline-none"
             />
           </div>
 
           <div className="space-y-1">
-            <label className="text-slate-400 font-medium">Starting Location</label>
+            <label className="text-[#5F6863] font-bold">Starting Location</label>
             <input 
               type="text" 
               value={startLocation} 
               onChange={(e) => setStartLocation(e.target.value)} 
-              className="w-full glass-input rounded-xl px-3 py-2 text-white"
+              className="w-full bg-[#F0F2EF] border border-[#D9DEDA] focus:border-[#355F58] rounded-2xl px-3.5 py-2.5 text-[#1F2522] font-semibold outline-none"
             />
           </div>
 
           <div className="space-y-1">
-            <label className="text-slate-400 font-medium">Travel Dates</label>
+            <label className="text-[#5F6863] font-bold">Travel Dates</label>
             <input 
               type="text" 
               value={dates} 
               onChange={(e) => setDates(e.target.value)} 
-              className="w-full glass-input rounded-xl px-3 py-2 text-white"
+              className="w-full bg-[#F0F2EF] border border-[#D9DEDA] focus:border-[#355F58] rounded-2xl px-3.5 py-2.5 text-[#1F2522] font-semibold outline-none"
             />
           </div>
 
           <div className="space-y-1">
-            <label className="text-slate-400 font-medium">No. of Travellers</label>
+            <label className="text-[#5F6863] font-bold">No. of Travellers</label>
             <input 
               type="number" 
               value={travellers} 
               onChange={(e) => setTravellers(Number(e.target.value))} 
-              className="w-full glass-input rounded-xl px-3 py-2 text-white"
+              className="w-full bg-[#F0F2EF] border border-[#D9DEDA] focus:border-[#355F58] rounded-2xl px-3.5 py-2.5 text-[#1F2522] font-semibold outline-none"
             />
           </div>
 
           <div className="space-y-1">
-            <label className="text-slate-400 font-medium">Max Budget (₹)</label>
+            <label className="text-[#5F6863] font-bold">Max Budget (₹)</label>
             <input 
               type="number" 
               value={budget} 
               onChange={(e) => setBudget(Number(e.target.value))} 
-              className="w-full glass-input rounded-xl px-3 py-2 text-white font-mono"
+              className="w-full bg-[#F0F2EF] border border-[#D9DEDA] focus:border-[#355F58] rounded-2xl px-3.5 py-2.5 text-[#1F2522] font-mono font-bold outline-none"
             />
           </div>
 
           <div className="space-y-1">
-            <label className="text-slate-400 font-medium">Travel Style</label>
+            <label className="text-[#5F6863] font-bold">Travel Style</label>
             <select 
               value={travelStyle} 
               onChange={(e) => setTravelStyle(e.target.value)} 
-              className="w-full glass-input rounded-xl px-3 py-2 text-white bg-[#0C101A]"
+              className="w-full bg-[#F0F2EF] border border-[#D9DEDA] focus:border-[#355F58] rounded-2xl px-3.5 py-2.5 text-[#1F2522] font-semibold outline-none cursor-pointer"
             >
               <option>Balanced Explorer</option>
               <option>Relaxed Luxury</option>
@@ -169,8 +169,9 @@ export const AIPlannerPage: React.FC = () => {
         </div>
 
         {plannerError && (
-          <div className="p-3.5 rounded-2xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs font-semibold flex items-center gap-2">
-            <span>⚠️ {plannerError}</span>
+          <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{plannerError}</span>
           </div>
         )}
 
@@ -179,16 +180,16 @@ export const AIPlannerPage: React.FC = () => {
           <button
             onClick={handleGenerate}
             disabled={isGenerating}
-            className="px-6 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs shadow-sm flex items-center gap-2 transition-all disabled:opacity-50"
+            className="px-6 py-3 rounded-2xl bg-[#355F58] hover:bg-[#2C504A] text-white font-extrabold text-xs shadow-xs flex items-center gap-2 transition-all disabled:opacity-50 press-scale"
           >
             {isGenerating ? (
               <>
-                <RefreshCw className="w-4 h-4 animate-spin" />
+                <RefreshCw className="w-4 h-4 animate-spin text-white" />
                 <span>Generating Itinerary...</span>
               </>
             ) : (
               <>
-                <Sparkles className="w-4 h-4" />
+                <Sparkles className="w-4 h-4 text-white" />
                 <span>Generate Itinerary</span>
               </>
             )}
@@ -199,10 +200,10 @@ export const AIPlannerPage: React.FC = () => {
 
       {/* GENERATING STEPPER LOADER */}
       {isGenerating && (
-        <div className="glass-panel p-8 rounded-3xl text-center space-y-3 border border-white/10 bg-[#111622]">
-          <Sparkles className="w-8 h-8 text-teal-400 animate-pulse mx-auto" />
-          <h3 className="text-base font-bold text-white">Generating Itinerary...</h3>
-          <p className="text-xs font-mono text-slate-400">{stepText}</p>
+        <div className="p-8 rounded-3xl text-center space-y-3 border border-[#D9DEDA] bg-white shadow-xs">
+          <Sparkles className="w-8 h-8 text-[#355F58] animate-pulse mx-auto" />
+          <h3 className="text-base font-extrabold text-[#1F2522]">Generating Itinerary...</h3>
+          <p className="text-xs font-mono text-[#5F6863]">{stepText}</p>
         </div>
       )}
 
@@ -211,51 +212,51 @@ export const AIPlannerPage: React.FC = () => {
         <div className="space-y-6 animate-fadeIn">
           
           {/* Summary Banner */}
-          <div className="glass-panel p-6 rounded-3xl border border-white/10 bg-[#111622] flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="p-6 rounded-3xl border border-[#D9DEDA] bg-white flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xs">
             <div>
               <div className="flex items-center gap-2">
-                <span className="px-2.5 py-0.5 rounded-full bg-teal-500/10 text-teal-300 text-xs font-bold uppercase border border-teal-500/20">
+                <span className="px-2.5 py-0.5 rounded-full bg-[#E8F0EE] text-[#355F58] text-xs font-extrabold uppercase border border-[#D9DEDA]">
                   AI Plan Ready
                 </span>
-                <span className="text-xs text-slate-400">{dates}</span>
+                <span className="text-xs text-[#5F6863] font-medium">{dates}</span>
               </div>
-              <h2 className="text-2xl font-extrabold text-white mt-1">{destination} 4-Day Getaway</h2>
-              <p className="text-xs text-slate-300 mt-1">
-                Estimated Budget: <span className="font-mono font-bold text-teal-400">₹{budget.toLocaleString()}</span> for {travellers} travellers ({travelStyle})
+              <h2 className="text-2xl font-extrabold text-[#1F2522] mt-1">{destination} 4-Day Getaway</h2>
+              <p className="text-xs text-[#5F6863] mt-1 font-medium">
+                Estimated Budget: <span className="font-mono font-bold text-[#355F58]">₹{budget.toLocaleString()}</span> for {travellers} travellers ({travelStyle})
               </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
               <button 
                 onClick={handleGenerate}
-                className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-slate-300 border border-white/10 flex items-center gap-1.5"
+                className="px-4 py-2.5 rounded-2xl bg-[#F0F2EF] hover:bg-[#E4E8E4] text-xs font-bold text-[#1F2522] border border-[#D9DEDA] flex items-center gap-1.5 transition-all"
               >
-                <RefreshCw className="w-3.5 h-3.5" /> Regenerate
+                <RefreshCw className="w-3.5 h-3.5 text-[#355F58]" /> Regenerate
               </button>
               <button 
                 onClick={handleApplyToActiveTrip}
-                className="px-6 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs shadow-sm flex items-center gap-1.5"
+                className="px-6 py-2.5 rounded-2xl bg-[#355F58] hover:bg-[#2C504A] text-white font-extrabold text-xs shadow-xs flex items-center gap-1.5 transition-all press-scale"
               >
                 <span>Save & Open Dashboard</span>
-                <ArrowRight className="w-4 h-4" />
+                <ArrowRight className="w-4 h-4 text-white" />
               </button>
             </div>
           </div>
 
-          <div className="glass-panel p-6 rounded-2xl border border-teal-500/30 bg-[#080B11] space-y-4">
-            <div className="flex items-center gap-3 text-teal-400">
+          <div className="p-6 rounded-3xl border border-[#D9DEDA] bg-[#E8F0EE] space-y-4 shadow-xs">
+            <div className="flex items-center gap-3 text-[#355F58]">
               <Sparkles className="w-5 h-5" />
-              <h3 className="font-extrabold text-white text-base">Gemini AI Generated Your Package</h3>
+              <h3 className="font-extrabold text-[#1F2522] text-base">VoyageAI Generated Your Package</h3>
             </div>
-            <p className="text-xs text-slate-300">
-              Your 4-day itinerary for <strong>{destination}</strong> has been generated with Pydantic validation and stored in PostgreSQL.
+            <p className="text-xs text-[#5F6863] font-medium">
+              Your 4-day itinerary for <strong>{destination}</strong> has been generated and stored safely.
             </p>
             <button
               onClick={handleApplyToActiveTrip}
-              className="w-full py-3 bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-xs rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
+              className="w-full py-3.5 bg-[#355F58] hover:bg-[#2C504A] text-white font-extrabold text-xs rounded-2xl shadow-xs transition-all flex items-center justify-center gap-2 press-scale"
             >
               <span>View Full Trip Package Dashboard</span>
-              <ArrowRight className="w-4 h-4" />
+              <ArrowRight className="w-4 h-4 text-white" />
             </button>
           </div>
 

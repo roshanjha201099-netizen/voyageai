@@ -5,24 +5,26 @@ import { PreferenceOption } from '../components/preferences/PreferenceOption';
 import { PreferenceProgress } from '../components/preferences/PreferenceProgress';
 import { PreferenceFooter } from '../components/preferences/PreferenceFooter';
 
+import { Sun, Trees, Landmark, Theater, Compass, ShoppingBag, Moon, Camera, Heart, UtensilsCrossed } from 'lucide-react';
+
 interface OptionItem {
   id: ActivityInterest;
   label: string;
   subtitle: string;
-  icon: string;
+  icon: React.ReactNode;
 }
 
 const ACTIVITIES: OptionItem[] = [
-  { id: 'BEACHES', label: 'Beaches', subtitle: 'Sand, sea, ocean sunsets', icon: '🏖️' },
-  { id: 'NATURE', label: 'Nature & Parks', subtitle: 'Hikes, waterfalls, greenery', icon: '🌿' },
-  { id: 'HISTORY', label: 'History & Forts', subtitle: 'Heritage monuments & ruins', icon: '🏛️' },
-  { id: 'CULTURE', label: 'Culture & Arts', subtitle: 'Temples, museums, local crafts', icon: '🎭' },
-  { id: 'ADVENTURE', label: 'Adventure Sports', subtitle: 'Trekking, rafting, water sports', icon: '🏄‍♂️' },
-  { id: 'SHOPPING', label: 'Local Shopping', subtitle: 'Bazaars, flea markets, souvenirs', icon: '🛍️' },
-  { id: 'NIGHTLIFE', label: 'Nightlife & Parties', subtitle: 'Beach shacks, clubs, live music', icon: '🌃' },
-  { id: 'PHOTOGRAPHY', label: 'Photography', subtitle: 'Scenic spots & viewpoints', icon: '📸' },
-  { id: 'WELLNESS', label: 'Wellness & Spa', subtitle: 'Yoga, relaxation, massageries', icon: '🧘‍♀️' },
-  { id: 'FOOD', label: 'Culinary Experiences', subtitle: 'Food walks & tasting tours', icon: '🍜' },
+  { id: 'BEACHES', label: 'Beaches', subtitle: 'Sand, sea, ocean sunsets', icon: <Sun className="w-5 h-5 text-teal-400" /> },
+  { id: 'NATURE', label: 'Nature & Parks', subtitle: 'Hikes, waterfalls, greenery', icon: <Trees className="w-5 h-5 text-teal-400" /> },
+  { id: 'HISTORY', label: 'History & Forts', subtitle: 'Heritage monuments & ruins', icon: <Landmark className="w-5 h-5 text-teal-400" /> },
+  { id: 'CULTURE', label: 'Culture & Arts', subtitle: 'Temples, museums, local crafts', icon: <Theater className="w-5 h-5 text-teal-400" /> },
+  { id: 'ADVENTURE', label: 'Adventure Sports', subtitle: 'Trekking, rafting, water sports', icon: <Compass className="w-5 h-5 text-teal-400" /> },
+  { id: 'SHOPPING', label: 'Local Shopping', subtitle: 'Bazaars, flea markets, souvenirs', icon: <ShoppingBag className="w-5 h-5 text-teal-400" /> },
+  { id: 'NIGHTLIFE', label: 'Nightlife & Parties', subtitle: 'Beach shacks, clubs, live music', icon: <Moon className="w-5 h-5 text-teal-400" /> },
+  { id: 'PHOTOGRAPHY', label: 'Photography', subtitle: 'Scenic spots & viewpoints', icon: <Camera className="w-5 h-5 text-teal-400" /> },
+  { id: 'WELLNESS', label: 'Wellness & Spa', subtitle: 'Yoga, relaxation, massageries', icon: <Heart className="w-5 h-5 text-teal-400" /> },
+  { id: 'FOOD', label: 'Culinary Experiences', subtitle: 'Food walks & tasting tours', icon: <UtensilsCrossed className="w-5 h-5 text-teal-400" /> },
 ];
 
 export const ActivitiesScreen: React.FC = () => {

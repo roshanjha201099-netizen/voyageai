@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useTrip } from '../../features/trip/TripContext';
 import {
-  Wallet, ArrowLeft, Plus, PieChart, Sparkles
+  Wallet, ArrowLeft, Plus, PieChart, Sparkles, Car, Building2, UtensilsCrossed, ShoppingBag, Compass, CreditCard, X
 } from 'lucide-react';
 import type { Expense } from '../../types';
 
@@ -85,14 +85,14 @@ export const ExpensesPage: React.FC = () => {
     setShowAddModal(false);
   };
 
-  const getCatEmoji = (cat: string) => {
+  const getCatIcon = (cat: string) => {
     switch (cat) {
-      case 'Transport': return '🚕';
-      case 'Hotel': return '🏨';
-      case 'Food': return '🍽️';
-      case 'Shopping': return '🛍️';
-      case 'Activities': return '🎯';
-      default: return '💰';
+      case 'Transport': return <Car className="w-4 h-4 text-[#355F58]" />;
+      case 'Hotel': return <Building2 className="w-4 h-4 text-[#355F58]" />;
+      case 'Food': return <UtensilsCrossed className="w-4 h-4 text-[#355F58]" />;
+      case 'Shopping': return <ShoppingBag className="w-4 h-4 text-[#355F58]" />;
+      case 'Activities': return <Compass className="w-4 h-4 text-[#355F58]" />;
+      default: return <CreditCard className="w-4 h-4 text-[#355F58]" />;
     }
   };
 
@@ -184,8 +184,8 @@ export const ExpensesPage: React.FC = () => {
           {Object.entries(categoryTotals).map(([cat, val]) => (
             <div key={cat} className="p-3.5 rounded-2xl bg-white border border-[#D9DEDA] space-y-1 shadow-xs">
               <div className="flex items-center justify-between text-xs">
-                <span className="font-bold text-[#1F2522] flex items-center gap-1">
-                  <span>{getCatEmoji(cat)}</span>
+                <span className="font-bold text-[#1F2522] flex items-center gap-1.5">
+                  {getCatIcon(cat)}
                   <span>{cat}</span>
                 </span>
                 <span className="font-extrabold font-mono text-[#355F58]">₹{val.toLocaleString()}</span>
@@ -217,8 +217,8 @@ export const ExpensesPage: React.FC = () => {
               className="p-3.5 rounded-2xl bg-white border border-[#D9DEDA] hover:border-[#355F58]/30 transition-all flex items-center justify-between gap-3 shadow-xs"
             >
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-2xl bg-[#F0F2EF] flex items-center justify-center text-lg shrink-0 border border-[#D9DEDA]">
-                  {getCatEmoji(exp.category)}
+                <div className="w-10 h-10 rounded-2xl bg-[#F0F2EF] flex items-center justify-center shrink-0 border border-[#D9DEDA]">
+                  {getCatIcon(exp.category)}
                 </div>
 
                 <div className="min-w-0">
@@ -258,7 +258,7 @@ export const ExpensesPage: React.FC = () => {
                 onClick={() => setShowAddModal(false)}
                 className="text-[#5F6863] hover:text-[#1F2522]"
               >
-                ✕
+                <X className="w-5 h-5" />
               </button>
             </div>
 

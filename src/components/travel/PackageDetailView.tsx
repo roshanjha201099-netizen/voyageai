@@ -88,7 +88,10 @@ export const PackageDetailView: React.FC<PackageDetailProps> = ({ pkg, onClose }
             <div className="p-4 rounded-2xl bg-[#11161F] border border-white/10 flex items-center gap-4">
               <img src={pkg.inclusions.hotelImage} alt={pkg.inclusions.hotelName} className="w-20 h-20 rounded-xl object-cover shrink-0" />
               <div className="space-y-1">
-                <span className="text-[10px] font-bold text-teal-400 uppercase tracking-wider">★ {pkg.inclusions.hotelRating} Luxury Resort</span>
+                <span className="text-[10px] font-bold text-teal-400 uppercase tracking-wider flex items-center gap-1">
+                  <Star className="w-3 h-3 fill-teal-400 text-teal-400" />
+                  <span>{pkg.inclusions.hotelRating} Luxury Resort</span>
+                </span>
                 <h4 className="font-bold text-sm text-white">{pkg.inclusions.hotelName}</h4>
                 <p className="text-xs text-slate-400">{pkg.nights} Nights Stay Included</p>
               </div>

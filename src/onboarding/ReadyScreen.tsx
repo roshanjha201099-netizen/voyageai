@@ -24,7 +24,7 @@ export const ReadyScreen: React.FC = () => {
 
       <div className="space-y-3 max-w-xs mx-auto">
         <h2 className="text-3xl font-extrabold text-white tracking-tight">
-          You're all set ✨
+          You're all set
         </h2>
         <p className="text-sm text-slate-400 leading-relaxed">
           We'll use your preferences to make your trips, food, and ride recommendations feel tailored just for you, {userProfile?.firstName || 'Traveler'}.
