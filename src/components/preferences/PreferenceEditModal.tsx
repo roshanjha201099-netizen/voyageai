@@ -64,8 +64,8 @@ export const PreferenceEditModal: React.FC<PreferenceEditModalProps> = ({
   const presetBudgetChips = [15000, 30000, 50000, 100000, 150000];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-[#1F2522]/50 backdrop-blur-xs animate-fadeIn">
-      <div className="w-full max-w-lg bg-white border border-[#D9DEDA] rounded-3xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden my-auto text-[#1F2522]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 pb-[80px] lg:pb-6 bg-[#1F2522]/50 backdrop-blur-xs animate-fadeIn">
+      <div className="w-full max-w-lg bg-white border border-[#D9DEDA] rounded-3xl max-h-[calc(100dvh-100px)] lg:max-h-[85vh] flex flex-col shadow-2xl overflow-hidden my-auto text-[#1F2522]">
         
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-[#D9DEDA] shrink-0 bg-white">
