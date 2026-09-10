@@ -4,9 +4,16 @@ import { wsClient } from '../services/wsClient';
 const SESSION_CACHE_KEY = 'voyageai_session_data';
 
 const getApiBaseUrl = (): string => {
-  const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
-  const host = window.location.hostname || '127.0.0.1';
-  return `${protocol}//${host}:8000`;
+  const envApiUrl = import.meta.env.VITE_API_URL;
+  if (envApiUrl) {
+    return envApiUrl;
+  }
+  const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+  if (isLocalhost) {
+    const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
+    return `${protocol}//${window.location.hostname}:8000`;
+  }
+  return 'https://voyageai-wp2o.onrender.com';
 };
 
 export const authService = {

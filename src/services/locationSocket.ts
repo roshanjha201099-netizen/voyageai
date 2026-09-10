@@ -61,9 +61,19 @@ class LocationSocketClient {
     }
 
     this.isConnecting = true;
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = '127.0.0.1:8000';
-    let url = `${protocol}//${host}/ws/location`;
+    const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+    const envWsUrl = import.meta.env.VITE_WS_URL;
+
+    let baseUrl = '';
+    if (isLocalhost) {
+      baseUrl = 'ws://127.0.0.1:8000/ws/location';
+    } else if (envWsUrl) {
+      baseUrl = envWsUrl.replace('/ws/tour-app', '/ws/location');
+    } else {
+      baseUrl = 'wss://voyageai-wp2o.onrender.com/ws/location';
+    }
+
+    let url = baseUrl;
 
     const params = new URLSearchParams();
     if (this.currentTripId) params.append('trip_id', this.currentTripId);
