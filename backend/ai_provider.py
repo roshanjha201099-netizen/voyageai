@@ -976,6 +976,10 @@ Return ONLY valid JSON matching this schema:
 
         formatted_messages = "\n".join([f"{m.get('role', 'user').upper()}: {m.get('text', '')}" for m in messages[-6:]])
 
+        nearby_str = ""
+        if trip_context.get("nearbyPlaces"):
+            nearby_str = f"\n- User Physical Location & Real Nearby Spots: {json.dumps(trip_context.get('nearbyPlaces'))}"
+
         prompt = f"""
 You are VoyageAI's expert travel concierge assistant. Provide helpful, concise, contextual travel advice for {dest_name}, India.
 
@@ -983,13 +987,13 @@ TRIP CONTEXT:
 - Destination: {dest_name}
 - Total Days: {trip_context.get('totalDays', 4)}
 - Budget Tier: {trip_context.get('budgetLevel', 'MODERATE')}
-- Current Active Itinerary: {json.dumps(trip_context.get('currentItinerarySummary', 'Not provided'))}
+- Current Active Itinerary: {json.dumps(trip_context.get('currentItinerarySummary', 'Not provided'))}{nearby_str}
 
 CONVERSATION HISTORY:
 {formatted_messages}
 
 INSTRUCTION:
-Answer the user's latest query directly, accurately, and naturally. If the query logically relates to food/dining, cab/ride bookings, map navigation, or tracking expenses, specify an `actionType` ("food", "cab", "map", "expense").
+Answer the user's latest query directly, accurately, naturally, and warmly. If the user asks about places/food near them, refer to the verified nearby spots or local region. If the query logically relates to food/dining, cab/ride bookings, map navigation, or tracking expenses, specify an `actionType` ("food", "cab", "map", "expense").
 Return ONLY valid JSON matching this schema:
 {{
   "reply": "Conversational, helpful response string",
@@ -1011,7 +1015,17 @@ Return ONLY valid JSON matching this schema:
                     text = re.sub(r"^```(?:json)?\n?", "", text, flags=re.IGNORECASE)
                     text = re.sub(r"\n?```$", "", text)
                 data = json.loads(text)
-                if "reply" in data:
+                if isinstance(data, dict) and "reply" in data:
+                    raw_reply = data["reply"]
+                    if isinstance(raw_reply, dict):
+                        data["reply"] = raw_reply.get("reply") or raw_reply.get("text") or str(raw_reply)
+                    elif isinstance(raw_reply, str) and raw_reply.strip().startswith("{") and raw_reply.strip().endswith("}"):
+                        try:
+                            sub_json = json.loads(raw_reply.strip())
+                            if isinstance(sub_json, dict) and "reply" in sub_json:
+                                data["reply"] = sub_json["reply"]
+                        except Exception:
+                            pass
                     return data
         except Exception as err:
             print(f"[GEMINI CHAT WARN] Gemini chat error: {err}. Using MockAIProvider fallback.", flush=True)

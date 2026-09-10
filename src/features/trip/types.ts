@@ -107,6 +107,7 @@ export interface TripDraft {
   travelersCount?: number;
   tripStyle?: TravelStyle[];
   budgetLevel?: BudgetLevel;
+  customBudgetAmount?: number;
   currentStep?: number;
   updatedAt?: string;
 }
@@ -120,6 +121,7 @@ export interface CreateTripPayload {
   travelersCount: number;
   tripStyle?: TravelStyle[];
   budgetLevel?: BudgetLevel;
+  customBudgetAmount?: number;
 }
 
 export type PackageItemStatus = 'RECOMMENDED' | 'SELECTED' | 'PENDING' | 'CONFIRMED' | 'CANCELLED';

@@ -20,23 +20,23 @@ interface FoodTypeItem {
 }
 
 const DIETARY_OPTIONS: DietItem[] = [
-  { id: 'EVERYTHING', label: 'Everything', icon: <UtensilsCrossed className="w-5 h-5 text-teal-400" /> },
-  { id: 'VEGETARIAN', label: 'Vegetarian', icon: <Apple className="w-5 h-5 text-teal-400" /> },
-  { id: 'VEGAN', label: 'Vegan', icon: <Leaf className="w-5 h-5 text-teal-400" /> },
-  { id: 'JAIN', label: 'Jain', icon: <Leaf className="w-5 h-5 text-teal-400" /> },
-  { id: 'HALAL', label: 'Halal', icon: <Utensils className="w-5 h-5 text-teal-400" /> },
-  { id: 'GLUTEN_FREE', label: 'Gluten Free', icon: <Wheat className="w-5 h-5 text-teal-400" /> },
-  { id: 'OTHER', label: 'Other', icon: <Utensils className="w-5 h-5 text-teal-400" /> },
+  { id: 'EVERYTHING', label: 'Everything', icon: <UtensilsCrossed className="w-5 h-5 text-[#355F58]" /> },
+  { id: 'VEGETARIAN', label: 'Vegetarian', icon: <Apple className="w-5 h-5 text-[#355F58]" /> },
+  { id: 'VEGAN', label: 'Vegan', icon: <Leaf className="w-5 h-5 text-[#355F58]" /> },
+  { id: 'JAIN', label: 'Jain', icon: <Leaf className="w-5 h-5 text-[#355F58]" /> },
+  { id: 'HALAL', label: 'Halal', icon: <Utensils className="w-5 h-5 text-[#355F58]" /> },
+  { id: 'GLUTEN_FREE', label: 'Gluten Free', icon: <Wheat className="w-5 h-5 text-[#355F58]" /> },
+  { id: 'OTHER', label: 'Other', icon: <Utensils className="w-5 h-5 text-[#355F58]" /> },
 ];
 
 const FOOD_INTERESTS: FoodTypeItem[] = [
-  { id: 'LOCAL', label: 'Local Food', icon: <Utensils className="w-5 h-5 text-teal-400" /> },
-  { id: 'STREET_FOOD', label: 'Street Food', icon: <UtensilsCrossed className="w-5 h-5 text-teal-400" /> },
-  { id: 'CAFE', label: 'Cafes & Bakery', icon: <Coffee className="w-5 h-5 text-teal-400" /> },
-  { id: 'FINE_DINING', label: 'Fine Dining', icon: <Wine className="w-5 h-5 text-teal-400" /> },
-  { id: 'FAST_FOOD', label: 'Fast Food', icon: <Utensils className="w-5 h-5 text-teal-400" /> },
-  { id: 'DESSERTS', label: 'Desserts', icon: <Cake className="w-5 h-5 text-teal-400" /> },
-  { id: 'SEAFOOD', label: 'Seafood', icon: <Fish className="w-5 h-5 text-teal-400" /> },
+  { id: 'LOCAL', label: 'Local Food', icon: <Utensils className="w-5 h-5 text-[#355F58]" /> },
+  { id: 'STREET_FOOD', label: 'Street Food', icon: <UtensilsCrossed className="w-5 h-5 text-[#355F58]" /> },
+  { id: 'CAFE', label: 'Cafes & Bakery', icon: <Coffee className="w-5 h-5 text-[#355F58]" /> },
+  { id: 'FINE_DINING', label: 'Fine Dining', icon: <Wine className="w-5 h-5 text-[#355F58]" /> },
+  { id: 'FAST_FOOD', label: 'Fast Food', icon: <Utensils className="w-5 h-5 text-[#355F58]" /> },
+  { id: 'DESSERTS', label: 'Desserts', icon: <Cake className="w-5 h-5 text-[#355F58]" /> },
+  { id: 'SEAFOOD', label: 'Seafood', icon: <Fish className="w-5 h-5 text-[#355F58]" /> },
 ];
 
 export const FoodScreen: React.FC = () => {
@@ -94,17 +94,17 @@ export const FoodScreen: React.FC = () => {
       <PreferenceProgress currentStep={3} totalSteps={5} />
 
       <div className="space-y-1">
-        <h2 className="text-2xl font-bold text-white tracking-tight">
+        <h2 className="text-2xl font-bold text-[#1F2522] tracking-tight">
           What should we keep in mind for food?
         </h2>
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-[#5F6863] font-medium">
           Select dietary needs & types of food you enjoy.
         </p>
       </div>
 
       {/* Dietary Section */}
       <div className="space-y-3">
-        <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+        <span className="text-xs font-bold uppercase tracking-wider text-[#5F6863]">
           Primary Diet
         </span>
         <div className="grid grid-cols-2 gap-2.5">
@@ -124,7 +124,7 @@ export const FoodScreen: React.FC = () => {
 
       {/* Food Interests */}
       <div className="space-y-3 pt-2">
-        <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+        <span className="text-xs font-bold uppercase tracking-wider text-[#5F6863]">
           Food Types You Love (Optional)
         </span>
         <div className="grid grid-cols-2 gap-2.5">

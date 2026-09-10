@@ -116,6 +116,8 @@ class ConciergeRequest(BaseModel):
     activityId: Optional[str] = None
     messages: Optional[List[ConciergeMessageItem]] = None
     tripContext: Optional[dict] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 class ActivityReplacementPayload(BaseModel):
     name: str
@@ -1000,10 +1002,134 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
 
     # 5. AI Concierge
     elif reqname == "ai:concierge":
-        from ai_provider import ai_provider
+        from ai_provider import ai_provider_service
         concierge_req = ConciergeRequest(**data)
-        ans = ai_provider.generate_concierge_reply(concierge_req)
-        return ans
+
+        # Build context if tripId is present
+        trip_context = concierge_req.tripContext or {}
+        itinerary_summary = []
+        if concierge_req.tripId:
+            trip = db.query(TripModel).filter(TripModel.id == concierge_req.tripId).first()
+            if trip:
+                destination_info = trip.destination if isinstance(trip.destination, dict) else {"name": str(trip.destination or "India")}
+                if not trip_context:
+                    trip_context = {
+                        "destination": destination_info,
+                        "totalDays": trip.total_days,
+                        "budgetLevel": (trip.budget or {}).get("level", "MODERATE") if isinstance(trip.budget, dict) else "MODERATE",
+                        "startDate": trip.start_date,
+                        "endDate": trip.end_date
+                    }
+
+                itin = db.query(ItineraryModel).filter(ItineraryModel.trip_id == trip.id).first()
+                if itin:
+                    days = db.query(ItineraryDayModel).filter(ItineraryDayModel.itinerary_id == itin.id).all()
+                    for d in days:
+                        acts = db.query(ItineraryActivityModel).filter(ItineraryActivityModel.day_id == d.id).all()
+                        itinerary_summary.append({
+                            "dayNumber": d.day_number,
+                            "date": d.date,
+                            "activities": [
+                                {
+                                    "id": a.id,
+                                    "timeSlot": a.time_slot,
+                                    "title": a.title,
+                                    "estimatedCostInr": a.estimated_cost_inr,
+                                    "locationName": a.location_name
+                                } for a in acts
+                            ]
+                        })
+
+        # Add physical user location POI context if latitude and longitude are supplied
+        lat = concierge_req.latitude if concierge_req.latitude is not None else (data.get("latitude") or data.get("lat"))
+        lng = concierge_req.longitude if concierge_req.longitude is not None else (data.get("longitude") or data.get("lng"))
+        if lat is not None and lng is not None:
+            try:
+                from tour_guide_service import search_nearby_pois
+                nearby = search_nearby_pois(float(lat), float(lng), 5000)
+                if nearby:
+                    trip_context["nearbyPlaces"] = [
+                        f"{p['name']} ({p['category']}, {p['distanceMeters']}m away)"
+                        for p in nearby[:8]
+                    ]
+                    trip_context["userLocation"] = {"latitude": float(lat), "longitude": float(lng)}
+            except Exception as e:
+                print(f"[CONCIERGE WARN] Nearby POI search error: {e}", flush=True)
+
+        if concierge_req.intent == "SWAP_ACTIVITY" and concierge_req.activityId:
+            activity = db.query(ItineraryActivityModel).filter(ItineraryActivityModel.id == concierge_req.activityId).first()
+            if activity:
+                day = db.query(ItineraryDayModel).filter(ItineraryDayModel.id == activity.day_id).first()
+                current_activity_dict = {
+                    "id": activity.id,
+                    "title": activity.title,
+                    "description": activity.description,
+                    "timeSlot": activity.time_slot,
+                    "locationName": activity.location_name,
+                    "latitude": activity.latitude,
+                    "longitude": activity.longitude,
+                    "estimatedCostInr": activity.estimated_cost_inr,
+                    "date": day.date if day else ""
+                }
+                recommendations = ai_provider_service.generate_swap_recommendations(current_activity_dict, trip_context)
+                return {
+                    "type": "activity_swap_recommendations",
+                    "tripId": concierge_req.tripId,
+                    "itineraryId": concierge_req.itineraryId,
+                    "dayId": concierge_req.dayId,
+                    "activityId": concierge_req.activityId,
+                    "currentActivity": current_activity_dict,
+                    "recommendations": recommendations
+                }
+
+        elif concierge_req.intent == "REFINE_ITINERARY":
+            actions = ai_provider_service.generate_refinement_actions(concierge_req.message, {"context": trip_context, "days": itinerary_summary})
+            return {
+                "type": "refinement_actions",
+                "tripId": concierge_req.tripId,
+                "actions": actions
+            }
+
+        # Default to GENERAL_CHAT / CHAT
+        messages_list = []
+        if concierge_req.messages:
+            for m in concierge_req.messages:
+                messages_list.append({"role": m.role if hasattr(m, 'role') else m.get('role', 'user'), "text": m.text if hasattr(m, 'text') else m.get('text', '')})
+        else:
+            messages_list = [{"role": "user", "text": concierge_req.message}]
+
+        chat_res = ai_provider_service.generate_chat_response(
+            messages=messages_list,
+            trip_context=trip_context
+        )
+        if isinstance(chat_res, dict):
+            raw_reply = chat_res.get("reply") or chat_res.get("text") or "How can I help with your journey?"
+            if isinstance(raw_reply, dict):
+                reply_str = raw_reply.get("reply") or raw_reply.get("text") or str(raw_reply)
+            elif isinstance(raw_reply, str) and raw_reply.strip().startswith("{") and raw_reply.strip().endswith("}"):
+                try:
+                    parsed_sub = json.loads(raw_reply.strip())
+                    if isinstance(parsed_sub, dict) and "reply" in parsed_sub:
+                        reply_str = parsed_sub["reply"]
+                    else:
+                        reply_str = raw_reply
+                except Exception:
+                    reply_str = raw_reply
+            else:
+                reply_str = str(raw_reply)
+            action_type = chat_res.get("actionType")
+            action_payload = chat_res.get("actionPayload")
+        else:
+            reply_str = str(chat_res)
+            action_type = None
+            action_payload = None
+
+        return {
+            "type": "chat_response",
+            "reply": reply_str,
+            "actionType": action_type,
+            "actionPayload": action_payload
+        }
 
     else:
         raise ValueError(f"Unknown WebSocket request action: [{reqname}]")

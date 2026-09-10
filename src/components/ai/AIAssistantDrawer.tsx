@@ -5,6 +5,7 @@ import { BottomSheet } from '../common/BottomSheet';
 import { Send, Map, Utensils, Car, Wallet, Sparkles, CheckCircle2, AlertCircle, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { wsClient } from '../../services/wsClient';
+import { FormattedText } from '../common/FormattedText';
 
 interface SwapRecommendation {
   id: string;
@@ -89,13 +90,30 @@ export const AIAssistantSheet: React.FC = () => {
     }
   };
 
-  const handleSend = async (text?: string) => {
-    const msg = text || input.trim();
-    if (!msg) return;
+  const [userCoords, setUserCoords] = useState<{ latitude: number; longitude: number } | null>(null);
 
-    const userMsg: Message = { id: `u-${Date.now()}`, role: 'user', text: msg };
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => setUserCoords({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+        () => {},
+        { timeout: 5000 }
+      );
+    }
+  }, []);
+
+  const handleSend = async (textToSend?: string) => {
+    const msg = textToSend || input;
+    if (!msg.trim() || isSubmitting) return;
+
+    const userMsg: Message = {
+      id: `user-${Date.now()}`,
+      role: 'user',
+      text: msg
+    };
+
     setMessages(prev => [...prev, userMsg]);
-    setInput('');
+    if (!textToSend) setInput('');
     setIsSubmitting(true);
 
     try {
@@ -111,6 +129,8 @@ export const AIAssistantSheet: React.FC = () => {
         itineraryId: swapContext?.itineraryId || currentItinerary?.id,
         dayId: swapContext?.dayId,
         activityId: swapContext?.activityId,
+        latitude: userCoords?.latitude,
+        longitude: userCoords?.longitude,
         messages: messages.slice(-6).map(m => ({ role: m.role === 'user' ? 'user' : 'model', text: m.text }))
       };
 
@@ -282,7 +302,7 @@ export const AIAssistantSheet: React.FC = () => {
                       ? 'bg-[#355F58] text-white font-bold rounded-br-none'
                       : 'bg-white border border-[#D9DEDA] text-[#1F2522] font-medium rounded-bl-none'
                   }`}>
-                    <p className="whitespace-pre-line text-xs">{msg.text}</p>
+                    <FormattedText content={msg.text} isUserMessage={msg.role === 'user'} />
 
                     {/* Structured Activity Swap Recommendation Cards */}
                     {msg.role === 'ai' && msg.recommendations && msg.recommendations.length > 0 && (

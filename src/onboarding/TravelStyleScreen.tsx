@@ -15,14 +15,14 @@ interface OptionItem {
 }
 
 const TRAVEL_STYLES: OptionItem[] = [
-  { id: 'RELAXED', label: 'Relaxed', subtitle: 'Unwind, beaches, slow pace', icon: <Sun className="w-5 h-5 text-teal-400" /> },
-  { id: 'ADVENTURE', label: 'Adventure', subtitle: 'Hiking, sports, thrill-seeking', icon: <Compass className="w-5 h-5 text-teal-400" /> },
-  { id: 'FOODIE', label: 'Foodie', subtitle: 'Street food, fine dining, cafes', icon: <UtensilsCrossed className="w-5 h-5 text-teal-400" /> },
-  { id: 'CULTURE', label: 'Culture', subtitle: 'History, museums, traditions', icon: <Landmark className="w-5 h-5 text-teal-400" /> },
-  { id: 'NATURE', label: 'Nature', subtitle: 'Wildlife, mountains, scenic views', icon: <Trees className="w-5 h-5 text-teal-400" /> },
-  { id: 'LUXURY', label: 'Luxury', subtitle: 'Resorts, spas, premium comfort', icon: <Sparkles className="w-5 h-5 text-teal-400" /> },
-  { id: 'BUDGET', label: 'Budget', subtitle: 'Smart spends, hostels, local routes', icon: <Wallet className="w-5 h-5 text-teal-400" /> },
-  { id: 'NIGHTLIFE', label: 'Nightlife', subtitle: 'Clubs, lounge bars, evening vibe', icon: <Moon className="w-5 h-5 text-teal-400" /> },
+  { id: 'RELAXED', label: 'Relaxed', subtitle: 'Unwind, beaches, slow pace', icon: <Sun className="w-5 h-5 text-[#355F58]" /> },
+  { id: 'ADVENTURE', label: 'Adventure', subtitle: 'Hiking, sports, thrill-seeking', icon: <Compass className="w-5 h-5 text-[#355F58]" /> },
+  { id: 'FOODIE', label: 'Foodie', subtitle: 'Street food, fine dining, cafes', icon: <UtensilsCrossed className="w-5 h-5 text-[#355F58]" /> },
+  { id: 'CULTURE', label: 'Culture', subtitle: 'History, museums, traditions', icon: <Landmark className="w-5 h-5 text-[#355F58]" /> },
+  { id: 'NATURE', label: 'Nature', subtitle: 'Wildlife, mountains, scenic views', icon: <Trees className="w-5 h-5 text-[#355F58]" /> },
+  { id: 'LUXURY', label: 'Luxury', subtitle: 'Resorts, spas, premium comfort', icon: <Sparkles className="w-5 h-5 text-[#355F58]" /> },
+  { id: 'BUDGET', label: 'Budget', subtitle: 'Smart spends, hostels, local routes', icon: <Wallet className="w-5 h-5 text-[#355F58]" /> },
+  { id: 'NIGHTLIFE', label: 'Nightlife', subtitle: 'Clubs, lounge bars, evening vibe', icon: <Moon className="w-5 h-5 text-[#355F58]" /> },
 ];
 
 export const TravelStyleScreen: React.FC = () => {
@@ -66,10 +66,10 @@ export const TravelStyleScreen: React.FC = () => {
       <PreferenceProgress currentStep={1} totalSteps={5} />
 
       <div className="space-y-1">
-        <h2 className="text-2xl font-bold text-white tracking-tight">
+        <h2 className="text-2xl font-bold text-[#1F2522] tracking-tight">
           What's your travel vibe?
         </h2>
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-[#5F6863] font-medium">
           Pick up to 3 that sound most like you.
         </p>
       </div>

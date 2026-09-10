@@ -54,9 +54,9 @@ CATEGORY_WEIGHTS = {
     "food_landmark": 4,
 }
 
-# Overpass query for interesting POIs
+# Overpass query for interesting POIs (optimized query with 5s timeout)
 OVERPASS_QUERY_TEMPLATE = """
-[out:json][timeout:12];
+[out:json][timeout:5];
 (
   node["historic"](around:{radius},{lat},{lng});
   way["historic"](around:{radius},{lat},{lng});
@@ -69,9 +69,8 @@ OVERPASS_QUERY_TEMPLATE = """
   node["man_made"~"tower|monument|memorial"](around:{radius},{lat},{lng});
   way["man_made"~"tower|monument|memorial"](around:{radius},{lat},{lng});
   node["shop"="marketplace"](around:{radius},{lat},{lng});
-  way["shop"="marketplace"](around:{radius},{lat},{lng});
 );
-out center 60;
+out center 40;
 """
 
 # Overpass response cache: key → (timestamp, results)
@@ -146,6 +145,45 @@ def _extract_name(tags: Dict[str, str]) -> Optional[str]:
     )
 
 
+def _fetch_nominatim_location(lat: float, lng: float) -> List[Dict[str, Any]]:
+    """Fast Nominatim reverse-geocoding fallback if Overpass times out."""
+    try:
+        url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lng}&format=json&zoom=16"
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": "VoyageAI-TourGuide/1.0 (contact@voyageai.local)"}
+        )
+        with urllib.request.urlopen(req, timeout=4) as response:
+            if response.status == 200:
+                data = json.loads(response.read().decode("utf-8"))
+                addr = data.get("address", {})
+                place_name = (
+                    data.get("name") or
+                    addr.get("amenity") or
+                    addr.get("historic") or
+                    addr.get("village") or
+                    addr.get("town") or
+                    addr.get("suburb") or
+                    addr.get("county") or
+                    "Local Area"
+                )
+                display_name = data.get("display_name", place_name)
+                return [{
+                    "id": f"tg_nom_{hashlib.md5(display_name.encode()).hexdigest()[:8]}",
+                    "name": place_name,
+                    "category": "tourism",
+                    "latitude": lat,
+                    "longitude": lng,
+                    "distanceMeters": 0,
+                    "address": display_name,
+                    "source": "nominatim_fallback",
+                    "dataReliability": "VERIFIED"
+                }]
+    except Exception as e:
+        print(f"[TOUR GUIDE WARN] Nominatim fallback failed: {e}", flush=True)
+    return []
+
+
 def search_nearby_pois(lat: float, lng: float, radius_m: int = 5000) -> List[Dict[str, Any]]:
     """
     Search for real nearby POIs using the Overpass API (OpenStreetMap).
@@ -168,7 +206,8 @@ def search_nearby_pois(lat: float, lng: float, radius_m: int = 5000) -> List[Dic
     endpoints = [
         "https://overpass-api.de/api/interpreter",
         "https://overpass.kumi.systems/api/interpreter",
-        "https://overpass.private.coffee/api/interpreter"
+        "https://overpass.private.coffee/api/interpreter",
+        "https://overpass.nchc.org.tw/api/interpreter"
     ]
 
     raw = None
@@ -181,7 +220,7 @@ def search_nearby_pois(lat: float, lng: float, radius_m: int = 5000) -> List[Dic
                 headers={"User-Agent": "VoyageAI-TourGuide/1.0 (contact@voyageai.local)"},
                 method="POST"
             )
-            with urllib.request.urlopen(req, timeout=10) as response:
+            with urllib.request.urlopen(req, timeout=4) as response:
                 if response.status == 200:
                     raw = json.loads(response.read().decode("utf-8"))
                     break
@@ -189,8 +228,11 @@ def search_nearby_pois(lat: float, lng: float, radius_m: int = 5000) -> List[Dic
             print(f"[TOUR GUIDE WARN] Overpass endpoint {url} failed: {e}. Trying fallback...", flush=True)
 
     if not raw:
-        print("[TOUR GUIDE WARN] All Overpass API endpoints timed out or failed.", flush=True)
-        return []
+        print("[TOUR GUIDE WARN] All Overpass API endpoints timed out. Using Nominatim reverse geocode fallback.", flush=True)
+        fallback_places = _fetch_nominatim_location(lat, lng)
+        if fallback_places:
+            _overpass_cache[ck] = (time.time(), fallback_places)
+        return fallback_places
 
     elements = raw.get("elements", [])
     places = []
@@ -409,6 +451,35 @@ STRICT CONVERSATIONAL & CONTEXT RULES:
 """
 
 
+def _clean_reply_text(raw_text: Any) -> str:
+    """Extract clean conversational reply string from raw text, dict, or stringified JSON."""
+    if not raw_text:
+        return "I'm here to help you explore!"
+    
+    if isinstance(raw_text, dict):
+        val = raw_text.get("reply") or raw_text.get("text") or raw_text.get("message")
+        return str(val) if val else str(raw_text)
+    
+    text = str(raw_text).strip()
+    
+    import re
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s*```$", "", text).strip()
+        
+    if text.startswith("{") and text.endswith("}"):
+        try:
+            data = json.loads(text)
+            if isinstance(data, dict):
+                val = data.get("reply") or data.get("text") or data.get("message")
+                if val:
+                    return str(val).strip()
+        except Exception:
+            pass
+            
+    return text
+
+
 def generate_tour_guide_response(
     messages: List[Dict[str, str]],
     place_context: Optional[Dict[str, Any]],
@@ -530,19 +601,24 @@ Respond as the tour guide. Return ONLY valid JSON:
                         text = re.sub(r"\n?```$", "", text)
                     try:
                         data = json.loads(text)
-                        return {
-                            "reply": data.get("reply", "I'm here to help you explore!"),
-                            "suggestedActions": data.get("suggestedActions", []),
-                            "mentionedPlaceId": data.get("mentionedPlaceId"),
-                            "source": "gemini"
-                        }
+                        if isinstance(data, dict):
+                            raw_rep = data.get("reply") or "I'm here to help you explore!"
+                            cleaned = _clean_reply_text(raw_rep)
+                            return {
+                                "reply": cleaned,
+                                "suggestedActions": data.get("suggestedActions", []),
+                                "mentionedPlaceId": data.get("mentionedPlaceId"),
+                                "source": "gemini"
+                            }
                     except Exception:
-                        return {
-                            "reply": text,
-                            "suggestedActions": ["Tell me more", "What's nearby?"],
-                            "mentionedPlaceId": None,
-                            "source": "gemini"
-                        }
+                        pass
+                    
+                    return {
+                        "reply": _clean_reply_text(text),
+                        "suggestedActions": ["Tell me more", "What's nearby?"],
+                        "mentionedPlaceId": None,
+                        "source": "gemini"
+                    }
     except Exception as err:
         print(f"[TOUR GUIDE WARN] Gemini tour guide error: {err}. Using fallback.", flush=True)
 

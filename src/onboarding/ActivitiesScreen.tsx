@@ -15,16 +15,16 @@ interface OptionItem {
 }
 
 const ACTIVITIES: OptionItem[] = [
-  { id: 'BEACHES', label: 'Beaches', subtitle: 'Sand, sea, ocean sunsets', icon: <Sun className="w-5 h-5 text-teal-400" /> },
-  { id: 'NATURE', label: 'Nature & Parks', subtitle: 'Hikes, waterfalls, greenery', icon: <Trees className="w-5 h-5 text-teal-400" /> },
-  { id: 'HISTORY', label: 'History & Forts', subtitle: 'Heritage monuments & ruins', icon: <Landmark className="w-5 h-5 text-teal-400" /> },
-  { id: 'CULTURE', label: 'Culture & Arts', subtitle: 'Temples, museums, local crafts', icon: <Theater className="w-5 h-5 text-teal-400" /> },
-  { id: 'ADVENTURE', label: 'Adventure Sports', subtitle: 'Trekking, rafting, water sports', icon: <Compass className="w-5 h-5 text-teal-400" /> },
-  { id: 'SHOPPING', label: 'Local Shopping', subtitle: 'Bazaars, flea markets, souvenirs', icon: <ShoppingBag className="w-5 h-5 text-teal-400" /> },
-  { id: 'NIGHTLIFE', label: 'Nightlife & Parties', subtitle: 'Beach shacks, clubs, live music', icon: <Moon className="w-5 h-5 text-teal-400" /> },
-  { id: 'PHOTOGRAPHY', label: 'Photography', subtitle: 'Scenic spots & viewpoints', icon: <Camera className="w-5 h-5 text-teal-400" /> },
-  { id: 'WELLNESS', label: 'Wellness & Spa', subtitle: 'Yoga, relaxation, massageries', icon: <Heart className="w-5 h-5 text-teal-400" /> },
-  { id: 'FOOD', label: 'Culinary Experiences', subtitle: 'Food walks & tasting tours', icon: <UtensilsCrossed className="w-5 h-5 text-teal-400" /> },
+  { id: 'BEACHES', label: 'Beaches', subtitle: 'Sand, sea, ocean sunsets', icon: <Sun className="w-5 h-5 text-[#355F58]" /> },
+  { id: 'NATURE', label: 'Nature & Parks', subtitle: 'Hikes, waterfalls, greenery', icon: <Trees className="w-5 h-5 text-[#355F58]" /> },
+  { id: 'HISTORY', label: 'History & Forts', subtitle: 'Heritage monuments & ruins', icon: <Landmark className="w-5 h-5 text-[#355F58]" /> },
+  { id: 'CULTURE', label: 'Culture & Arts', subtitle: 'Temples, museums, local crafts', icon: <Theater className="w-5 h-5 text-[#355F58]" /> },
+  { id: 'ADVENTURE', label: 'Adventure Sports', subtitle: 'Trekking, rafting, water sports', icon: <Compass className="w-5 h-5 text-[#355F58]" /> },
+  { id: 'SHOPPING', label: 'Local Shopping', subtitle: 'Bazaars, flea markets, souvenirs', icon: <ShoppingBag className="w-5 h-5 text-[#355F58]" /> },
+  { id: 'NIGHTLIFE', label: 'Nightlife & Parties', subtitle: 'Beach shacks, clubs, live music', icon: <Moon className="w-5 h-5 text-[#355F58]" /> },
+  { id: 'PHOTOGRAPHY', label: 'Photography', subtitle: 'Scenic spots & viewpoints', icon: <Camera className="w-5 h-5 text-[#355F58]" /> },
+  { id: 'WELLNESS', label: 'Wellness & Spa', subtitle: 'Yoga, relaxation, massageries', icon: <Heart className="w-5 h-5 text-[#355F58]" /> },
+  { id: 'FOOD', label: 'Culinary Experiences', subtitle: 'Food walks & tasting tours', icon: <UtensilsCrossed className="w-5 h-5 text-[#355F58]" /> },
 ];
 
 export const ActivitiesScreen: React.FC = () => {
@@ -68,11 +68,11 @@ export const ActivitiesScreen: React.FC = () => {
       <PreferenceProgress currentStep={4} totalSteps={5} />
 
       <div className="space-y-1">
-        <h2 className="text-2xl font-bold text-white tracking-tight">
-          What do you love doing on a trip?
+        <h2 className="text-2xl font-bold text-[#1F2522] tracking-tight">
+          What activities excite you?
         </h2>
-        <p className="text-sm text-slate-400">
-          Pick a few favorites you'd enjoy.
+        <p className="text-sm text-[#5F6863] font-medium">
+          Pick your top choices for things to do.
         </p>
       </div>
 

@@ -15,11 +15,11 @@ interface OptionItem {
 }
 
 const TRANSPORTS: OptionItem[] = [
-  { id: 'WALK', label: 'Walk', subtitle: 'Explore streets on foot', icon: <Footprints className="w-5 h-5 text-teal-400" /> },
-  { id: 'BIKE', label: 'Bike / Scooter', subtitle: 'Self-ride two wheelers', icon: <Bike className="w-5 h-5 text-teal-400" /> },
-  { id: 'AUTO', label: 'Auto Rickshaw', subtitle: 'Quick local rides', icon: <Car className="w-5 h-5 text-teal-400" /> },
-  { id: 'CAB', label: 'Cab / Taxi', subtitle: 'Comfortable air-con rides', icon: <Car className="w-5 h-5 text-teal-400" /> },
-  { id: 'PUBLIC_TRANSPORT', label: 'Public Transport', subtitle: 'Buses, trains & metros', icon: <Bus className="w-5 h-5 text-teal-400" /> },
+  { id: 'WALK', label: 'Walk', subtitle: 'Explore streets on foot', icon: <Footprints className="w-5 h-5 text-[#355F58]" /> },
+  { id: 'BIKE', label: 'Bike / Scooter', subtitle: 'Self-ride two wheelers', icon: <Bike className="w-5 h-5 text-[#355F58]" /> },
+  { id: 'AUTO', label: 'Auto Rickshaw', subtitle: 'Quick local rides', icon: <Car className="w-5 h-5 text-[#355F58]" /> },
+  { id: 'CAB', label: 'Cab / Taxi', subtitle: 'Comfortable air-con rides', icon: <Car className="w-5 h-5 text-[#355F58]" /> },
+  { id: 'PUBLIC_TRANSPORT', label: 'Public Transport', subtitle: 'Buses, trains & metros', icon: <Bus className="w-5 h-5 text-[#355F58]" /> },
 ];
 
 export const TransportScreen: React.FC = () => {
@@ -58,10 +58,10 @@ export const TransportScreen: React.FC = () => {
       <PreferenceProgress currentStep={2} totalSteps={5} />
 
       <div className="space-y-1">
-        <h2 className="text-2xl font-bold text-white tracking-tight">
+        <h2 className="text-2xl font-bold text-[#1F2522] tracking-tight">
           How do you like getting around?
         </h2>
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-[#5F6863] font-medium">
           Pick your preferred ways to commute during trips.
         </p>
       </div>

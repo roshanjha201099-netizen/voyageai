@@ -40,6 +40,24 @@ export const TripCreationWizard: React.FC = () => {
   const [travelersCount, setTravelersCount] = useState<number>(2);
   const [selectedStyles, setSelectedStyles] = useState<TravelStyle[]>([]);
   const [selectedBudget, setSelectedBudget] = useState<BudgetLevel>('MODERATE');
+  const [customBudgetAmount, setCustomBudgetAmount] = useState<number>(30000);
+
+  const handleCustomBudgetChange = (amount: number) => {
+    const val = Math.max(0, amount);
+    setCustomBudgetAmount(val);
+    if (val < 20000) setSelectedBudget('BUDGET');
+    else if (val < 45000) setSelectedBudget('MODERATE');
+    else if (val < 90000) setSelectedBudget('PREMIUM');
+    else setSelectedBudget('LUXURY');
+  };
+
+  const handleBudgetTierSelect = (tier: BudgetLevel) => {
+    setSelectedBudget(tier);
+    if (tier === 'BUDGET') setCustomBudgetAmount(15000);
+    else if (tier === 'MODERATE') setCustomBudgetAmount(30000);
+    else if (tier === 'PREMIUM') setCustomBudgetAmount(60000);
+    else if (tier === 'LUXURY') setCustomBudgetAmount(120000);
+  };
 
   // Check draft on mount ONLY ONCE
   useEffect(() => {
@@ -49,7 +67,9 @@ export const TripCreationWizard: React.FC = () => {
         setShowResumePrompt(true);
       } else if (userPreferences) {
         if (userPreferences.travelStyles?.length) setSelectedStyles(userPreferences.travelStyles);
-        if (userPreferences.budgetLevel) setSelectedBudget(userPreferences.budgetLevel);
+        if (userPreferences.budgetLevel) {
+          handleBudgetTierSelect(userPreferences.budgetLevel);
+        }
       }
     }
   }, [draft, userPreferences]);
@@ -112,6 +132,7 @@ export const TripCreationWizard: React.FC = () => {
       if (draft.travelersCount) setTravelersCount(draft.travelersCount);
       if (draft.tripStyle) setSelectedStyles(draft.tripStyle);
       if (draft.budgetLevel) setSelectedBudget(draft.budgetLevel);
+      if (draft.customBudgetAmount) setCustomBudgetAmount(draft.customBudgetAmount);
       if (draft.currentStep) setStep(draft.currentStep);
     }
     setShowResumePrompt(false);
@@ -125,7 +146,8 @@ export const TripCreationWizard: React.FC = () => {
     setEndDate('2026-10-19');
     setTravelersCount(2);
     setSelectedStyles(userPreferences?.travelStyles || []);
-    setSelectedBudget(userPreferences?.budgetLevel || 'MODERATE');
+    const defaultLevel = userPreferences?.budgetLevel || 'MODERATE';
+    handleBudgetTierSelect(defaultLevel);
     setStep(1);
     setShowResumePrompt(false);
   };
@@ -139,6 +161,7 @@ export const TripCreationWizard: React.FC = () => {
       travelersCount,
       tripStyle: selectedStyles,
       budgetLevel: selectedBudget,
+      customBudgetAmount,
       currentStep: nextStep,
     });
   };
@@ -161,13 +184,21 @@ export const TripCreationWizard: React.FC = () => {
       travelersCount,
       tripStyle: selectedStyles,
       budgetLevel: selectedBudget,
+      customBudgetAmount,
     });
     discardDraft();
     navigate(`/trip`);
   };
 
   return (
-    <div className="min-h-dvh bg-[#080B10] text-slate-100 flex flex-col justify-between p-6 max-w-md mx-auto animate-fadeIn relative">
+    <div className="min-h-dvh w-full bg-[#05070E] text-slate-100 flex items-center justify-center p-0 sm:p-6 lg:p-8 relative overflow-x-hidden">
+      {/* Ambient Atmospheric Glow Effects */}
+      <div className="fixed -top-40 -left-40 w-96 h-96 bg-teal-500/10 rounded-full blur-[120px] pointer-events-none" />
+      <div className="fixed -bottom-40 -right-40 w-96 h-96 bg-emerald-500/10 rounded-full blur-[120px] pointer-events-none" />
+      <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-cyan-500/5 rounded-full blur-[150px] pointer-events-none" />
+
+      {/* Main Glassmorphic Mobile/Desktop Container */}
+      <div className="w-full max-w-md sm:max-w-xl bg-[#090D16]/90 sm:backdrop-blur-2xl sm:border sm:border-slate-800/80 sm:shadow-[0_20px_80px_rgba(0,0,0,0.8)] sm:rounded-[32px] p-6 sm:p-8 flex flex-col justify-between min-h-dvh sm:min-h-[820px] relative z-10 animate-fadeIn">
       
       {/* Header */}
       <div className="flex items-center justify-between pt-2 pb-2">
@@ -533,42 +564,91 @@ export const TripCreationWizard: React.FC = () => {
 
         {/* STEP 5: BUDGET & SUMMARY */}
         {step === 5 && (
-          <div className="space-y-6 animate-fadeIn">
+          <div className="space-y-5 animate-fadeIn">
             <PreferenceProgress currentStep={5} totalSteps={5} />
 
             <div className="space-y-1">
               <h2 className="text-2xl font-bold text-white tracking-tight">
-                Trip Budget Tier & Summary
+                Trip Budget & Summary
               </h2>
               <p className="text-sm text-slate-400">
-                Review trip details before creating.
+                Set target budget via slider or direct amount input.
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { id: 'BUDGET', label: '₹ Budget' },
-                { id: 'MODERATE', label: '₹₹ Moderate' },
-                { id: 'PREMIUM', label: '₹₹₹ Premium' },
-                { id: 'LUXURY', label: '₹₹₹₹ Luxury' },
-              ].map(tier => (
-                <button
-                  key={tier.id}
-                  type="button"
-                  onClick={() => setSelectedBudget(tier.id as BudgetLevel)}
-                  className={`
-                    p-3 rounded-xl border text-center font-bold text-xs transition-all
-                    ${selectedBudget === tier.id
-                      ? 'bg-teal-500/15 border-teal-500 text-teal-300'
-                      : 'bg-slate-900 border-slate-800 text-slate-400'
-                    }
-                  `}
-                >
-                  {tier.label}
-                </button>
-              ))}
+            {/* Custom Target Budget Input & Range Slider ("Scroll Budget") */}
+            <div className="space-y-4 bg-slate-900 border border-slate-800 p-5 rounded-3xl text-white shadow-xl">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-300">Target Budget Amount (₹)</label>
+                  <span className="text-[11px] font-semibold text-teal-400 font-mono">
+                    ~₹{Math.round(customBudgetAmount / (Math.max(1, parseInt(calculateDaysNights())) || 1)).toLocaleString()} / day
+                  </span>
+                </div>
+                <div className="relative flex items-center">
+                  <span className="absolute left-3.5 font-extrabold text-teal-400 text-lg font-mono">₹</span>
+                  <input
+                    type="number"
+                    min={5000}
+                    max={500000}
+                    step={1000}
+                    value={customBudgetAmount}
+                    onChange={(e) => handleCustomBudgetChange(Number(e.target.value))}
+                    className="w-full bg-slate-950 border border-slate-700 focus:border-teal-500 rounded-2xl pl-8 pr-4 py-3 text-lg font-extrabold font-mono text-white outline-none"
+                    placeholder="Enter amount (e.g. 30000)"
+                  />
+                </div>
+              </div>
+
+              {/* Scroll Budget Range Slider */}
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center justify-between text-xs text-slate-400 font-bold">
+                  <span>₹5,000</span>
+                  <span className="text-teal-400 font-extrabold font-mono text-sm">₹{customBudgetAmount.toLocaleString()}</span>
+                  <span>₹2,00,000</span>
+                </div>
+                <input
+                  type="range"
+                  min={5000}
+                  max={200000}
+                  step={1000}
+                  value={Math.min(200000, Math.max(5000, customBudgetAmount))}
+                  onChange={(e) => handleCustomBudgetChange(Number(e.target.value))}
+                  className="w-full h-2.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-teal-400"
+                />
+              </div>
+
+              {/* Quick Preset Tiers */}
+              <div className="pt-1">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Budget Tier Presets</span>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: 'BUDGET', label: '₹ Budget', amount: 15000 },
+                    { id: 'MODERATE', label: '₹₹ Moderate', amount: 30000 },
+                    { id: 'PREMIUM', label: '₹₹₹ Premium', amount: 60000 },
+                    { id: 'LUXURY', label: '₹₹₹₹ Luxury', amount: 120000 },
+                  ].map(tier => (
+                    <button
+                      key={tier.id}
+                      type="button"
+                      onClick={() => handleBudgetTierSelect(tier.id as BudgetLevel)}
+                      className={`
+                        p-2.5 rounded-xl border text-center font-bold text-xs transition-all flex flex-col items-center justify-center gap-0.5
+                        ${selectedBudget === tier.id
+                          ? 'bg-teal-500/15 border-teal-500 text-teal-300'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:bg-slate-800'
+                        }
+                      `}
+                    >
+                      <span>{tier.label}</span>
+                      <span className="text-[10px] opacity-75 font-mono">₹{tier.amount.toLocaleString()}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
+            {/* Trip Summary Card */}
             <div className="bg-slate-900/90 border border-teal-500/30 rounded-3xl p-5 space-y-3 shadow-xl">
               <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                 <div>
@@ -586,13 +666,13 @@ export const TripCreationWizard: React.FC = () => {
                   <span className="font-semibold">{travelersCount} Person{travelersCount > 1 ? 's' : ''}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[10px]">Budget Tier</span>
-                  <span className="font-semibold text-teal-400">{selectedBudget}</span>
+                  <span className="text-slate-400 block text-[10px]">Target Budget</span>
+                  <span className="font-semibold text-teal-400 font-mono">₹{customBudgetAmount.toLocaleString()} ({selectedBudget})</span>
                 </div>
               </div>
 
               {selectedStyles.length > 0 && (
-                <div className="pt-1">
+                <div className="pt-1 border-t border-slate-800/80">
                   <span className="text-slate-400 block text-[10px] mb-1">Vibe & Style</span>
                   <div className="flex flex-wrap gap-1">
                     {selectedStyles.map((s, i) => (
@@ -621,5 +701,6 @@ export const TripCreationWizard: React.FC = () => {
         </p>
       </div>
     </div>
+  </div>
   );
 };

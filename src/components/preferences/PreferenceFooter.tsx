@@ -25,10 +25,10 @@ export const PreferenceFooter: React.FC<PreferenceFooterProps> = ({
         onClick={onContinue}
         disabled={disabled || isLoading}
         aria-label={continueText}
-        className="w-full h-14 bg-teal-500 hover:bg-teal-400 active:bg-teal-600 disabled:opacity-50 text-slate-950 font-bold text-base rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-teal-500/20 transition-all select-none touch-manipulation"
+        className="w-full h-14 bg-[#355F58] hover:bg-[#2A4D47] active:bg-[#1F3B36] disabled:opacity-40 text-white font-extrabold text-base rounded-2xl flex items-center justify-center gap-2 shadow-md transition-all select-none touch-manipulation"
       >
         {isLoading ? (
-          <div className="w-5 h-5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+          <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
         ) : (
           <>
             <span>{continueText}</span>
@@ -41,7 +41,7 @@ export const PreferenceFooter: React.FC<PreferenceFooterProps> = ({
         <button
           type="button"
           onClick={onSkip}
-          className="w-full py-2 text-center text-xs font-medium text-slate-400 hover:text-slate-200 transition-colors select-none"
+          className="w-full py-2 text-center text-xs font-semibold text-[#5F6863] hover:text-[#1F2522] transition-colors select-none"
         >
           {skipText}
         </button>

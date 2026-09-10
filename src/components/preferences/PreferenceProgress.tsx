@@ -11,7 +11,7 @@ export const PreferenceProgress: React.FC<PreferenceProgressProps> = ({
 }) => {
   return (
     <div className="flex items-center justify-between gap-4 py-2">
-      <span className="text-xs font-semibold uppercase tracking-wider text-teal-400">
+      <span className="text-xs font-bold uppercase tracking-wider text-[#355F58]">
         Step {currentStep} of {totalSteps}
       </span>
       <div className="flex items-center gap-1.5" aria-label={`Progress: step ${currentStep} of ${totalSteps}`}>
@@ -25,10 +25,10 @@ export const PreferenceProgress: React.FC<PreferenceProgressProps> = ({
               className={`
                 h-1.5 rounded-full transition-all duration-300
                 ${isActive
-                  ? 'w-6 bg-teal-400'
+                  ? 'w-6 bg-[#355F58]'
                   : isDone
-                  ? 'w-2 bg-teal-600/60'
-                  : 'w-2 bg-slate-800'
+                  ? 'w-2 bg-[#487C74]'
+                  : 'w-2 bg-[#D9DEDA]'
                 }
               `}
             />

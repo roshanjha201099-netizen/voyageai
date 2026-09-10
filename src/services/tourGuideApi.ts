@@ -85,8 +85,24 @@ export async function sendTourGuideMessage(
 
   const data = await wsClient.sendRequest('tour_guide:chat', payload);
 
+  let rawReply = data.response || data.reply || 'No response received.';
+  if (typeof rawReply === 'object' && rawReply !== null) {
+    rawReply = rawReply.reply || rawReply.text || JSON.stringify(rawReply);
+  }
+
+  // Parse raw JSON string if returned like {"reply": "..."}
+  let finalReply = String(rawReply).trim();
+  if (finalReply.startsWith('{') && finalReply.endsWith('}')) {
+    try {
+      const parsed = JSON.parse(finalReply);
+      if (parsed && typeof parsed === 'object') {
+        finalReply = parsed.reply || parsed.text || finalReply;
+      }
+    } catch { /* proceed */ }
+  }
+
   return {
-    reply: data.response || data.reply || 'No response received.',
+    reply: finalReply,
     suggestedActions: data.suggestedActions || ['Tell me more', 'What else is nearby?'],
     place: data.active_place || null,
     mode: data.mode || mode,

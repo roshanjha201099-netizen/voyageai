@@ -11,6 +11,7 @@ import {
   getCategoryDisplay, formatDistance,
   type TourPlace, type TourGuideMessage, type GuideMode
 } from '../../services/tourGuideApi';
+import { FormattedText } from '../common/FormattedText';
 
 export const TourGuidePage: React.FC = () => {
   const navigate = useNavigate();
@@ -438,7 +439,7 @@ export const TourGuidePage: React.FC = () => {
                       <span>VoyageAI Guide</span>
                     </div>
                   )}
-                  <p className="whitespace-pre-wrap">{msg.text}</p>
+                  <FormattedText content={msg.text} isUserMessage={msg.role === 'user'} />
                 </div>
               </div>
             ))}

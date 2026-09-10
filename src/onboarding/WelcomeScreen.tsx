@@ -18,18 +18,18 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onNext, onSkip }) 
         <img
           src={userProfile?.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80'}
           alt={name}
-          className="w-full h-full rounded-full object-cover border-4 border-teal-500/30 shadow-2xl"
+          className="w-full h-full rounded-full object-cover border-4 border-[#355F58]/20 shadow-lg"
         />
-        <div className="absolute bottom-0 right-0 p-2 rounded-full bg-teal-500 text-slate-950 shadow-lg">
+        <div className="absolute bottom-0 right-0 p-2 rounded-full bg-[#355F58] text-white shadow-md">
           <Sparkles className="w-4 h-4" />
         </div>
       </div>
 
       <div className="space-y-2">
-        <h2 className="text-3xl font-extrabold text-white">
+        <h2 className="text-3xl font-extrabold text-[#1F2522]">
           Welcome, {name}
         </h2>
-        <p className="text-sm text-slate-400 max-w-xs mx-auto">
+        <p className="text-sm text-[#5F6863] max-w-xs mx-auto font-medium">
           Let's make VoyageAI work better for you in 30 seconds.
         </p>
       </div>
@@ -38,7 +38,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onNext, onSkip }) 
       <div className="space-y-3 pt-4">
         <button
           onClick={onNext}
-          className="cta-primary w-full py-4 text-base shadow-xl shadow-teal-500/25 press-scale"
+          className="w-full h-14 bg-[#355F58] hover:bg-[#2A4D47] text-white font-extrabold text-base rounded-2xl flex items-center justify-center gap-2 shadow-md transition-all select-none touch-manipulation press-scale"
         >
           <span>Let's personalize</span>
           <ArrowRight className="w-5 h-5" />
@@ -46,7 +46,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onNext, onSkip }) 
 
         <button
           onClick={onSkip}
-          className="text-xs font-semibold text-slate-400 hover:text-white transition-colors"
+          className="text-xs font-semibold text-[#5F6863] hover:text-[#1F2522] transition-colors"
         >
           Skip for now
         </button>
