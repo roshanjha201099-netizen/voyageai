@@ -38,9 +38,18 @@ class WebSocketClient {
   private resolveReady: (() => void) | null = null;
 
   constructor() {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.hostname || '127.0.0.1';
-    this.url = `${protocol}//${host}:8000/ws/tour-app`;
+    const envWsUrl = import.meta.env.VITE_WS_URL;
+    if (envWsUrl) {
+      this.url = envWsUrl;
+    } else {
+      const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+      if (isLocalhost) {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        this.url = `${protocol}//${window.location.hostname}:8000/ws/tour-app`;
+      } else {
+        this.url = 'wss://voyageai-wp2o.onrender.com/ws/tour-app';
+      }
+    }
     this.connect();
   }
 
@@ -56,7 +65,7 @@ class WebSocketClient {
       this.ws = new WebSocket(this.url);
 
       this.ws.onopen = () => {
-        console.log('[WS] Connected to ws://127.0.0.1:8000/ws/tour-app');
+        console.log(`[WS] Connected to ${this.url}`);
         this.isConnecting = false;
         if (this.resolveReady) {
           this.resolveReady();
