@@ -155,9 +155,9 @@ h1, h2, h3, h4, h5, h6 {
 .sheet-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 20, 0.4);
+  background: rgba(15, 23, 20, 0.5);
   backdrop-filter: blur(4px);
-  z-index: 50;
+  z-index: 9998;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.25s ease;
@@ -172,7 +172,7 @@ h1, h2, h3, h4, h5, h6 {
   left: 0;
   right: 0;
   bottom: calc(var(--bottom-nav-h) + var(--safe-bottom));
-  z-index: 51;
+  z-index: 9999;
   background: var(--color-surface);
   border-top: 1px solid var(--color-border);
   border-radius: 24px;

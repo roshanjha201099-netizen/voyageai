@@ -65,12 +65,12 @@ export const CabBookingModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#1F2522]/40 backdrop-blur-xs animate-fadeIn">
-      <div className="w-full max-w-lg bg-white border border-[#D9DEDA] rounded-3xl p-6 space-y-5 shadow-xl relative text-[#1F2522]">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-[#1F2522]/60 backdrop-blur-sm animate-fadeIn overflow-y-auto">
+      <div className="w-full max-w-lg bg-white border border-[#D9DEDA] rounded-3xl p-6 space-y-5 shadow-2xl relative text-[#1F2522] my-auto">
         
         <button 
           onClick={() => { setIsCabModalOpen(false); setIsConfirmed(false); }}
-          className="absolute top-4 right-4 p-2 rounded-xl bg-[#F0F2EF] text-[#5F6863] hover:text-[#1F2522]"
+          className="absolute top-4 right-4 p-2 rounded-xl bg-[#F0F2EF] text-[#5F6863] hover:text-[#1F2522] press-scale"
         >
           <X className="w-5 h-5" />
         </button>
@@ -112,26 +112,31 @@ export const CabBookingModal: React.FC = () => {
             {/* Vehicle Selector */}
             <div className="space-y-2">
               <label className="text-xs font-bold text-[#5F6863] uppercase tracking-wider">Choose Ride Type</label>
-              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+              <div className="space-y-2.5 max-h-56 overflow-y-auto pr-1">
                 {mockCabOptions.map(c => (
                   <button
                     key={c.id}
                     type="button"
                     onClick={() => setSelectedCabId(c.id)}
-                    className={`w-full p-3.5 rounded-2xl border text-left flex items-center justify-between transition-all ${
+                    className={`w-full p-3 rounded-2xl border text-left flex items-center justify-between transition-all press-scale ${
                       selectedCabId === c.id
-                        ? 'bg-[#E8F0EE] border-[#355F58] text-[#1F2522] shadow-xs'
+                        ? 'bg-[#E8F0EE] border-[#355F58] text-[#1F2522] shadow-xs ring-1 ring-[#355F58]'
                         : 'bg-[#F0F2EF] border-[#D9DEDA] text-[#5F6863] hover:border-[#355F58]/40'
                     }`}
                   >
-                    <div className="flex items-center gap-3">
-                      <span className="text-2xl">{c.image}</span>
-                      <div>
-                        <div className="font-extrabold text-sm text-[#1F2522]">{c.name}</div>
-                        <div className="text-xs text-[#5F6863] font-medium">{c.capacity} · ~{c.etaMinutes} mins away</div>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <img 
+                        src={c.image} 
+                        alt={c.name} 
+                        className="w-14 h-11 object-cover rounded-xl border border-[#D9DEDA] shrink-0" 
+                        loading="lazy"
+                      />
+                      <div className="min-w-0">
+                        <div className="font-extrabold text-sm text-[#1F2522] truncate">{c.name}</div>
+                        <div className="text-xs text-[#5F6863] font-medium truncate">{c.capacity} · ~{c.etaMinutes} mins away</div>
                       </div>
                     </div>
-                    <div className="text-right">
+                    <div className="text-right shrink-0 ml-2">
                       <div className="font-extrabold text-sm text-[#355F58]">₹{c.estimatedFare}</div>
                       <div className="text-[10px] text-[#5F6863] font-semibold">Estimated</div>
                     </div>
