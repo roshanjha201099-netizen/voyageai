@@ -1,4 +1,5 @@
 import React, { useEffect, useCallback, useRef, useState } from 'react';
+import { X } from 'lucide-react';
 
 interface BottomSheetProps {
   isOpen: boolean;
@@ -118,13 +119,16 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
 
         {/* Optional Title Header */}
         {title && (
-          <div className="px-5 pb-3 pt-1 border-b border-white/[0.08] flex items-center justify-between shrink-0">
-            <h3 className="text-base font-bold text-white">{title}</h3>
+          <div className="px-5 py-3 border-b border-[#D9DEDA] flex items-center justify-between shrink-0 bg-white">
+            <h3 className="text-base font-extrabold text-[#1F2522]">{title}</h3>
             <button
+              type="button"
               onClick={onClose}
-              className="touch-target text-slate-400 hover:text-white text-xs font-semibold px-2 py-1 rounded-lg bg-white/5"
+              className="w-8 h-8 rounded-full bg-[#F0F2EF] hover:bg-[#E4E8E4] border border-[#D9DEDA] flex items-center justify-center text-[#1F2522] transition-colors press-scale shrink-0"
+              aria-label="Close sheet"
+              title="Close"
             >
-              Done
+              <X className="w-4 h-4 text-[#1F2522]" />
             </button>
           </div>
         )}
