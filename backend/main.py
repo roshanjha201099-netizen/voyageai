@@ -797,10 +797,9 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
             user_tuple = (auth_user, profile, prefs)
 
         auth_user, user_profile, user_prefs = user_tuple
-
-        
         trip_data = data
         client_req_id = trip_data.get("clientRequestId")
+        
         if client_req_id:
             existing_trip = db.query(TripModel).filter(
                 TripModel.user_id == auth_user.id,
@@ -826,54 +825,97 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
                     "updatedAt": existing_trip.updated_at
                 }
 
-        trip_id = f"trip-{uuid.uuid4().hex[:8]}"
-        destination = trip_data.get("destination") or "Goa"
-        v_dest, v_lat, v_lng = validate_destination_payload(destination)
+        destination = trip_data.get("destination") or {}
+        if isinstance(destination, str):
+            destination = {"name": destination, "country": "India"}
+        
+        dest_name = destination.get("name") if isinstance(destination, dict) else "Destination"
 
-        db_trip = TripModel(
+        start_date_str = trip_data.get("startDate", "2026-10-15")
+        end_date_str = trip_data.get("endDate", "2026-10-19")
+        try:
+            d1 = datetime.strptime(start_date_str, "%Y-%m-%d")
+            d2 = datetime.strptime(end_date_str, "%Y-%m-%d")
+            total_days = max(1, (d2 - d1).days + 1)
+        except Exception:
+            total_days = 4
+
+        print(f"\n==================================================", flush=True)
+        print(f"🚀 [TRIP CREATION STARTED] Destination: '{dest_name}' ({total_days} Days) | User: {auth_user.email}", flush=True)
+
+        cover_media = media_service.resolve_cover_media(destination)
+
+        pref_snapshot = {
+            "snapshotVersion": 1,
+            "travelStyles": user_prefs.travelStyles,
+            "transportPreferences": user_prefs.transportPreferences,
+            "dietaryPreferences": user_prefs.dietaryPreferences,
+            "foodInterests": user_prefs.foodInterests,
+            "activityInterests": user_prefs.activityInterests,
+            "budgetLevel": user_prefs.budgetLevel
+        }
+
+        travelers_count = trip_data.get("travelersCount", 2)
+        travelers_list = []
+        for idx in range(travelers_count):
+            travelers_list.append({
+                "id": f"tr_{idx + 1}",
+                "name": user_profile.firstName if idx == 0 else f"Companion {idx + 1}",
+                "type": "ADULT",
+                "avatarUrl": user_profile.avatarUrl if idx == 0 else None
+            })
+
+        budget_obj = {
+            "level": trip_data.get("budgetLevel", user_prefs.budgetLevel or "MODERATE"),
+            "targetAmount": 30000,
+            "currency": "INR"
+        }
+
+        now = datetime.utcnow().isoformat() + "Z"
+        trip_id = f"trip_{uuid.uuid4().hex[:12]}"
+
+        new_trip = TripModel(
             id=trip_id,
             user_id=auth_user.id,
             client_request_id=client_req_id,
-            title=f"Trip to {v_dest}",
-            destination=v_dest,
-            status="UPCOMING",
+            title=f"{dest_name} Tour Package",
+            status="PLANNING",
             itinerary_status="GENERATING",
-            start_date=trip_data.get("startDate", "2026-10-15"),
-            end_date=trip_data.get("endDate", "2026-10-18"),
-            total_days=trip_data.get("totalDays", 4),
-            travelers=json.dumps(trip_data.get("travelers", {"count": 1, "type": "Solo"})),
-            preferences_snapshot=json.dumps(trip_data.get("preferences", {})),
-            budget_json=json.dumps(trip_data.get("budget", {})),
-            cover_media_json=json.dumps(media_service.get_destination_cover(v_dest))
+            start_date=start_date_str,
+            end_date=end_date_str,
+            total_days=total_days,
+            destination_json=json.dumps(destination),
+            cover_media_json=json.dumps(cover_media),
+            travelers_json=json.dumps(travelers_list),
+            preferences_snapshot_json=json.dumps(pref_snapshot),
+            budget_json=json.dumps(budget_obj),
+            progress_json=json.dumps({"totalDays": total_days, "currentDay": 1, "completedActivitiesCount": 0, "totalActivitiesCount": total_days * 2}),
+            created_at=now,
+            updated_at=now
         )
-        db.add(db_trip)
+        db.add(new_trip)
         db.commit()
-        db.refresh(db_trip)
+        print(f"💾 [TRIP CREATION] Trip saved to PostgreSQL (ID: {trip_id}, Title: '{new_trip.title}')", flush=True)
 
-        # Trigger async itinerary generation
-        threading.Thread(
-            target=process_async_itinerary_generation,
-            args=(db_trip.id, auth_user.id, v_dest, db_trip.total_days, db_trip.start_date, trip_data.get("preferences", {}), v_lat, v_lng),
-            daemon=True
-        ).start()
+        threading.Thread(target=process_async_itinerary_generation, args=(trip_id, SessionLocal), daemon=True).start()
 
         return {
-            "id": db_trip.id,
-            "userId": db_trip.user_id,
-            "title": db_trip.title,
-            "status": db_trip.status,
-            "itineraryStatus": db_trip.itinerary_status,
-            "startDate": db_trip.start_date,
-            "endDate": db_trip.end_date,
-            "totalDays": db_trip.total_days,
-            "destination": db_trip.destination,
-            "coverMedia": db_trip.cover_media,
-            "travelers": db_trip.travelers,
-            "preferencesSnapshot": db_trip.preferences_snapshot,
-            "budget": db_trip.budget,
-            "progress": db_trip.progress,
-            "createdAt": db_trip.created_at,
-            "updatedAt": db_trip.updated_at
+            "id": new_trip.id,
+            "userId": new_trip.user_id,
+            "title": new_trip.title,
+            "status": new_trip.status,
+            "itineraryStatus": new_trip.itinerary_status,
+            "startDate": new_trip.start_date,
+            "endDate": new_trip.end_date,
+            "totalDays": new_trip.total_days,
+            "destination": new_trip.destination,
+            "coverMedia": new_trip.cover_media,
+            "travelers": new_trip.travelers,
+            "preferencesSnapshot": new_trip.preferences_snapshot,
+            "budget": new_trip.budget,
+            "progress": new_trip.progress,
+            "createdAt": new_trip.created_at,
+            "updatedAt": new_trip.updated_at
         }
 
     elif reqname == "trips:get_itinerary":
