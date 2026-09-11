@@ -16,7 +16,6 @@ if not DATABASE_URL:
 
     # If running on Render or cloud host without DATABASE_URL env, fallback to SQLite
     if os.getenv("RENDER") or os.getenv("IS_CLOUD"):
-        print("[DATABASE NOTICE] Running on cloud environment without DATABASE_URL. Using SQLite database.")
         DATABASE_URL = "sqlite:///./voyageai.db"
     else:
         # Try local PostgreSQL connection with short 2s timeout
@@ -34,14 +33,11 @@ if not DATABASE_URL:
             cursor.execute("SELECT 1 FROM pg_catalog.pg_database WHERE datname = %s;", (DB_NAME,))
             exists = cursor.fetchone()
             if not exists:
-                print(f"[POSTGRES SETUP] Database '{DB_NAME}' does not exist. Creating database '{DB_NAME}'...")
                 cursor.execute(f'CREATE DATABASE "{DB_NAME}";')
-                print(f"[POSTGRES SETUP] Database '{DB_NAME}' created successfully!")
             cursor.close()
             conn.close()
             DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-        except Exception as e:
-            print(f"[DATABASE NOTICE] PostgreSQL unavailable ({e}). Falling back to SQLite database.")
+        except Exception:
             DATABASE_URL = "sqlite:///./voyageai.db"
 
 # Support postgres:// URL format compatibility

@@ -749,9 +749,6 @@ class VertexAIProvider(AIProviderInterface):
     """
     def generate_itinerary_json(self, ai_input: Dict[str, Any], prompt: str) -> str:
         try:
-            print(f"[VERTEX AI] Sending itinerary generation request to {MODEL_NAME}...", flush=True)
-            
-            # Execute async call synchronously within background worker thread
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
@@ -762,12 +759,11 @@ class VertexAIProvider(AIProviderInterface):
             if raw_result:
                 cleaned = clean_output(raw_result)
                 if isinstance(cleaned, dict) and "days" in cleaned:
-                    print(f"[VERTEX AI SUCCESS] Received valid JSON itinerary from {MODEL_NAME}", flush=True)
                     return json.dumps(cleaned)
                 elif "raw_output" not in cleaned:
                     return json.dumps(cleaned)
-        except Exception as e:
-            print(f"[VERTEX AI WARN] Vertex AI generation call failed: {e}. Falling back to MockAIProvider.", flush=True)
+        except Exception:
+            pass
 
         return MockAIProvider().generate_itinerary_json(ai_input, prompt)
 
@@ -822,7 +818,6 @@ class GeminiProvider(AIProviderInterface):
         try:
             for attempt in range(1, max_http_retries + 1):
                 try:
-                    print(f"[GEMINI AI] Sending itinerary generation request to model {model_name} (Attempt {attempt}/{max_http_retries})...", flush=True)
                     response = requests.post(url, json=payload, headers=headers, timeout=30)
 
                     if response.status_code in (401, 403):
@@ -832,7 +827,6 @@ class GeminiProvider(AIProviderInterface):
                         logger.error("[AI_QUOTA_ERROR] Gemini quota or rate limit exceeded (HTTP 429).")
                         raise RuntimeError("AI_QUOTA_ERROR: Gemini API rate limit or quota exceeded (HTTP 429).")
                     elif response.status_code in (500, 502, 503, 504) and attempt < max_http_retries:
-                        print(f"[GEMINI AI WARN] Gemini server returned transient status HTTP {response.status_code}. Retrying in 1.5s...", flush=True)
                         time.sleep(1.5)
                         continue
                     elif response.status_code != 200:
@@ -859,7 +853,6 @@ class GeminiProvider(AIProviderInterface):
 
                     try:
                         json_data = json.loads(raw_text)
-                        print(f"[GEMINI AI SUCCESS] Received valid JSON itinerary from {model_name}", flush=True)
                         return json.dumps(json_data)
                     except Exception as parse_err:
                         logger.error(f"[AI_INVALID_OUTPUT] Gemini output is not valid JSON: {parse_err}")
@@ -867,14 +860,12 @@ class GeminiProvider(AIProviderInterface):
 
                 except requests.exceptions.Timeout:
                     if attempt < max_http_retries:
-                        print(f"[GEMINI AI WARN] Gemini request timed out on attempt {attempt}. Retrying...", flush=True)
                         time.sleep(1.0)
                         continue
                     logger.error("[AI_TIMEOUT] Gemini API request timed out.")
                     raise RuntimeError("AI_TIMEOUT: Gemini API request timed out.")
                 except requests.exceptions.RequestException as net_err:
                     if attempt < max_http_retries:
-                        print(f"[GEMINI AI WARN] Gemini network request error on attempt {attempt}: {net_err}. Retrying...", flush=True)
                         time.sleep(1.0)
                         continue
                     logger.error(f"[AI_GENERATION_ERROR] Gemini network request failed: {type(net_err).__name__}")
@@ -956,8 +947,8 @@ Return ONLY valid JSON matching this schema:
                 recs = data.get("recommendations")
                 if isinstance(recs, list) and len(recs) > 0:
                     return recs
-        except Exception as err:
-            print(f"[GEMINI SWAP WARN] Gemini swap generation error: {err}. Using MockAIProvider fallback.", flush=True)
+        except Exception:
+            pass
 
         return MockAIProvider().generate_swap_recommendations(current_activity, trip_context)
 
@@ -1027,8 +1018,8 @@ Return ONLY valid JSON matching this schema:
                         except Exception:
                             pass
                     return data
-        except Exception as err:
-            print(f"[GEMINI CHAT WARN] Gemini chat error: {err}. Using MockAIProvider fallback.", flush=True)
+        except Exception:
+            pass
 
         return MockAIProvider().generate_chat_response(messages, trip_context)
 
@@ -1089,8 +1080,8 @@ Return ONLY valid JSON matching this schema:
                             result.append(merged)
                     if len(result) == len(activities):
                         return result
-        except Exception as err:
-            print(f"[GEMINI OPTIMIZE WARN] Gemini optimization error: {err}. Using MockAIProvider fallback.", flush=True)
+        except Exception:
+            pass
 
         return MockAIProvider().generate_day_optimization(day_info, activities, goal)
 
@@ -1156,8 +1147,8 @@ Return ONLY valid JSON matching this schema:
                 data = json.loads(text)
                 if "recommendations" in data:
                     return data
-        except Exception as err:
-            print(f"[GEMINI BUDGET WARN] Gemini budget optimization error: {err}. Using MockAIProvider fallback.", flush=True)
+        except Exception:
+            pass
 
         return MockAIProvider().generate_budget_optimization(trip_budget, current_costs, activities)
 
@@ -1216,8 +1207,8 @@ Return ONLY valid JSON matching this schema:
                 data = json.loads(text)
                 if "recommendations" in data:
                     return data
-        except Exception as err:
-            print(f"[GEMINI WEATHER WARN] Gemini weather replan error: {err}. Using MockAIProvider fallback.", flush=True)
+        except Exception:
+            pass
 
         return MockAIProvider().generate_weather_replan(forecast, activities)
 
@@ -1277,8 +1268,8 @@ Generate structured actions to execute. Return ONLY valid JSON matching this sch
                 acts = data.get("actions")
                 if isinstance(acts, list):
                     return acts
-        except Exception as err:
-            print(f"[GEMINI REFINE WARN] Gemini refinement error: {err}. Using MockAIProvider fallback.", flush=True)
+        except Exception:
+            pass
 
         return MockAIProvider().generate_refinement_actions(instruction, current_itinerary)
 
@@ -1289,8 +1280,6 @@ class VertexAIProvider(AIProviderInterface):
     """
     def generate_itinerary_json(self, ai_input: Dict[str, Any], prompt: str) -> str:
         try:
-            print(f"[VERTEX AI] Sending itinerary generation request to {MODEL_NAME}...", flush=True)
-            
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
@@ -1301,12 +1290,11 @@ class VertexAIProvider(AIProviderInterface):
             if raw_result:
                 cleaned = clean_output(raw_result)
                 if isinstance(cleaned, dict) and "days" in cleaned:
-                    print(f"[VERTEX AI SUCCESS] Received valid JSON itinerary from {MODEL_NAME}", flush=True)
                     return json.dumps(cleaned)
                 elif "raw_output" not in cleaned:
                     return json.dumps(cleaned)
-        except Exception as e:
-            print(f"[VERTEX AI WARN] Vertex AI generation call failed: {e}. Falling back to MockAIProvider.", flush=True)
+        except Exception:
+            pass
 
         return MockAIProvider().generate_itinerary_json(ai_input, prompt)
 

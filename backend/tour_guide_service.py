@@ -179,8 +179,8 @@ def _fetch_nominatim_location(lat: float, lng: float) -> List[Dict[str, Any]]:
                     "source": "nominatim_fallback",
                     "dataReliability": "VERIFIED"
                 }]
-    except Exception as e:
-        print(f"[TOUR GUIDE WARN] Nominatim fallback failed: {e}", flush=True)
+    except Exception:
+        pass
     return []
 
 
@@ -224,11 +224,10 @@ def search_nearby_pois(lat: float, lng: float, radius_m: int = 5000) -> List[Dic
                 if response.status == 200:
                     raw = json.loads(response.read().decode("utf-8"))
                     break
-        except Exception as e:
-            print(f"[TOUR GUIDE WARN] Overpass endpoint {url} failed: {e}. Trying fallback...", flush=True)
+        except Exception:
+            pass
 
     if not raw:
-        print("[TOUR GUIDE WARN] All Overpass API endpoints timed out. Using Nominatim reverse geocode fallback.", flush=True)
         fallback_places = _fetch_nominatim_location(lat, lng)
         if fallback_places:
             _overpass_cache[ck] = (time.time(), fallback_places)
@@ -619,8 +618,8 @@ Respond as the tour guide. Return ONLY valid JSON:
                         "mentionedPlaceId": None,
                         "source": "gemini"
                     }
-    except Exception as err:
-        print(f"[TOUR GUIDE WARN] Gemini tour guide error: {err}. Using fallback.", flush=True)
+    except Exception:
+        pass
 
     return _mock_tour_guide_response(messages, place_context, nearby_places, user_location)
 

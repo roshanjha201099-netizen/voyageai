@@ -75,8 +75,7 @@ class OSMGeocoderProvider(GeocoderProvider):
                     })
 
                 return results
-        except Exception as e:
-            print(f"[GEODB WARN] OpenStreetMap geocoding fallback triggered for '{query}': {e}", flush=True)
+        except Exception:
             return []
 
 # Default provider instance
@@ -129,8 +128,8 @@ def search_nearby_restaurants(query: str, lat: float = None, lon: float = None) 
                     })
                 if results:
                     return results
-    except Exception as e:
-        print(f"[PLACES WARN] Dynamic restaurant search exception for '{query}': {e}", flush=True)
+    except Exception:
+        pass
 
     return [
         {

@@ -50,11 +50,7 @@ COOKIE_NAME = "voyageai_session"
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
 
 def log_event(msg: str):
-    try:
-        print(f"\n[VOYAGEAI BACKEND LOG] {msg}", flush=True)
-    except UnicodeEncodeError:
-        safe_msg = msg.encode('ascii', 'ignore').decode('ascii')
-        print(f"\n[VOYAGEAI BACKEND LOG] {safe_msg}", flush=True)
+    pass
 
 def extract_token(request: Request, authorization: Optional[str] = Header(None)) -> str:
     token = request.cookies.get(COOKIE_NAME)
@@ -64,7 +60,6 @@ def extract_token(request: Request, authorization: Optional[str] = Header(None))
         else:
             token = authorization
     if not token:
-        log_event("❌ Token Extraction Failed: No cookie or Authorization header found")
         raise HTTPException(status_code=401, detail="Authentication token missing")
     return token
 
@@ -140,28 +135,8 @@ class OptimizeDayRequest(BaseModel):
 class RefinementExecutionRequest(BaseModel):
     actions: List[dict]
 
-def log_event(msg: str):
-    try:
-        print(f"\n[VOYAGEAI BACKEND LOG] {msg}", flush=True)
-    except UnicodeEncodeError:
-        safe_msg = msg.encode('ascii', 'ignore').decode('ascii')
-        print(f"\n[VOYAGEAI BACKEND LOG] {safe_msg}", flush=True)
-
-def extract_token(request: Request, authorization: Optional[str] = Header(None)) -> str:
-    token = request.cookies.get(COOKIE_NAME)
-    if not token and authorization:
-        if authorization.startswith("Bearer "):
-            token = authorization.split(" ")[1]
-        else:
-            token = authorization
-    if not token:
-        log_event("❌ Token Extraction Failed: No cookie or Authorization header found")
-        raise HTTPException(status_code=401, detail="Authentication token missing")
-    return token
-
 @app.get("/")
 def root():
-    log_event("GET / -> Health Check")
     return {"app": "VoyageAI OS PostgreSQL API", "status": "online"}
 
 @app.post("/api/auth/login")
@@ -1053,8 +1028,8 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
                         for p in nearby[:8]
                     ]
                     trip_context["userLocation"] = {"latitude": float(lat), "longitude": float(lng)}
-            except Exception as e:
-                print(f"[CONCIERGE WARN] Nearby POI search error: {e}", flush=True)
+            except Exception:
+                pass
 
         if concierge_req.intent == "SWAP_ACTIVITY" and concierge_req.activityId:
             activity = db.query(ItineraryActivityModel).filter(ItineraryActivityModel.id == concierge_req.activityId).first()
@@ -1273,11 +1248,8 @@ def create_trip(
     db: Session = Depends(get_db)
 ):
     auth_user, user_profile, user_prefs = user_data
-    log_event(f"==================================================")
-    log_event(f"📥 POST /api/trips RECEIVED FROM FRONTEND")
-    log_event(f"User: {auth_user.email} (ID: {auth_user.id})")
-    log_event(f"Payload: {json.dumps(trip_data, indent=2)}")
-    log_event(f"==================================================")
+    destination = trip_data.get("destination") or {}
+    dest_name = destination.get("name") if isinstance(destination, dict) else "Destination"
     
     # 1. Idempotency Guard Check
     client_req_id = trip_data.get("clientRequestId")
@@ -1287,7 +1259,6 @@ def create_trip(
             TripModel.client_request_id == client_req_id
         ).first()
         if existing_trip:
-            log_event(f"⚠️ Idempotent request detected. Returning existing trip {existing_trip.id}")
             return {
                 "id": existing_trip.id,
                 "userId": existing_trip.user_id,
@@ -1308,10 +1279,8 @@ def create_trip(
             }
 
     # 2. Validate Destination Payload
-    destination = trip_data.get("destination")
     is_valid, err_msg = validate_destination_payload(destination)
     if not is_valid:
-        log_event(f"❌ Rejected invalid trip destination: {err_msg}")
         raise HTTPException(status_code=400, detail=f"Invalid trip destination payload: {err_msg}")
 
     # 3. Calculate Days Duration
@@ -1323,6 +1292,9 @@ def create_trip(
         total_days = max(1, (d2 - d1).days + 1)
     except Exception:
         total_days = 4
+
+    print(f"\n==================================================", flush=True)
+    print(f"🚀 [TRIP CREATION STARTED] Destination: '{dest_name}' ({total_days} Days) | User: {auth_user.email}", flush=True)
 
     # 4. Resolve Cover Media
     cover_media = media_service.resolve_cover_media(destination)
@@ -1357,7 +1329,6 @@ def create_trip(
 
     now = datetime.utcnow().isoformat() + "Z"
     trip_id = f"trip_{uuid.uuid4().hex[:12]}"
-    dest_name = destination.get("name") or "Destination"
 
     new_trip = TripModel(
         id=trip_id,
@@ -1380,7 +1351,7 @@ def create_trip(
     )
     db.add(new_trip)
     db.commit()
-    log_event(f"🌴 Created new trip in PostgreSQL: {new_trip.title} (ID: {trip_id})")
+    print(f"💾 [TRIP CREATION] Trip saved to PostgreSQL (ID: {trip_id}, Title: '{new_trip.title}')", flush=True)
 
     # 7. Spawn Async Thread for AI Itinerary Generation
     threading.Thread(target=process_async_itinerary_generation, args=(trip_id, SessionLocal), daemon=True).start()
@@ -2145,8 +2116,8 @@ def tour_guide_chat(
                     "status": trip_model.status,
                     "days": days_list
                 }
-        except Exception as e:
-            print(f"[TOUR GUIDE WARN] Trip lookup error: {e}", flush=True)
+        except Exception:
+            pass
 
     session = get_or_create_session(user_id)
     session["mode"] = target_mode

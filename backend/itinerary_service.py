@@ -237,18 +237,15 @@ def process_async_itinerary_generation(trip_id: str, db_session_factory):
             "preferencesSnapshot": trip.preferences_snapshot
         }
 
-        print(f"\n[AI PIPELINE STEP 1] Starting async itinerary generation for Trip: {trip.id} ({trip.title})", flush=True)
-        print(f"[AI PIPELINE STEP 2] Prepared AI Input Contract: Destination={trip.destination.get('name')}, Days={trip.total_days}, Travelers={len(trip.travelers)}", flush=True)
+        print(f"\n[TRIP CREATION STEP 1/3] Generating AI itinerary for '{trip.title}' (Destination: {trip.destination.get('name')}, {trip.total_days} Days)", flush=True)
 
         prompt = construct_ai_prompt(ai_input)
 
         # 1. Invoke AI Provider
-        print(f"[AI PIPELINE STEP 3] Invoking AI Provider ({ai_provider_service.__class__.__name__})...", flush=True)
+        print(f"[TRIP CREATION STEP 2/3] Invoking AI Provider ({ai_provider_service.__class__.__name__})...", flush=True)
         raw_json = ai_provider_service.generate_itinerary_json(ai_input, prompt)
 
         # 2. Pydantic Schema Validation & Integrity Check
-        print(f"[AI PIPELINE STEP 4] Validating raw JSON with Pydantic GeneratedItinerarySchema...", flush=True)
-        
         parsed_schema = None
         is_valid = False
         validation_msg = ""
@@ -263,7 +260,7 @@ def process_async_itinerary_generation(trip_id: str, db_session_factory):
         import os
         current_provider = os.getenv("AI_PROVIDER", "gemini").lower().strip()
         if not is_valid and current_provider != "mock":
-            print(f"[AI PIPELINE REJECTED] Integrity check failed: {validation_msg}. Attempting 1 corrective retry with AI provider...", flush=True)
+            print(f"[TRIP CREATION WARN] Validation retry triggered: {validation_msg}", flush=True)
             retry_prompt = prompt + f"\n\nIMPORTANT CORRECTION: Your previous JSON response failed validation: {validation_msg}. Please fix this and return a valid JSON itinerary."
             try:
                 raw_json_retry = ai_provider_service.generate_itinerary_json(ai_input, retry_prompt)
@@ -273,7 +270,7 @@ def process_async_itinerary_generation(trip_id: str, db_session_factory):
                 validation_msg = f"Retry failed: {retry_err}"
 
         if not is_valid:
-            print(f"[AI PIPELINE FAILED] Itinerary integrity check failed: {validation_msg}", flush=True)
+            print(f"❌ [TRIP CREATION FAILED] Integrity check failed: {validation_msg}", flush=True)
             raise ValueError(f"AI_GENERATION_ERROR: {validation_msg}")
 
         # 4. Save to Database
@@ -281,7 +278,7 @@ def process_async_itinerary_generation(trip_id: str, db_session_factory):
         active_provider_instance = get_ai_provider()
         provider_name = active_provider_instance.__class__.__name__
 
-        print(f"[AI PIPELINE STEP 6] Writing validated itinerary ({provider_name}), days, and activities to PostgreSQL database...", flush=True)
+        print(f"💾 [TRIP CREATION STEP 3/3] Saving itinerary ({len(parsed_schema.days)} Days) to PostgreSQL database...", flush=True)
         itinerary_id = f"itin_{uuid.uuid4().hex[:12]}"
         
         existing_itin = db.query(ItineraryModel).filter(ItineraryModel.trip_id == trip_id).first()
@@ -338,7 +335,7 @@ def process_async_itinerary_generation(trip_id: str, db_session_factory):
         trip.itinerary_status = "READY"
         trip.updated_at = now
         db.commit()
-        print(f"[AI PIPELINE SUCCESS] Itinerary status updated to READY! Persisted {len(parsed_schema.days)} Days and {total_activities} Activities for trip {trip_id}.\n", flush=True)
+        print(f"✨ [TRIP CREATION SUCCESS] Trip '{trip.title}' ready with {len(parsed_schema.days)} Days and {total_activities} Activities!\n", flush=True)
 
     except Exception as e:
         db.rollback()
