@@ -26,6 +26,7 @@ export interface TourGuideMessage {
   text: string;
   timestamp: number;
   placeId?: string;
+  places?: TourPlace[];
 }
 
 export interface NearbyResponse {
