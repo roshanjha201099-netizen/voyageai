@@ -52,7 +52,6 @@ export const TourGuidePage: React.FC = () => {
   const [selectedPlace, setSelectedPlace] = useState<TourPlace | null>(null);
   const [messages, setMessages] = useState<TourGuideMessage[]>([]);
   const [inputText, setInputText] = useState('');
-  const [isLoadingNearby, setIsLoadingNearby] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [proactiveAlert, setProactiveAlert] = useState<TourPlace | null>(null);
   const [savedPlaces, setSavedPlaces] = useState<Set<string>>(new Set());
@@ -208,7 +207,7 @@ export const TourGuidePage: React.FC = () => {
         places: attachedPlaces
       };
       setMessages(prev => [...prev, guideMsg]);
-    } catch (err) {
+    } catch {
       const errMsg: TourGuideMessage = {
         id: `err_${Date.now()}`,
         role: 'guide',

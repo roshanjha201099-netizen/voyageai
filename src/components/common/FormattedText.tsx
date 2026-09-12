@@ -49,13 +49,13 @@ export const FormattedText: React.FC<FormattedTextProps> = ({ content, className
         const lines = paragraph.split('\n').filter(line => line.trim().length > 0);
 
         // Check if all non-empty lines in paragraph are list items (1., 2., -, *)
-        const isList = lines.length > 0 && lines.every(line => /^\s*(\d+[\.\)]|[-*•])\s+/.test(line));
+        const isList = lines.length > 0 && lines.every(line => /^\s*(\d+[.)]|[-*•])\s+/.test(line));
 
         if (isList) {
           return (
             <ul key={pIdx} className="space-y-2 my-1.5 pl-0">
               {lines.map((line, lIdx) => {
-                const match = line.match(/^\s*(\d+[\.\)]|[-*•])\s+(.*)/);
+                const match = line.match(/^\s*(\d+[.)]|[-*•])\s+(.*)/);
                 const prefix = match ? match[1] : '';
                 const body = match ? match[2] : line;
                 const isNumber = /^\d+/.test(prefix);
@@ -89,7 +89,7 @@ export const FormattedText: React.FC<FormattedTextProps> = ({ content, className
           <p key={pIdx} className="leading-relaxed">
             {lines.map((line, lIdx) => {
               // Check if line itself starts as a single list item
-              const singleMatch = line.match(/^\s*(\d+[\.\)]|[-*•])\s+(.*)/);
+              const singleMatch = line.match(/^\s*(\d+[.)]|[-*•])\s+(.*)/);
               if (singleMatch) {
                 const prefix = singleMatch[1];
                 const body = singleMatch[2];
