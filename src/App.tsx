@@ -30,6 +30,7 @@ import { RidesPage } from './components/rides/RidesPage';
 import { ExpensesPage } from './components/expenses/ExpensesPage';
 import { MapView } from './components/map/MapView';
 import { TourGuidePage } from './components/tour-guide/TourGuidePage';
+import { ItineraryView } from './components/itinerary/ItineraryView';
 import { RefreshCw, AlertTriangle } from 'lucide-react';
 
 const MainContent: React.FC = () => {
@@ -87,9 +88,11 @@ const MainContent: React.FC = () => {
       <Route path="/trip/rides" element={<RidesPage />} />
       <Route path="/expenses" element={<ExpensesPage />} />
       <Route path="/trip/expenses" element={<ExpensesPage />} />
-      <Route path="/trip" element={<MyTripsPage />} />
+      <Route path="/trip/itinerary" element={<ItineraryView />} />
+      <Route path="/trip/details" element={<ItineraryView />} />
+      <Route path="/itinerary" element={<ItineraryView />} />
+      <Route path="/trip" element={<ItineraryView />} />
       <Route path="/trips" element={<MyTripsPage />} />
-      <Route path="/trip/*" element={<MyTripsPage />} />
       <Route path="/trips/*" element={<MyTripsPage />} />
       <Route path="/explore" element={<ExplorePage />} />
       <Route path="/tour-guide" element={<TourGuidePage />} />

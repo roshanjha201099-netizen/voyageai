@@ -152,13 +152,13 @@ class WebSocketClient {
         requestId,
       };
 
-      // 15-second timeout for server response
+      // 30-second timeout for server response
       const timer = setTimeout(() => {
         if (this.pendingRequests.has(requestId)) {
           this.pendingRequests.delete(requestId);
           reject(new Error(`WebSocket request timeout for [${reqname}]`));
         }
-      }, 15000);
+      }, 30000);
 
       this.pendingRequests.set(requestId, { resolve, reject, timer });
 

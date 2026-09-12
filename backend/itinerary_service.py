@@ -337,6 +337,54 @@ def process_async_itinerary_generation(trip_id: str, db_session_factory):
         db.commit()
         print(f"✨ [TRIP CREATION SUCCESS] Trip '{trip.title}' ready with {len(parsed_schema.days)} Days and {total_activities} Activities!\n", flush=True)
 
+        try:
+            from main import log_pipeline_5_steps
+            user_sends = {
+                "destination": trip.destination,
+                "startDate": trip.start_date,
+                "endDate": trip.end_date,
+                "travelersCount": len(trip.travelers),
+                "tripStyle": (trip.preferences_snapshot or {}).get("travelStyles", []),
+                "budgetLevel": (trip.budget or {}).get("level", "MODERATE")
+            }
+            backend_received = {
+                "tripId": trip.id,
+                "userId": trip.user_id,
+                "destinationName": trip.destination.get("name") if isinstance(trip.destination, dict) else "Destination",
+                "calculatedTotalDays": trip.total_days,
+                "startDate": trip.start_date,
+                "endDate": trip.end_date,
+                "travelersCount": len(trip.travelers)
+            }
+            given_to_ai = {
+                "input_data": ai_input,
+                "prompt": prompt
+            }
+            ai_returned = parsed_schema.model_dump()
+            send_to_frontend = {
+                "id": trip.id,
+                "title": trip.title,
+                "status": trip.status,
+                "itineraryStatus": "READY",
+                "destination": trip.destination,
+                "startDate": trip.start_date,
+                "endDate": trip.end_date,
+                "totalDays": trip.total_days,
+                "daysCount": len(parsed_schema.days),
+                "activitiesCount": total_activities,
+                "days": [d.model_dump() for d in parsed_schema.days]
+            }
+            log_pipeline_5_steps(
+                flow_name="Trip Creation & AI Itinerary Generation",
+                user_sends=user_sends,
+                backend_received=backend_received,
+                given_to_ai=given_to_ai,
+                ai_returned=ai_returned,
+                send_to_frontend=send_to_frontend
+            )
+        except Exception as log_err:
+            print(f"[PIPELINE LOG WARN] Failed to print pipeline log: {log_err}", flush=True)
+
     except Exception as e:
         db.rollback()
         import traceback

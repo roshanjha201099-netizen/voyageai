@@ -122,9 +122,11 @@ export const AIAssistantSheet: React.FC = () => {
         lowerMsg.includes('replace') || lowerMsg.includes('remove') || lowerMsg.includes('make') || lowerMsg.includes('change') || lowerMsg.includes('move') || lowerMsg.includes('relax') || lowerMsg.includes('cheaper')
       );
 
+      const isSwapPrompt = Boolean(swapContext) || msg.includes('Recommend alternatives for activity:') || lowerMsg.includes('swap');
+
       const payload = {
         message: msg,
-        intent: swapContext ? 'SWAP_ACTIVITY' : (isRefinementRequest ? 'REFINE_ITINERARY' : 'CHAT'),
+        intent: isSwapPrompt ? 'SWAP_ACTIVITY' : (isRefinementRequest ? 'REFINE_ITINERARY' : 'CHAT'),
         tripId: swapContext?.tripId || currentTrip?.id,
         itineraryId: swapContext?.itineraryId || currentItinerary?.id,
         dayId: swapContext?.dayId,
@@ -134,7 +136,25 @@ export const AIAssistantSheet: React.FC = () => {
         messages: messages.slice(-6).map(m => ({ role: m.role === 'user' ? 'user' : 'model', text: m.text }))
       };
 
-      const data = await wsClient.sendRequest('ai:concierge', payload);
+      let data: any = null;
+      try {
+        data = await wsClient.sendRequest('ai:concierge', payload);
+      } catch (wsErr) {
+        console.warn('WebSocket Concierge request failed, trying HTTP fallback...', wsErr);
+        try {
+          const res = await fetch('/api/ai/concierge', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            credentials: 'include'
+          });
+          if (res.ok) {
+            data = await res.json();
+          }
+        } catch (httpErr) {
+          console.error('HTTP Concierge fallback failed:', httpErr);
+        }
+      }
 
       if (data) {
         if (data.type === 'activity_swap_recommendations') {

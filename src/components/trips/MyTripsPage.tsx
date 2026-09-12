@@ -198,26 +198,20 @@ export const MyTripsPage: React.FC = () => {
 
                   {/* Actions */}
                   <div className="flex items-center justify-between pt-2 border-t border-[#D9DEDA]">
-                    {!isCurrent ? (
-                      <button
-                        onClick={() => {
-                          setCurrentTripId(trip.id);
-                          navigate('/');
-                        }}
-                        className="px-4 py-2.5 rounded-2xl bg-[#F0F2EF] border border-[#D9DEDA] text-[#355F58] font-bold text-xs flex items-center gap-1.5 hover:border-[#355F58]/40"
-                      >
-                        <span>Set Active Context</span>
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => navigate('/')}
-                        className="px-4 py-2.5 rounded-2xl bg-[#355F58] text-white font-extrabold text-xs flex items-center gap-1.5 press-scale shadow-xs"
-                      >
-                        <span>View Trip Home</span>
-                        <ArrowRight className="w-3.5 h-3.5 text-white" />
-                      </button>
-                    )}
+                    <button
+                      onClick={() => {
+                        setCurrentTripId(trip.id);
+                        navigate('/trip/itinerary');
+                      }}
+                      className={`px-4 py-2.5 rounded-2xl font-extrabold text-xs flex items-center gap-1.5 press-scale shadow-xs ${
+                        isCurrent
+                          ? 'bg-[#355F58] text-white hover:bg-[#2C504A]'
+                          : 'bg-[#F0F2EF] border border-[#D9DEDA] text-[#355F58] hover:border-[#355F58]/40'
+                      }`}
+                    >
+                      <span>View Trip Details</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
 
                     <div className="flex items-center gap-1">
                       {trip.status !== 'ARCHIVED' && (

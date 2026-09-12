@@ -7,11 +7,12 @@ import { AskVoyageAICard } from '../ai/AskVoyageAICard';
 import { PlaceDetailSheet, type PlaceDetailItem } from '../common/PlaceDetailSheet';
 import { MapPin, Navigation, Sparkles, Calendar, ArrowRight, Star, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { fetchNearbyPlaces, formatDistance } from '../../services/tourGuideApi';
 
 export const HomePage: React.FC = () => {
   const { userProfile } = useAuth();
   const { currentTrip } = useTrip();
-  const { userLocationName, openInAppNavigation } = useApp();
+  const { userLocation, userLocationName, openInAppNavigation, requestGPSLocation } = useApp();
   const navigate = useNavigate();
 
   const [selectedPlace, setSelectedPlace] = useState<PlaceDetailItem | null>(null);
@@ -28,56 +29,54 @@ export const HomePage: React.FC = () => {
     return 'Good Evening';
   };
 
-  // Fetch or mock nearby POIs based on current location
+  // Dynamically fetch nearby POIs based on user's live physical GPS location
   useEffect(() => {
-    setIsLoadingNearby(true);
-    const timer = setTimeout(() => {
-      setNearbyPlaces([
-        {
-          id: 'poi-1',
-          name: 'Golghar Historic Granary',
-          category: 'HISTORIC SITE',
-          rating: 4.6,
-          distanceText: '420 m',
-          durationText: '45 mins',
-          estimatedCost: 20,
-          address: 'Ashok Rajpath, Patna',
-          description: 'A massive beehive-shaped granary built in 1786 offering panoramic views of the city.',
-          latitude: 25.619,
-          longitude: 85.141,
-        },
-        {
-          id: 'poi-2',
-          name: 'Patna Museum',
-          category: 'MUSEUM',
-          rating: 4.7,
-          distanceText: '1.2 km',
-          durationText: '1.5 hrs',
-          estimatedCost: 50,
-          address: 'Museum Road, Patna',
-          description: 'State museum showcasing rare artifacts, bronze statues, and ancient coins.',
-          latitude: 25.607,
-          longitude: 85.132,
-        },
-        {
-          id: 'poi-3',
-          name: 'Gandhi Ghat Promenade',
-          category: 'SCENIC LOOKOUT',
-          rating: 4.8,
-          distanceText: '2.4 km',
-          durationText: '1 hr',
-          estimatedCost: 0,
-          address: 'Banks of River Ganges, Patna',
-          description: 'Peaceful riverside promenade famous for evening Ganga Aarti ceremonies.',
-          latitude: 25.623,
-          longitude: 85.168,
-        },
-      ]);
-      setIsLoadingNearby(false);
-    }, 400);
+    let isMounted = true;
 
-    return () => clearTimeout(timer);
-  }, [userLocationName]);
+    if (!userLocation && navigator.geolocation) {
+      requestGPSLocation().catch(() => {});
+    }
+
+    const loadDynamicNearby = async () => {
+      setIsLoadingNearby(true);
+      const lat = userLocation ? userLocation[0] : 22.5726; // Default to current region if location pending
+      const lng = userLocation ? userLocation[1] : 88.3639;
+
+      try {
+        const res = await fetchNearbyPlaces(lat, lng, 5000);
+        if (isMounted && res && res.places && res.places.length > 0) {
+          const formatted: PlaceDetailItem[] = res.places.slice(0, 6).map((p, idx) => ({
+            id: p.id || `poi-${idx}`,
+            name: p.name,
+            category: (p.category || 'ATTRACTION').toUpperCase().replace('_', ' '),
+            rating: 4.5 + (idx % 4) * 0.1,
+            distanceText: p.distanceMeters ? formatDistance(p.distanceMeters) : 'Near you',
+            durationText: '45 mins',
+            estimatedCost: 0,
+            address: p.address || p.description || `${p.category || 'POI'} in ${userLocationName || 'Current Location'}`,
+            description: p.description || `Popular ${p.category || 'attraction'} located near your physical coordinates.`,
+            latitude: p.latitude || lat,
+            longitude: p.longitude || lng,
+          }));
+          setNearbyPlaces(formatted);
+          setIsLoadingNearby(false);
+          return;
+        }
+      } catch (err) {
+        console.warn('Failed to fetch dynamic nearby places:', err);
+      }
+
+      if (isMounted) {
+        setIsLoadingNearby(false);
+      }
+    };
+
+    loadDynamicNearby();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [userLocation, userLocationName, requestGPSLocation]);
 
   return (
     <div className="space-y-6 pb-28 max-w-xl mx-auto animate-fadeIn">
@@ -200,7 +199,7 @@ export const HomePage: React.FC = () => {
 
           <button
             type="button"
-            onClick={() => navigate('/trip')}
+            onClick={() => navigate('/trip/itinerary')}
             className="w-full py-4 rounded-2xl bg-[#355F58] hover:bg-[#2C504A] text-white font-extrabold text-base flex items-center justify-center gap-2 shadow-xs press-scale min-h-[54px]"
           >
             <span>View Trip Plan</span>

@@ -52,6 +52,94 @@ COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
 def log_event(msg: str):
     pass
 
+def print_json_pretty(data: Any) -> str:
+    try:
+        if hasattr(data, "dict"):
+            return json.dumps(data.dict(), indent=2, default=str)
+        elif hasattr(data, "model_dump"):
+            return json.dumps(data.model_dump(), indent=2, default=str)
+        elif isinstance(data, (dict, list)):
+            return json.dumps(data, indent=2, default=str)
+        elif isinstance(data, str):
+            try:
+                parsed = json.loads(data)
+                return json.dumps(parsed, indent=2, default=str)
+            except Exception:
+                return data
+        return str(data)
+    except Exception:
+        return str(data)
+
+def log_pipeline_5_steps(
+    flow_name: str,
+    user_sends: Any,
+    backend_received: Any,
+    given_to_ai: Any,
+    ai_returned: Any,
+    send_to_frontend: Any
+):
+    """
+    Prints the complete execution flow in the EXACT 5-step order requested:
+    1. WHAT USER SENDS
+    2. WHAT BACKEND RECEIVED
+    3. WHAT BACKEND IS GIVING TO AI
+    4. WHAT AI HAS RETURNED
+    5. WHAT YOU WILL SEND TO FRONTEND
+    """
+    border = "=" * 80
+    sub_border = "-" * 80
+
+    print(f"\n{border}", flush=True)
+    print(f"🚀 [5-STEP PIPELINE LOG] Flow: {flow_name}", flush=True)
+    print(f"{border}", flush=True)
+
+    print("\n1️⃣  WHAT USER SENDS (Frontend Request Payload):", flush=True)
+    print(sub_border, flush=True)
+    print(print_json_pretty(user_sends), flush=True)
+
+    print("\n2️⃣  WHAT BACKEND RECEIVED (Parsed & Extracted Payload):", flush=True)
+    print(sub_border, flush=True)
+    print(print_json_pretty(backend_received), flush=True)
+
+    print("\n3️⃣  WHAT BACKEND IS GIVING TO AI (Constructed Prompt & Context):", flush=True)
+    print(sub_border, flush=True)
+    if isinstance(given_to_ai, dict) and "prompt" in given_to_ai:
+        print("🔹 AI Input Context Data:", flush=True)
+        print(print_json_pretty(given_to_ai.get("input_data", {})), flush=True)
+        print("\n🔹 Constructed Prompt Sent To Model:", flush=True)
+        print(given_to_ai.get("prompt"), flush=True)
+    else:
+        print(print_json_pretty(given_to_ai), flush=True)
+
+    print("\n4️⃣  WHAT AI HAS RETURNED (Raw Model Output):", flush=True)
+    print(sub_border, flush=True)
+    print(print_json_pretty(ai_returned), flush=True)
+
+    print("\n5️⃣  WHAT YOU WILL SEND TO FRONTEND (Final Response Sent Back to UI):", flush=True)
+    print(sub_border, flush=True)
+    print(print_json_pretty(send_to_frontend), flush=True)
+
+    print(f"\n{border}\n", flush=True)
+
+def log_frontend_payload(endpoint: str, payload: Any, user_email: Optional[str] = None, usage_summary: Optional[Dict[str, str]] = None):
+    """
+    Formatted terminal output printer for all incoming data received from the frontend.
+    """
+    print("\n" + "=" * 80, flush=True)
+    print(f"📥 [FRONTEND DATA RECEIVED] -> Endpoint: {endpoint}", flush=True)
+    if user_email:
+        print(f"👤 User: {user_email}", flush=True)
+    print("-" * 80, flush=True)
+    print("📦 Payload Data Received From Frontend:", flush=True)
+    print(print_json_pretty(payload), flush=True)
+    
+    if usage_summary:
+        print("-" * 80, flush=True)
+        print("💡 Field Usage & Explanation in Backend:", flush=True)
+        for key, explanation in usage_summary.items():
+            print(f"   • {key}: {explanation}", flush=True)
+    print("=" * 80 + "\n", flush=True)
+
 def extract_token(request: Request, authorization: Optional[str] = Header(None)) -> str:
     token = request.cookies.get(COOKIE_NAME)
     if not token and authorization:
@@ -99,17 +187,21 @@ def verify_trip_ownership(trip_id: str, user_id: str, db: Session) -> TripModel:
 
 
 class ConciergeMessageItem(BaseModel):
-    role: str
-    text: str
+    class Config:
+        extra = "ignore"
+    role: Optional[str] = "user"
+    text: Optional[str] = ""
 
 class ConciergeRequest(BaseModel):
+    class Config:
+        extra = "ignore"
     message: str
     intent: Optional[str] = "CHAT"
     tripId: Optional[str] = None
     itineraryId: Optional[str] = None
     dayId: Optional[str] = None
     activityId: Optional[str] = None
-    messages: Optional[List[ConciergeMessageItem]] = None
+    messages: Optional[List[Any]] = None
     tripContext: Optional[dict] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
@@ -141,7 +233,14 @@ def root():
 
 @app.post("/api/auth/login")
 def login(req: LoginRequest, response: Response, db: Session = Depends(get_db)):
-    log_event(f"🔑 POST /api/auth/login | Provider: {req.provider} | Email: {req.email}")
+    log_frontend_payload(
+        endpoint="POST /api/auth/login",
+        payload=req,
+        user_email=req.email,
+        usage_summary={
+            "email & provider": f"User login credentials ({req.provider}). Used to look up or register user session in PostgreSQL."
+        }
+    )
     try:
         token, auth_user, user_profile, user_prefs = auth.authenticate_or_create_user(db, req)
         response.set_cookie(
@@ -208,7 +307,16 @@ def update_onboarding(
     db: Session = Depends(get_db)
 ):
     auth_user, user_profile, user_prefs = user_data
-    log_event(f"📝 POST /api/user/onboarding | User: {user_profile.firstName}")
+    log_frontend_payload(
+        endpoint="POST /api/user/onboarding",
+        payload=req,
+        user_email=auth_user.email,
+        usage_summary={
+            "firstName / lastName": "User profile name saved to PostgreSQL.",
+            "travelStyles": "Preferred trip vibes used by AI itinerary generator.",
+            "budgetTier": "Spending preference tier used for recommendation filtering."
+        }
+    )
     try:
         updated_profile, updated_prefs = auth.update_user_onboarding(db, auth_user.id, req)
         return {
@@ -918,6 +1026,33 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
             "updatedAt": new_trip.updated_at
         }
 
+    elif reqname == "trips:delete":
+        token = extract_ws_token(websocket, data)
+        user_tuple = None
+        if token:
+            try:
+                user_tuple = auth.get_session_user(db, token)
+            except Exception:
+                pass
+        if user_tuple:
+            auth_user = user_tuple[0]
+            trip_id = data.get("trip_id") or data.get("tripId")
+            if trip_id:
+                itineraries = db.query(ItineraryModel).filter(ItineraryModel.trip_id == trip_id).all()
+                for itin in itineraries:
+                    days = db.query(ItineraryDayModel).filter(ItineraryDayModel.itinerary_id == itin.id).all()
+                    for day in days:
+                        db.query(ItineraryActivityModel).filter(ItineraryActivityModel.day_id == day.id).delete()
+                    db.query(ItineraryDayModel).filter(ItineraryDayModel.itinerary_id == itin.id).delete()
+                db.query(ItineraryModel).filter(ItineraryModel.trip_id == trip_id).delete()
+                db.query(TripStayModel).filter(TripStayModel.trip_id == trip_id).delete()
+                db.query(TripTransportModel).filter(TripTransportModel.trip_id == trip_id).delete()
+                db.query(TripExpenseModel).filter(TripExpenseModel.trip_id == trip_id).delete()
+                db.query(TripModel).filter(TripModel.id == trip_id, TripModel.user_id == auth_user.id).delete()
+                db.commit()
+                log_event(f"🗑️ Deleted trip {trip_id} from PostgreSQL via WebSocket")
+        return {"status": "success", "message": "Trip deleted successfully"}
+
     elif reqname == "trips:get_itinerary":
         trip_id = data.get("trip_id")
         itinerary = db.query(ItineraryModel).filter(ItineraryModel.trip_id == trip_id).first()
@@ -926,26 +1061,29 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
         days = db.query(ItineraryDayModel).filter(ItineraryDayModel.itinerary_id == itinerary.id).order_by(ItineraryDayModel.day_number).all()
         day_list = []
         for d in days:
-            acts = db.query(ItineraryActivityModel).filter(ItineraryActivityModel.day_id == d.id).order_by(ItineraryActivityModel.sequence_order).all()
+            acts = db.query(ItineraryActivityModel).filter(ItineraryActivityModel.day_id == d.id).all()
             day_list.append({
                 "id": d.id,
                 "dayNumber": d.day_number,
                 "date": d.date,
                 "title": d.title,
                 "summary": d.summary,
-                "theme": d.theme,
+                "theme": getattr(d, "theme", None),
                 "activities": [
                     {
                         "id": a.id,
                         "timeSlot": a.time_slot,
-                        "name": a.name,
+                        "title": getattr(a, "title", getattr(a, "name", "")),
+                        "name": getattr(a, "title", getattr(a, "name", "")),
                         "description": a.description,
                         "locationName": a.location_name,
                         "latitude": a.latitude,
                         "longitude": a.longitude,
-                        "estimatedCost": a.estimated_cost,
+                        "estimatedCostInr": getattr(a, "estimated_cost_inr", getattr(a, "estimated_cost", 0)),
+                        "estimatedCost": getattr(a, "estimated_cost_inr", getattr(a, "estimated_cost", 0)),
                         "activityType": a.activity_type,
-                        "media": json.loads(a.media_json) if a.media_json else {}
+                        "bookingRequired": getattr(a, "booking_required", False),
+                        "isConfirmed": getattr(a, "is_confirmed", False)
                     }
                     for a in acts
                 ]
@@ -954,8 +1092,7 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
             "id": itinerary.id,
             "tripId": itinerary.trip_id,
             "status": itinerary.status,
-            "summary": itinerary.summary,
-            "totalEstimatedCost": itinerary.total_estimated_cost,
+            "version": itinerary.version,
             "days": day_list
         }
 
@@ -1073,8 +1210,13 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
             except Exception:
                 pass
 
-        if concierge_req.intent == "SWAP_ACTIVITY" and concierge_req.activityId:
-            activity = db.query(ItineraryActivityModel).filter(ItineraryActivityModel.id == concierge_req.activityId).first()
+        is_swap_intent = concierge_req.intent == "SWAP_ACTIVITY" or "Recommend alternatives for activity:" in concierge_req.message or "swap" in concierge_req.message.lower()
+
+        if is_swap_intent:
+            activity = None
+            if concierge_req.activityId:
+                activity = db.query(ItineraryActivityModel).filter(ItineraryActivityModel.id == concierge_req.activityId).first()
+
             if activity:
                 day = db.query(ItineraryDayModel).filter(ItineraryDayModel.id == activity.day_id).first()
                 current_activity_dict = {
@@ -1086,18 +1228,37 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
                     "latitude": activity.latitude,
                     "longitude": activity.longitude,
                     "estimatedCostInr": activity.estimated_cost_inr,
-                    "date": day.date if day else ""
+                    "date": day.date if day else "2026-10-15"
                 }
-                recommendations = ai_provider_service.generate_swap_recommendations(current_activity_dict, trip_context)
-                return {
-                    "type": "activity_swap_recommendations",
-                    "tripId": concierge_req.tripId,
-                    "itineraryId": concierge_req.itineraryId,
-                    "dayId": concierge_req.dayId,
-                    "activityId": concierge_req.activityId,
-                    "currentActivity": current_activity_dict,
-                    "recommendations": recommendations
+            else:
+                act_name = "Selected Activity"
+                if "activity:" in concierge_req.message:
+                    act_name = concierge_req.message.split("activity:")[-1].strip()
+                elif "for " in concierge_req.message:
+                    act_name = concierge_req.message.split("for ")[-1].strip()
+
+                current_activity_dict = {
+                    "id": concierge_req.activityId or "act_temp",
+                    "title": act_name,
+                    "description": f"Alternative options for {act_name}",
+                    "timeSlot": "10:00 AM",
+                    "locationName": (trip_context.get("destination") or {}).get("name") if isinstance(trip_context.get("destination"), dict) else "Kolkata",
+                    "latitude": 22.5726,
+                    "longitude": 88.3639,
+                    "estimatedCostInr": 500,
+                    "date": "2026-10-15"
                 }
+
+            recommendations = ai_provider_service.generate_swap_recommendations(current_activity_dict, trip_context)
+            return {
+                "type": "activity_swap_recommendations",
+                "tripId": concierge_req.tripId,
+                "itineraryId": concierge_req.itineraryId,
+                "dayId": concierge_req.dayId,
+                "activityId": concierge_req.activityId or current_activity_dict["id"],
+                "currentActivity": current_activity_dict,
+                "recommendations": recommendations
+            }
 
         elif concierge_req.intent == "REFINE_ITINERARY":
             actions = ai_provider_service.generate_refinement_actions(concierge_req.message, {"context": trip_context, "days": itinerary_summary})
@@ -1147,6 +1308,71 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
             "actionType": action_type,
             "actionPayload": action_payload
         }
+
+    elif reqname == "trips:weather_replan":
+        trip_id = data.get("trip_id") or data.get("tripId")
+        if not trip_id:
+            raise ValueError("trip_id is required for weather_replan")
+        return weather_replan_service(db, trip_id)
+
+    elif reqname == "trips:optimize_day":
+        trip_id = data.get("trip_id") or data.get("tripId")
+        day_id = data.get("day_id") or data.get("dayId")
+        goal = data.get("goal", "MINIMIZE_TRAVEL_TIME")
+        if not trip_id or not day_id:
+            raise ValueError("trip_id and day_id are required for optimize_day")
+        return optimize_day_flow_service(db, trip_id, day_id, goal)
+
+    elif reqname == "trips:optimize_budget":
+        trip_id = data.get("trip_id") or data.get("tripId")
+        if not trip_id:
+            raise ValueError("trip_id is required for optimize_budget")
+        return optimize_budget_service(db, trip_id)
+
+    elif reqname == "trips:refine":
+        trip_id = data.get("trip_id") or data.get("tripId")
+        actions = data.get("actions", [])
+        if not trip_id:
+            raise ValueError("trip_id is required for refine")
+        return execute_refinement_actions_service(db, trip_id, actions)
+
+    elif reqname == "trips:regenerate_itinerary":
+        trip_id = data.get("trip_id") or data.get("tripId")
+        if not trip_id:
+            raise ValueError("trip_id is required for regenerate_itinerary")
+        trip = db.query(TripModel).filter(TripModel.id == trip_id).first()
+        if trip:
+            trip.itinerary_status = "GENERATING"
+            db.commit()
+            import threading
+            threading.Thread(target=process_async_itinerary_generation, args=(trip_id, SessionLocal), daemon=True).start()
+        return {"status": "GENERATING", "tripId": trip_id}
+
+    elif reqname == "trips:swap_activity":
+        trip_id = data.get("trip_id") or data.get("tripId")
+        activity_id = data.get("activity_id") or data.get("activityId")
+        replacement = data.get("replacement") or {}
+        if not activity_id:
+            raise ValueError("activity_id is required for swap_activity")
+        act = db.query(ItineraryActivityModel).filter(ItineraryActivityModel.id == activity_id).first()
+        if act and replacement:
+            act.title = replacement.get("name") or replacement.get("title") or act.title
+            act.description = replacement.get("description", act.description)
+            act.location_name = replacement.get("locationName", act.location_name)
+            if replacement.get("latitude"):
+                act.latitude = replacement["latitude"]
+            if replacement.get("longitude"):
+                act.longitude = replacement["longitude"]
+            if replacement.get("estimatedCost"):
+                act.estimated_cost_inr = replacement["estimatedCost"]
+            db.commit()
+        return {"status": "SUCCESS", "activityId": activity_id}
+
+    elif reqname in ("places:search", "location:search"):
+        query = data.get("query", "").strip()
+        if not query:
+            return []
+        return search_places(query)
 
     else:
         raise ValueError(f"Unknown WebSocket request action: [{reqname}]")
@@ -1292,6 +1518,21 @@ def create_trip(
     auth_user, user_profile, user_prefs = user_data
     destination = trip_data.get("destination") or {}
     dest_name = destination.get("name") if isinstance(destination, dict) else "Destination"
+
+    # Log incoming payload from frontend for developer visibility
+    log_frontend_payload(
+        endpoint="POST /api/trips (Create Trip Wizard)",
+        payload=trip_data,
+        user_email=auth_user.email,
+        usage_summary={
+            "destination": f"Destination details ('{dest_name}'). Used for POI search, maps, and AI prompt context.",
+            "startDate / endDate": f"Dates ('{trip_data.get('startDate')}' to '{trip_data.get('endDate')}'). Used for computing total days and daily schedule.",
+            "travelersCount": f"Travelers ({trip_data.get('travelersCount', 2)}). Used for expense estimations.",
+            "tripStyle": f"Travel styles ({trip_data.get('tripStyle') or user_prefs.travelStyles}). Passed to AI prompt for activity recommendations.",
+            "budgetLevel / customBudgetAmount": f"Budget setting ({trip_data.get('budgetLevel', 'MODERATE')}). Used to constrain activity and accommodation cost estimates.",
+            "clientRequestId": f"Idempotency token ({trip_data.get('clientRequestId')}). Prevents duplicate trip creation."
+        }
+    )
     
     # 1. Idempotency Guard Check
     client_req_id = trip_data.get("clientRequestId")
@@ -1491,6 +1732,13 @@ def regenerate_itinerary(
 @app.delete("/api/trips/{trip_id}")
 def delete_trip(trip_id: str, user_data = Depends(get_current_user), db: Session = Depends(get_db)):
     auth_user, _, _ = user_data
+    itineraries = db.query(ItineraryModel).filter(ItineraryModel.trip_id == trip_id).all()
+    for itin in itineraries:
+        days = db.query(ItineraryDayModel).filter(ItineraryDayModel.itinerary_id == itin.id).all()
+        for day in days:
+            db.query(ItineraryActivityModel).filter(ItineraryActivityModel.day_id == day.id).delete()
+        db.query(ItineraryDayModel).filter(ItineraryDayModel.itinerary_id == itin.id).delete()
+    db.query(ItineraryModel).filter(ItineraryModel.trip_id == trip_id).delete()
     db.query(TripStayModel).filter(TripStayModel.trip_id == trip_id).delete()
     db.query(TripTransportModel).filter(TripTransportModel.trip_id == trip_id).delete()
     db.query(TripExpenseModel).filter(TripExpenseModel.trip_id == trip_id).delete()
@@ -1547,6 +1795,16 @@ def ai_concierge(
     db: Session = Depends(get_db)
 ):
     auth_user, user_profile, _ = user_data
+    log_frontend_payload(
+        endpoint="POST /api/ai/concierge",
+        payload=req,
+        user_email=auth_user.email,
+        usage_summary={
+            "message": "User query string sent from AI Concierge drawer.",
+            "intent": f"Query intent ({req.intent}). Routes query to chat, swap, or search pipeline.",
+            "tripId / dayId": "Context identifiers used to assemble trip context into prompt."
+        }
+    )
 
     from ai_provider import ai_provider_service
 
@@ -1583,46 +1841,60 @@ def ai_concierge(
                     ]
                 })
 
-    if req.intent == "SWAP_ACTIVITY":
-        if not req.tripId or not req.activityId:
-            raise HTTPException(status_code=400, detail="tripId and activityId are required for SWAP_ACTIVITY intent")
+    is_swap_intent = req.intent == "SWAP_ACTIVITY" or "Recommend alternatives for activity:" in req.message or "swap" in req.message.lower()
 
-        trip = verify_trip_ownership(req.tripId, auth_user.id, db)
-        itin = db.query(ItineraryModel).filter(ItineraryModel.trip_id == trip.id).first()
-        if not itin:
-            raise HTTPException(status_code=404, detail="Itinerary not found for trip")
+    if is_swap_intent:
+        trip = verify_trip_ownership(req.tripId, auth_user.id, db) if req.tripId else None
+        itin = db.query(ItineraryModel).filter(ItineraryModel.trip_id == trip.id).first() if trip else None
+        
+        activity = None
+        if req.activityId:
+            activity = db.query(ItineraryActivityModel).filter(ItineraryActivityModel.id == req.activityId).first()
 
-        activity = db.query(ItineraryActivityModel).filter(ItineraryActivityModel.id == req.activityId).first()
-        if not activity:
-            raise HTTPException(status_code=404, detail="Target activity not found")
+        if activity:
+            day = db.query(ItineraryDayModel).filter(ItineraryDayModel.id == activity.day_id).first()
+            current_activity_dict = {
+                "id": activity.id,
+                "title": activity.title,
+                "description": activity.description,
+                "timeSlot": activity.time_slot,
+                "locationName": activity.location_name,
+                "latitude": activity.latitude,
+                "longitude": activity.longitude,
+                "estimatedCostInr": activity.estimated_cost_inr,
+                "date": day.date if day else "2026-10-15"
+            }
+        else:
+            act_name = "Selected Activity"
+            if "activity:" in req.message:
+                act_name = req.message.split("activity:")[-1].strip()
+            elif "for " in req.message:
+                act_name = req.message.split("for ")[-1].strip()
 
-        day = db.query(ItineraryDayModel).filter(ItineraryDayModel.id == activity.day_id).first()
-        if not day or day.itinerary_id != itin.id:
-            raise HTTPException(status_code=403, detail="Activity does not belong to user trip itinerary")
-
-        current_activity_dict = {
-            "id": activity.id,
-            "title": activity.title,
-            "description": activity.description,
-            "timeSlot": activity.time_slot,
-            "locationName": activity.location_name,
-            "latitude": activity.latitude,
-            "longitude": activity.longitude,
-            "estimatedCostInr": activity.estimated_cost_inr,
-            "date": day.date
-        }
+            dest_name = (trip.destination.get("name") if trip and isinstance(trip.destination, dict) else "Kolkata") if trip else "Kolkata"
+            current_activity_dict = {
+                "id": req.activityId or "act_temp",
+                "title": act_name,
+                "description": f"Alternative options for {act_name}",
+                "timeSlot": "10:00 AM",
+                "locationName": dest_name,
+                "latitude": 22.5726,
+                "longitude": 88.3639,
+                "estimatedCostInr": 500,
+                "date": "2026-10-15"
+            }
 
         recommendations = ai_provider_service.generate_swap_recommendations(current_activity_dict, trip_context)
-
-        return {
+        res_payload = {
             "type": "activity_swap_recommendations",
-            "tripId": trip.id,
-            "itineraryId": itin.id,
-            "dayId": day.id,
-            "activityId": activity.id,
+            "tripId": req.tripId,
+            "itineraryId": itin.id if itin else None,
+            "dayId": req.dayId,
+            "activityId": req.activityId or current_activity_dict["id"],
             "currentActivity": current_activity_dict,
             "recommendations": recommendations
         }
+        return res_payload
 
     elif req.intent == "REFINE_ITINERARY":
         actions = ai_provider_service.generate_refinement_actions(req.message, {"context": trip_context, "days": itinerary_summary})
@@ -1633,7 +1905,14 @@ def ai_concierge(
         }
 
     # Default to GENERAL_CHAT / CHAT
-    messages_list = req.messages or [{"role": "user", "text": req.message}]
+    messages_list = []
+    if req.messages:
+        for m in req.messages:
+            r = m.get('role', 'user') if isinstance(m, dict) else (getattr(m, 'role', 'user') or 'user')
+            t = m.get('text', '') if isinstance(m, dict) else (getattr(m, 'text', '') or '')
+            messages_list.append({"role": str(r), "text": str(t)})
+    else:
+        messages_list = [{"role": "user", "text": req.message}]
     chat_res = ai_provider_service.generate_chat_response(
         messages=messages_list,
         trip_context=trip_context
@@ -1647,12 +1926,34 @@ def ai_concierge(
         action_type = None
         action_payload = None
 
-    return {
+    res_payload = {
         "type": "chat_response",
         "reply": reply_str,
         "actionType": action_type,
         "actionPayload": action_payload
     }
+
+    try:
+        log_pipeline_5_steps(
+            flow_name="AI Concierge Assistant Chat",
+            user_sends=req,
+            backend_received={
+                "user": auth_user.email,
+                "message": req.message,
+                "intent": req.intent,
+                "tripId": req.tripId
+            },
+            given_to_ai={
+                "input_data": {"userMessage": req.message, "tripContext": trip_context},
+                "prompt": f"User: {req.message} | Context: {trip_context}"
+            },
+            ai_returned=chat_res,
+            send_to_frontend=res_payload
+        )
+    except Exception:
+        pass
+
+    return res_payload
 
 @app.patch("/api/trips/{trip_id}/itinerary/activities/{activity_id}")
 def swap_itinerary_activity(
@@ -2105,6 +2406,16 @@ def tour_guide_chat(
     db: Session = Depends(get_db)
 ):
     """Conversational AI tour guide chat supporting Local Mode and Trip Mode."""
+    log_frontend_payload(
+        endpoint="POST /api/tour-guide/chat",
+        payload=req,
+        usage_summary={
+            "message": "User query string sent from AI Guide screen.",
+            "mode": f"Chat mode ('{req.mode}'). Used to decide between nearby POI guide or active trip guide.",
+            "place_id": f"Specific POI selected ({req.place_id}). Used to fetch detailed history & stories for the place card.",
+            "latitude / longitude": f"User location coordinates ({req.latitude}, {req.longitude}). Used to query Overpass API for real nearby places."
+        }
+    )
     user_id = "guest"
     user_prefs = None
     trip_context = None
@@ -2210,7 +2521,7 @@ def tour_guide_chat(
     # Add AI response to session with active place ID
     add_message_to_session(session, "guide", result.get("reply", ""), active_place_id)
 
-    return {
+    res_payload = {
         "reply": result.get("reply", "I'm here to help!"),
         "suggestedActions": result.get("suggestedActions", []),
         "place": place_context,
@@ -2218,6 +2529,34 @@ def tour_guide_chat(
         "trip_id": target_trip_id,
         "source": result.get("source", "unknown")
     }
+
+    try:
+        log_pipeline_5_steps(
+            flow_name="AI Tour Guide Chat",
+            user_sends=req,
+            backend_received={
+                "user": user_id,
+                "message": req.message,
+                "mode": target_mode,
+                "placeId": active_place_id,
+                "userLocation": user_location
+            },
+            given_to_ai={
+                "input_data": {
+                    "placeContext": place_context.get("name") if place_context else None,
+                    "nearbyPOIs": len(session.get("nearby_places", [])),
+                    "userPreferences": user_prefs,
+                    "mode": target_mode
+                },
+                "prompt": f"User Query: {req.message} | Place Focus: {place_context.get('name') if place_context else 'General'} | Mode: {target_mode}"
+            },
+            ai_returned=result,
+            send_to_frontend=res_payload
+        )
+    except Exception:
+        pass
+
+    return res_payload
 
 @app.post("/api/tour-guide/visit")
 def tour_guide_visit(

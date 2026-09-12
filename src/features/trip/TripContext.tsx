@@ -406,6 +406,17 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [trips, userId]);
 
   const deleteTrip = useCallback(async (tripId: string) => {
+    try {
+      await wsClient.sendRequest('trips:delete', { trip_id: tripId });
+    } catch (err) {
+      console.warn('WebSocket trips:delete failed, trying HTTP fallback...', err);
+      try {
+        await fetch(`/api/trips/${tripId}`, { method: 'DELETE', credentials: 'include' });
+      } catch (httpErr) {
+        console.error('Failed to delete trip from backend database:', httpErr);
+      }
+    }
+
     const updatedTrips = trips.filter(t => t.id !== tripId);
     setTrips(updatedTrips);
     tripRepository.saveStoredTrips(updatedTrips, userId);
@@ -435,7 +446,19 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (data.status) setItineraryStatus(data.status);
       }
     } catch (err) {
-      console.warn('WebSocket failed to refetch itinerary:', err);
+      console.warn('WebSocket failed to refetch itinerary, trying HTTP fallback...', err);
+      try {
+        const res = await fetch(`/api/trips/${tid}/itinerary`, { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          if (data) {
+            setCurrentItinerary(data);
+            if (data.status) setItineraryStatus(data.status);
+          }
+        }
+      } catch (httpErr) {
+        console.error('HTTP refetch itinerary fallback failed:', httpErr);
+      }
     }
   }, [currentTripId]);
 
@@ -444,7 +467,21 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
     activityId: string,
     payload: { itineraryId?: string; dayId?: string; replacement: any }
   ): Promise<void> => {
-    await wsClient.sendRequest('trips:swap_activity', { trip_id: tripId, activity_id: activityId, ...payload });
+    try {
+      await wsClient.sendRequest('trips:swap_activity', { trip_id: tripId, activity_id: activityId, ...payload });
+    } catch (wsErr) {
+      console.warn('WebSocket swap_activity failed, trying HTTP PATCH fallback...', wsErr);
+      try {
+        await fetch(`/api/trips/${tripId}/itinerary/activities/${activityId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          credentials: 'include'
+        });
+      } catch (httpErr) {
+        console.error('HTTP swap_activity fallback failed:', httpErr);
+      }
+    }
     await refetchItinerary(tripId);
   }, [refetchItinerary]);
 

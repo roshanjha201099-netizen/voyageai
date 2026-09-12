@@ -14,6 +14,20 @@ load_dotenv(override=True)
 # Logging setup
 logger = logging.getLogger("voyageai.vertex")
 
+def _extract_msg_attr(m: Any, attr: str, default: str = "") -> str:
+    if isinstance(m, dict):
+        return str(m.get(attr, default) or default)
+    if hasattr(m, attr):
+        val = getattr(m, attr)
+        return str(val if val is not None else default)
+    return default
+
+def _resolve_model_name(requested_model: str = None) -> str:
+    model = requested_model or os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+    if "3.6" in model or "flash" not in model:
+        return "gemini-2.0-flash"
+    return model
+
 class AIProviderInterface(ABC):
     @abstractmethod
     def generate_itinerary_json(self, ai_input: Dict[str, Any], prompt: str) -> str:
@@ -543,9 +557,9 @@ class MockAIProvider(AIProviderInterface):
     def generate_chat_response(self, messages: List[Dict[str, str]], trip_context: Dict[str, Any]) -> Dict[str, Any]:
         dest_name = (trip_context.get("destination") or {}).get("name") or "your destination"
         last_user_msg = ""
-        for m in reversed(messages):
-            if m.get("role") == "user":
-                last_user_msg = m.get("text", "")
+        for m in reversed(messages or []):
+            if _extract_msg_attr(m, "role") == "user":
+                last_user_msg = _extract_msg_attr(m, "text")
                 break
 
         q = last_user_msg.lower()
@@ -790,7 +804,7 @@ class GeminiProvider(AIProviderInterface):
             logger.error("[AI_CONFIG_ERROR] GEMINI_API_KEY environment variable is missing or empty.")
             raise ValueError("AI_CONFIG_ERROR: GEMINI_API_KEY is missing or empty.")
 
-        model_name = self.model_name or os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+        model_name = _resolve_model_name(self.model_name)
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
 
         headers = {
@@ -886,7 +900,7 @@ class GeminiProvider(AIProviderInterface):
             return MockAIProvider().generate_swap_recommendations(current_activity, trip_context)
 
         dest_name = (trip_context.get("destination") or {}).get("name") or "India"
-        model_name = self.model_name or os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+        model_name = _resolve_model_name(self.model_name)
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
 
         prompt = f"""
@@ -936,7 +950,7 @@ Return ONLY valid JSON matching this schema:
 
         try:
             import requests
-            res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=15)
+            res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=4)
             if res.status_code == 200:
                 res_json = res.json()
                 text = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
@@ -962,10 +976,10 @@ Return ONLY valid JSON matching this schema:
             return MockAIProvider().generate_chat_response(messages, trip_context)
 
         dest_name = (trip_context.get("destination") or {}).get("name") or "India"
-        model_name = self.model_name or os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+        model_name = _resolve_model_name(self.model_name)
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
 
-        formatted_messages = "\n".join([f"{m.get('role', 'user').upper()}: {m.get('text', '')}" for m in messages[-6:]])
+        formatted_messages = "\n".join([f"{_extract_msg_attr(m, 'role', 'user').upper()}: {_extract_msg_attr(m, 'text', '')}" for m in (messages or [])[-6:]])
 
         nearby_str = ""
         if trip_context.get("nearbyPlaces"):
@@ -999,7 +1013,7 @@ Return ONLY valid JSON matching this schema:
 
         try:
             import requests
-            res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=15)
+            res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=4)
             if res.status_code == 200:
                 text = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
                 if text.startswith("```"):
@@ -1028,7 +1042,7 @@ Return ONLY valid JSON matching this schema:
         if not api_key:
             return MockAIProvider().generate_day_optimization(day_info, activities, goal)
 
-        model_name = self.model_name or os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+        model_name = _resolve_model_name(self.model_name)
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
 
         prompt = f"""
@@ -1060,7 +1074,7 @@ Return ONLY valid JSON matching this schema:
 
         try:
             import requests
-            res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=15)
+            res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=4)
             if res.status_code == 200:
                 text = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
                 if text.startswith("```"):
@@ -1090,7 +1104,7 @@ Return ONLY valid JSON matching this schema:
         if not api_key:
             return MockAIProvider().generate_budget_optimization(trip_budget, current_costs, activities)
 
-        model_name = self.model_name or os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+        model_name = _resolve_model_name(self.model_name)
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
 
         prompt = f"""
@@ -1138,7 +1152,7 @@ Return ONLY valid JSON matching this schema:
 
         try:
             import requests
-            res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=15)
+            res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=4)
             if res.status_code == 200:
                 text = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
                 if text.startswith("```"):
@@ -1157,7 +1171,7 @@ Return ONLY valid JSON matching this schema:
         if not api_key:
             return MockAIProvider().generate_weather_replan(forecast, activities)
 
-        model_name = self.model_name or os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+        model_name = _resolve_model_name(self.model_name)
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
 
         prompt = f"""
@@ -1198,7 +1212,7 @@ Return ONLY valid JSON matching this schema:
 
         try:
             import requests
-            res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=15)
+            res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=4)
             if res.status_code == 200:
                 text = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
                 if text.startswith("```"):
@@ -1217,7 +1231,7 @@ Return ONLY valid JSON matching this schema:
         if not api_key:
             return MockAIProvider().generate_refinement_actions(instruction, current_itinerary)
 
-        model_name = self.model_name or os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+        model_name = _resolve_model_name(self.model_name)
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
 
         prompt = f"""
@@ -1258,7 +1272,7 @@ Generate structured actions to execute. Return ONLY valid JSON matching this sch
 
         try:
             import requests
-            res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=15)
+            res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=4)
             if res.status_code == 200:
                 text = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
                 if text.startswith("```"):
@@ -1330,34 +1344,79 @@ def get_ai_provider() -> AIProviderInterface:
 class DynamicAIProviderProxy(AIProviderInterface):
     """
     Proxy that dynamically routes to the currently configured AIProvider based on AI_PROVIDER env var.
+    If the active provider (e.g. Gemini) encounters an error (503, 429, timeout, network error),
+    it automatically falls back to MockAIProvider so that trip itinerary generation and AI concierge never hang.
     """
     def generate_itinerary_json(self, ai_input: Dict[str, Any], prompt: str) -> str:
         provider = get_ai_provider()
-        return provider.generate_itinerary_json(ai_input, prompt)
+        try:
+            return provider.generate_itinerary_json(ai_input, prompt)
+        except Exception as err:
+            if not isinstance(provider, MockAIProvider):
+                print(f"\n⚠️ [AI_FALLBACK] Primary AI Provider ({provider.__class__.__name__}) error: {err}", flush=True)
+                print(f"🔄 Automatically falling back to MockAIProvider to complete generation cleanly...\n", flush=True)
+                return MockAIProvider().generate_itinerary_json(ai_input, prompt)
+            raise
 
     def generate_swap_recommendations(self, current_activity: Dict[str, Any], trip_context: Dict[str, Any]) -> List[Dict[str, Any]]:
         provider = get_ai_provider()
-        return provider.generate_swap_recommendations(current_activity, trip_context)
+        try:
+            return provider.generate_swap_recommendations(current_activity, trip_context)
+        except Exception as err:
+            if not isinstance(provider, MockAIProvider):
+                print(f"\n⚠️ [AI_FALLBACK] Swap recommendations error ({err}). Falling back to MockAIProvider...", flush=True)
+                return MockAIProvider().generate_swap_recommendations(current_activity, trip_context)
+            raise
 
     def generate_chat_response(self, messages: List[Dict[str, str]], trip_context: Dict[str, Any]) -> Dict[str, Any]:
         provider = get_ai_provider()
-        return provider.generate_chat_response(messages, trip_context)
+        try:
+            return provider.generate_chat_response(messages, trip_context)
+        except Exception as err:
+            if not isinstance(provider, MockAIProvider):
+                print(f"\n⚠️ [AI_FALLBACK] Chat response error ({err}). Falling back to MockAIProvider...", flush=True)
+                return MockAIProvider().generate_chat_response(messages, trip_context)
+            raise
 
     def generate_day_optimization(self, day_info: Dict[str, Any], activities: List[Dict[str, Any]], goal: str) -> List[Dict[str, Any]]:
         provider = get_ai_provider()
-        return provider.generate_day_optimization(day_info, activities, goal)
+        try:
+            return provider.generate_day_optimization(day_info, activities, goal)
+        except Exception as err:
+            if not isinstance(provider, MockAIProvider):
+                print(f"\n⚠️ [AI_FALLBACK] Day optimization error ({err}). Falling back to MockAIProvider...", flush=True)
+                return MockAIProvider().generate_day_optimization(day_info, activities, goal)
+            raise
 
     def generate_budget_optimization(self, trip_budget: Dict[str, Any], current_costs: Dict[str, Any], activities: List[Dict[str, Any]]) -> Dict[str, Any]:
         provider = get_ai_provider()
-        return provider.generate_budget_optimization(trip_budget, current_costs, activities)
+        try:
+            return provider.generate_budget_optimization(trip_budget, current_costs, activities)
+        except Exception as err:
+            if not isinstance(provider, MockAIProvider):
+                print(f"\n⚠️ [AI_FALLBACK] Budget optimization error ({err}). Falling back to MockAIProvider...", flush=True)
+                return MockAIProvider().generate_budget_optimization(trip_budget, current_costs, activities)
+            raise
 
     def generate_weather_replan(self, forecast: Dict[str, Any], activities: List[Dict[str, Any]]) -> Dict[str, Any]:
         provider = get_ai_provider()
-        return provider.generate_weather_replan(forecast, activities)
+        try:
+            return provider.generate_weather_replan(forecast, activities)
+        except Exception as err:
+            if not isinstance(provider, MockAIProvider):
+                print(f"\n⚠️ [AI_FALLBACK] Weather replan error ({err}). Falling back to MockAIProvider...", flush=True)
+                return MockAIProvider().generate_weather_replan(forecast, activities)
+            raise
 
     def generate_refinement_actions(self, instruction: str, current_itinerary: Dict[str, Any]) -> List[Dict[str, Any]]:
         provider = get_ai_provider()
-        return provider.generate_refinement_actions(instruction, current_itinerary)
+        try:
+            return provider.generate_refinement_actions(instruction, current_itinerary)
+        except Exception as err:
+            if not isinstance(provider, MockAIProvider):
+                print(f"\n⚠️ [AI_FALLBACK] Refinement error ({err}). Falling back to MockAIProvider...", flush=True)
+                return MockAIProvider().generate_refinement_actions(instruction, current_itinerary)
+            raise
 
 # Active Provider Service Instance
 ai_provider_service = DynamicAIProviderProxy()

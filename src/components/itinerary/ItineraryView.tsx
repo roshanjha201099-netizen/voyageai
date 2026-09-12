@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useTrip } from '../../features/trip/TripContext';
-import { MapPin, Sparkles, Wallet, CloudRain, RefreshCw, Navigation, Car } from 'lucide-react';
+import { MapPin, Sparkles, Wallet, CloudRain, RefreshCw, Navigation, Car, Calendar, ArrowLeft } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 export const ItineraryView: React.FC = () => {
+  const navigate = useNavigate();
   const { openCabModal, openInAppNavigation, openSwapAssistant } = useApp();
   const { currentTrip, currentItinerary, optimizeDayItinerary, optimizeBudget, weatherReplan } = useTrip();
 
@@ -11,19 +13,41 @@ export const ItineraryView: React.FC = () => {
   const [isOptimizing, setIsOptimizing] = useState<boolean>(false);
   const [optStatusMessage, setOptStatusMessage] = useState<string | null>(null);
 
+  // Custom UI Modals for Budget AI and Weather AI (Replaces raw browser alerts)
+  const [budgetAnalysisModal, setBudgetAnalysisModal] = useState<{
+    isOpen: boolean;
+    data: {
+      projectedCost: number;
+      targetBudget: number;
+      savingsRequired: number;
+      recommendations: any[];
+    } | null;
+  }>({ isOpen: false, data: null });
+
+  const [weatherReplanModal, setWeatherReplanModal] = useState<{
+    isOpen: boolean;
+    data: {
+      forecast: any;
+      affectedActivities: any[];
+      recommendations: any[];
+    } | null;
+  }>({ isOpen: false, data: null });
+
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
   const days = currentItinerary?.days || [];
   const selectedDay = days.find(d => d.dayNumber === expandedDayNumber) || days[0];
 
   const handleOptimizeCurrentDay = async () => {
     if (!currentTrip?.id || !selectedDay?.id) return;
     setIsOptimizing(true);
-    setOptStatusMessage("Calculating shortest transit route & optimizing day flow in PostgreSQL...");
+    setOptStatusMessage("Calculating shortest transit route & optimizing day flow...");
     try {
       const res = await optimizeDayItinerary(currentTrip.id, selectedDay.id, "MINIMIZE_TRAVEL_TIME");
       setOptStatusMessage(res.message || "Day flow optimized!");
       setTimeout(() => setOptStatusMessage(null), 4000);
     } catch (err: any) {
-      alert(err.message || "Failed to optimize day flow");
+      setErrorMessage(err.message || "Failed to optimize day flow");
       setOptStatusMessage(null);
     } finally {
       setIsOptimizing(false);
@@ -33,17 +57,21 @@ export const ItineraryView: React.FC = () => {
   const handleRunBudgetOptimization = async () => {
     if (!currentTrip?.id) return;
     setIsOptimizing(true);
-    setOptStatusMessage("Analyzing expenses against budget in PostgreSQL...");
+    setOptStatusMessage("Analyzing expenses against budget...");
     try {
       const res = await optimizeBudget(currentTrip.id);
-      const recs = res.recommendations || [];
-      alert(`AI Budget Optimization Analysis:\nProjected Total: ₹${res.projectedCost}\nTarget Budget: ₹${res.targetBudget}\nSavings Recommended: ₹${res.savingsRequired}\n\nKey Suggestions:\n` +
-        recs.map((r: any, i: number) => `${i+1}. ${r.reason}`).join('\n')
-      );
-      setOptStatusMessage("Budget analysis complete!");
-      setTimeout(() => setOptStatusMessage(null), 4000);
+      setBudgetAnalysisModal({
+        isOpen: true,
+        data: {
+          projectedCost: res.projectedCost || 0,
+          targetBudget: res.targetBudget || 30000,
+          savingsRequired: res.savingsRequired || 0,
+          recommendations: res.recommendations || []
+        }
+      });
+      setOptStatusMessage(null);
     } catch (err: any) {
-      alert(err.message || "Failed to run budget optimization");
+      setErrorMessage(err.message || "Failed to run budget optimization");
       setOptStatusMessage(null);
     } finally {
       setIsOptimizing(false);
@@ -56,187 +84,367 @@ export const ItineraryView: React.FC = () => {
     setOptStatusMessage("Checking weather forecasts & outdoor activities...");
     try {
       const res = await weatherReplan(currentTrip.id);
-      const recs = res.recommendations || [];
-      alert(`AI Weather Replanning Alert:\nCondition: ${res.forecast?.condition || 'Rain Alert'}\nImpacted Outdoor Activities: ${res.affectedActivities?.length || 0}\n\nProposed Swaps:\n` +
-        recs.map((r: any, i: number) => `${i+1}. ${r.reason || 'Replace with indoor activity'}`).join('\n')
-      );
-      setOptStatusMessage("Weather replan analysis complete!");
-      setTimeout(() => setOptStatusMessage(null), 4000);
+      setWeatherReplanModal({
+        isOpen: true,
+        data: {
+          forecast: res.forecast || { condition: "Rain Alert" },
+          affectedActivities: res.affectedActivities || [],
+          recommendations: res.recommendations || []
+        }
+      });
+      setOptStatusMessage(null);
     } catch (err: any) {
-      alert(err.message || "Failed to run weather replan");
+      setErrorMessage(err.message || "Failed to run weather replan");
       setOptStatusMessage(null);
     } finally {
       setIsOptimizing(false);
     }
   };
 
-  return (
-    <div className="space-y-6 pb-28 max-w-xl mx-auto animate-fadeIn">
-      {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-screen-title text-white">Trip Itinerary</h1>
-          <p className="text-meta mt-1">{days.length} Days Journey · {currentTrip?.title || 'Active Package'}</p>
-        </div>
+  const destName = currentTrip?.destination?.name || 'Trip Destination';
 
-        {/* AI Suite Quick Trigger Buttons */}
-        <div className="flex flex-wrap items-center gap-2">
+  return (
+    <div className="space-y-5 pb-28 max-w-xl mx-auto animate-fadeIn">
+      {/* Top Header Bar */}
+      <div className="flex items-center justify-between border-b border-[#D9DEDA] pb-3">
+        <button
+          type="button"
+          onClick={() => navigate('/trips')}
+          className="flex items-center gap-2 text-[#1F2522] hover:text-[#355F58] font-bold text-sm press-scale"
+        >
+          <ArrowLeft className="w-5 h-5 text-[#355F58]" />
+          <span>My Trips</span>
+        </button>
+
+        <div className="flex items-center gap-2">
           <button
             onClick={handleRunBudgetOptimization}
             disabled={isOptimizing}
-            className="px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold flex items-center gap-1.5 hover:bg-amber-500/20 transition-all press-scale"
+            className="px-3 py-1.5 rounded-full bg-[#F0F2EF] hover:bg-[#E8F0EE] border border-[#D9DEDA] text-[#1F2522] text-xs font-bold flex items-center gap-1.5 press-scale"
           >
-            <Wallet className="w-3.5 h-3.5" />
+            <Wallet className="w-3.5 h-3.5 text-[#355F58]" />
             <span>Budget AI</span>
           </button>
           <button
             onClick={handleRunWeatherReplan}
             disabled={isOptimizing}
-            className="px-3 py-1.5 rounded-xl bg-sky-500/10 border border-sky-500/30 text-sky-300 text-xs font-bold flex items-center gap-1.5 hover:bg-sky-500/20 transition-all press-scale"
+            className="px-3 py-1.5 rounded-full bg-[#E8F0EE] hover:bg-[#D4E4E0] border border-[#355F58]/30 text-[#355F58] text-xs font-bold flex items-center gap-1.5 press-scale"
           >
-            <CloudRain className="w-3.5 h-3.5" />
+            <CloudRain className="w-3.5 h-3.5 text-[#355F58]" />
             <span>Weather AI</span>
           </button>
         </div>
       </div>
 
+      {/* Main Trip Banner */}
+      <div className="bg-white border border-[#D9DEDA] rounded-3xl p-5 space-y-2 shadow-xs">
+        <div className="flex items-center justify-between">
+          <span className="px-3 py-1 rounded-full bg-[#E8F0EE] text-[#355F58] font-extrabold text-xs border border-[#355F58]/30">
+            {destName}
+          </span>
+          <span className="text-xs text-[#5F6863] font-bold flex items-center gap-1">
+            <Calendar className="w-3.5 h-3.5 text-[#355F58]" />
+            {currentTrip?.startDate} to {currentTrip?.endDate}
+          </span>
+        </div>
+        <h1 className="text-xl sm:text-2xl font-black text-[#1F2522]">
+          {currentTrip?.title || `${destName} Tour Package`}
+        </h1>
+        <p className="text-xs text-[#5F6863] font-medium">
+          {days.length} Days Detailed AI Itinerary · {currentTrip?.travelers?.length || 2} Travelers
+        </p>
+      </div>
+
       {optStatusMessage && (
-        <div className="p-3.5 rounded-2xl bg-teal-500/10 border border-teal-500/30 text-xs font-mono text-teal-300 flex items-center gap-2 animate-fadeIn shadow-lg">
-          <RefreshCw className="w-4 h-4 animate-spin shrink-0 text-teal-400" />
+        <div className="p-3.5 rounded-2xl bg-[#E8F0EE] border border-[#355F58]/30 text-xs font-bold text-[#355F58] flex items-center gap-2 animate-fadeIn shadow-xs">
+          <RefreshCw className="w-4 h-4 animate-spin shrink-0 text-[#355F58]" />
           <span>{optStatusMessage}</span>
         </div>
       )}
 
-      {/* Day Pills Selector */}
-      <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-1 px-1 pb-1">
-        {days.map(day => (
-          <button
-            key={day.id || day.dayNumber}
-            onClick={() => setExpandedDayNumber(day.dayNumber)}
-            className={`press-scale shrink-0 px-4 py-2.5 rounded-2xl text-xs font-extrabold transition-all border ${
-              expandedDayNumber === day.dayNumber
-                ? 'bg-teal-500 text-slate-950 border-teal-300 shadow-lg shadow-teal-500/20'
-                : 'bg-[#0D1117] text-slate-300 border-white/10 hover:border-teal-500/40'
-            }`}
-          >
-            Day {day.dayNumber}
-          </button>
-        ))}
-      </div>
-
-      {/* Connected Day Timeline */}
-      {selectedDay && (
-        <div key={selectedDay.id || selectedDay.dayNumber} className="space-y-4">
-          <div className="p-4 rounded-2xl bg-[#0D1117] border border-white/10 flex items-center justify-between">
-            <div>
-              <h2 className="text-sm font-black text-white">{selectedDay.title}</h2>
-              <p className="text-xs text-slate-400 mt-0.5">{selectedDay.date || `Day ${selectedDay.dayNumber}`}</p>
-            </div>
-            <span className="px-2.5 py-1 rounded-full bg-teal-500/20 text-teal-300 font-mono font-bold text-xs border border-teal-500/30">
-              {selectedDay.activities.length} Activities
-            </span>
+      {/* If Generating or Empty */}
+      {(!days || days.length === 0) ? (
+        <div className="bg-white border border-[#D9DEDA] rounded-3xl p-8 text-center space-y-3 shadow-xs">
+          <RefreshCw className="w-8 h-8 text-[#355F58] animate-spin mx-auto" />
+          <h2 className="text-lg font-extrabold text-[#1F2522]">Generating AI Itinerary...</h2>
+          <p className="text-xs text-[#5F6863] font-medium">
+            Building day-by-day activities, places, and recommendations for {destName}. This usually takes a few seconds.
+          </p>
+        </div>
+      ) : (
+        <>
+          {/* Day Pills Selector */}
+          <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+            {days.map(day => (
+              <button
+                key={day.id || day.dayNumber}
+                type="button"
+                onClick={() => setExpandedDayNumber(day.dayNumber)}
+                className={`press-scale shrink-0 px-4 py-2.5 rounded-2xl text-xs font-extrabold transition-all border ${
+                  expandedDayNumber === day.dayNumber
+                    ? 'bg-[#355F58] text-white border-[#355F58] shadow-xs'
+                    : 'bg-[#F0F2EF] text-[#1F2522] border-[#D9DEDA] hover:border-[#355F58]/40'
+                }`}
+              >
+                Day {day.dayNumber}
+              </button>
+            ))}
           </div>
 
-          <div className="space-y-0 pl-1">
-            {selectedDay.activities.map((act, idx) => {
-              const isDone = act.isConfirmed;
-              return (
-                <div key={act.id} className="flex gap-3 py-2">
-                  {/* Vertical Timeline Marker Line */}
-                  <div className="flex flex-col items-center w-6 shrink-0 pt-1">
-                    <div className={`w-5 h-5 rounded-full flex items-center justify-center border text-[10px] font-bold ${
-                      isDone ? 'bg-teal-500 text-slate-950 border-teal-300' : 'bg-slate-900 text-teal-400 border-teal-500/40'
-                    }`}>
-                      {idx + 1}
-                    </div>
-                    {idx < selectedDay.activities.length - 1 && (
-                      <div className={`w-0.5 flex-1 my-1 ${isDone ? 'bg-teal-500/40' : 'bg-white/10'}`} />
-                    )}
-                  </div>
+          {/* Connected Day Timeline */}
+          {selectedDay && (
+            <div key={selectedDay.id || selectedDay.dayNumber} className="space-y-4">
+              <div className="p-4 rounded-2xl bg-white border border-[#D9DEDA] flex items-center justify-between shadow-xs">
+                <div>
+                  <h2 className="text-base font-extrabold text-[#1F2522]">{selectedDay.title}</h2>
+                  <p className="text-xs text-[#5F6863] font-medium mt-0.5">{selectedDay.date || `Day ${selectedDay.dayNumber}`}</p>
+                </div>
+                <span className="px-3 py-1 rounded-full bg-[#E8F0EE] text-[#355F58] font-bold text-xs border border-[#355F58]/30">
+                  {selectedDay.activities.length} Activities
+                </span>
+              </div>
 
-                  {/* Activity Detail Content Card */}
-                  <div className="flex-1 p-4 rounded-2xl bg-[#0D1117] border border-white/10 hover:border-teal-500/40 transition-all space-y-2 shadow-lg">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <h3 className={`text-sm font-black ${isDone ? 'text-slate-400 line-through' : 'text-white'}`}>
-                          {act.title}
-                        </h3>
-                        <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
-                          <MapPin className="w-3.5 h-3.5 text-teal-400 shrink-0" />
-                          <span>{act.locationName || currentTrip?.destination?.name || 'Destination'}</span>
-                        </p>
-                      </div>
+              <div className="space-y-3">
+                {selectedDay.activities.map((act, idx) => {
+                  const isDone = act.isConfirmed;
+                  return (
+                    <div
+                      key={act.id}
+                      className="bg-white border border-[#D9DEDA] rounded-2xl p-4 space-y-3 shadow-xs hover:border-[#355F58]/40 transition-all"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <span className="text-[10px] uppercase font-bold text-[#355F58] tracking-wider block">
+                            Activity {idx + 1} · {act.timeSlot}
+                          </span>
+                          <h3 className={`text-base font-extrabold ${isDone ? 'text-[#5F6863] line-through' : 'text-[#1F2522]'}`}>
+                            {act.title}
+                          </h3>
+                          <p className="text-xs text-[#5F6863] flex items-center gap-1 mt-0.5 font-medium">
+                            <MapPin className="w-3.5 h-3.5 text-[#355F58] shrink-0" />
+                            <span>{act.locationName || destName}</span>
+                          </p>
+                        </div>
 
-                      <div className="text-right shrink-0">
-                        <span className="text-xs font-mono font-bold text-teal-300 block">{act.timeSlot}</span>
                         {act.estimatedCostInr != null && (
-                          <span className="text-[11px] font-mono text-slate-400 block mt-0.5">₹{act.estimatedCostInr}</span>
+                          <span className="text-xs font-bold text-[#355F58] bg-[#E8F0EE] px-2.5 py-1 rounded-full border border-[#D9DEDA] shrink-0">
+                            ₹{act.estimatedCostInr}
+                          </span>
                         )}
                       </div>
-                    </div>
 
-                    {act.description && (
-                      <p className="text-xs text-slate-400 leading-relaxed line-clamp-2">{act.description}</p>
-                    )}
+                      {act.description && (
+                        <p className="text-xs text-[#5F6863] leading-relaxed font-medium">{act.description}</p>
+                      )}
 
-                    {/* Action Bar */}
-                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/10">
-                      <div className="flex items-center gap-1.5">
+                      {/* Action Buttons */}
+                      <div className="flex items-center gap-2 pt-2 border-t border-[#D9DEDA]">
                         <button
                           type="button"
                           onClick={() => openInAppNavigation({
                             title: act.title,
-                            locationName: act.locationName || 'Destination',
+                            locationName: act.locationName || destName,
                             coordinates: [act.latitude || 25.5941, act.longitude || 85.1376],
                             dayNumber: selectedDay.dayNumber
                           })}
-                          className="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-teal-300 text-xs font-bold flex items-center gap-1 border border-white/10 transition-all"
+                          className="flex-1 py-2 px-3 rounded-xl bg-[#355F58] hover:bg-[#2C504A] text-white text-xs font-bold flex items-center justify-center gap-1.5 press-scale transition-all min-h-[40px]"
                         >
-                          <Navigation className="w-3.5 h-3.5 text-teal-400" />
-                          <span>Navigate</span>
+                          <Navigation className="w-3.5 h-3.5" />
+                          <span>Directions</span>
                         </button>
 
                         <button
                           type="button"
                           onClick={() => openCabModal(act.locationName || act.title)}
-                          className="px-2.5 py-1 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-bold flex items-center gap-1 border border-amber-500/30 transition-all"
+                          className="flex-1 py-2 px-3 rounded-xl bg-[#F0F2EF] hover:bg-[#E4E8E4] border border-[#D9DEDA] text-[#1F2522] text-xs font-bold flex items-center justify-center gap-1.5 press-scale transition-all min-h-[40px]"
                         >
-                          <Car className="w-3.5 h-3.5" />
-                          <span>Ride</span>
+                          <Car className="w-3.5 h-3.5 text-[#355F58]" />
+                          <span>Book Ride</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => openSwapAssistant({
+                            tripId: currentTrip?.id || '',
+                            activityId: act.id,
+                            activityName: act.title,
+                            selectedDay: selectedDay.dayNumber,
+                            destination: destName
+                          })}
+                          className="py-2 px-3 rounded-xl bg-[#E8F0EE] hover:bg-[#D4E4E0] border border-[#355F58]/30 text-[#355F58] text-xs font-extrabold flex items-center justify-center gap-1 press-scale transition-all min-h-[40px]"
+                          title="Swap with AI alternative"
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>Swap</span>
                         </button>
                       </div>
+                    </div>
+                  );
+                })}
+              </div>
 
-                      <button
-                        type="button"
-                        onClick={() => openSwapAssistant({
-                          tripId: currentTrip?.id || '',
-                          activityId: act.id,
-                          activityName: act.title,
-                          selectedDay: selectedDay.dayNumber,
-                          destination: currentTrip?.destination?.name
-                        })}
-                        className="px-2.5 py-1 rounded-xl bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 text-xs font-black flex items-center gap-1 border border-teal-500/30 transition-all"
-                      >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        <span>Swap AI</span>
-                      </button>
+              <button
+                type="button"
+                onClick={handleOptimizeCurrentDay}
+                disabled={isOptimizing}
+                className="w-full py-3.5 press-scale flex items-center justify-center gap-2 rounded-2xl bg-[#E8F0EE] hover:bg-[#D4E4E0] border border-[#355F58]/30 text-[#355F58] font-extrabold text-xs transition-all disabled:opacity-50 shadow-xs"
+              >
+                <Sparkles className="w-4 h-4 text-[#355F58]" />
+                <span>{isOptimizing ? 'Optimizing Day Route...' : `Optimize Day ${selectedDay.dayNumber} Route Flow`}</span>
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* 1. STYLISH BUDGET AI ANALYSIS MODAL SHEET */}
+      {budgetAnalysisModal.isOpen && budgetAnalysisModal.data && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#1F2522]/50 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white border border-[#D9DEDA] rounded-3xl p-6 max-w-md w-full space-y-5 shadow-2xl animate-scaleUp">
+            
+            <div className="flex items-center justify-between border-b border-[#D9DEDA] pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-[#E8F0EE] border border-[#355F58]/30 flex items-center justify-center text-[#355F58]">
+                  <Wallet className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-[#1F2522]">AI Budget Intelligence</h3>
+                  <p className="text-xs text-[#5F6863] font-medium">Smart expense tracking & cost saving recommendations</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBudgetAnalysisModal({ isOpen: false, data: null })}
+                className="w-8 h-8 rounded-full bg-[#F0F2EF] text-[#5F6863] hover:text-[#1F2522] flex items-center justify-center font-bold text-xs"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Metrics 3-Card Grid */}
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="p-3 rounded-2xl bg-[#F0F2EF] border border-[#D9DEDA]">
+                <span className="text-[10px] font-bold text-[#5F6863] uppercase block">Projected</span>
+                <span className="text-sm font-black text-[#1F2522]">₹{budgetAnalysisModal.data.projectedCost}</span>
+              </div>
+              <div className="p-3 rounded-2xl bg-[#F0F2EF] border border-[#D9DEDA]">
+                <span className="text-[10px] font-bold text-[#5F6863] uppercase block">Target</span>
+                <span className="text-sm font-black text-[#355F58]">₹{budgetAnalysisModal.data.targetBudget}</span>
+              </div>
+              <div className="p-3 rounded-2xl bg-[#E8F0EE] border border-[#355F58]/30">
+                <span className="text-[10px] font-bold text-[#355F58] uppercase block">Savings Rec.</span>
+                <span className="text-sm font-black text-[#355F58]">₹{budgetAnalysisModal.data.savingsRequired}</span>
+              </div>
+            </div>
+
+            {/* Recommendations List */}
+            <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+              <h4 className="text-xs font-extrabold uppercase text-[#355F58] tracking-wider">AI Optimization Tips</h4>
+              {budgetAnalysisModal.data.recommendations.length === 0 ? (
+                <p className="text-xs text-[#5F6863] font-medium p-3 bg-[#F0F2EF] rounded-2xl text-center">
+                  Your trip budget is well-balanced! No immediate cuts needed.
+                </p>
+              ) : (
+                budgetAnalysisModal.data.recommendations.map((rec: any, idx: number) => (
+                  <div key={idx} className="p-3 rounded-2xl bg-[#F0F2EF] border border-[#D9DEDA] flex items-start gap-2.5">
+                    <Sparkles className="w-4 h-4 text-[#355F58] shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <p className="text-xs font-bold text-[#1F2522]">{rec.reason || rec.suggestion || rec}</p>
+                      {rec.estimatedSavings && (
+                        <span className="text-[10px] font-bold text-[#355F58] bg-[#E8F0EE] px-2 py-0.5 rounded-md inline-block">
+                          Save up to ₹{rec.estimatedSavings}
+                        </span>
+                      )}
                     </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                ))
+              )}
+            </div>
 
-          <button
-            onClick={handleOptimizeCurrentDay}
-            disabled={isOptimizing}
-            className="w-full py-3.5 press-scale flex items-center justify-center gap-2 rounded-2xl bg-teal-500/10 border border-teal-500/30 text-teal-300 font-extrabold text-xs hover:bg-teal-500/20 transition-all disabled:opacity-50 shadow-lg"
-          >
-            <Sparkles className="w-4 h-4 text-teal-400" />
-            <span>{isOptimizing ? 'Optimizing Day Route...' : 'Optimize Day 2 Route Flow'}</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setBudgetAnalysisModal({ isOpen: false, data: null })}
+              className="w-full py-3.5 rounded-2xl bg-[#355F58] hover:bg-[#2C504A] text-white font-extrabold text-xs shadow-xs press-scale"
+            >
+              Done & Save
+            </button>
+          </div>
         </div>
       )}
+
+      {/* 2. STYLISH WEATHER AI REPLAN MODAL SHEET */}
+      {weatherReplanModal.isOpen && weatherReplanModal.data && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#1F2522]/50 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white border border-[#D9DEDA] rounded-3xl p-6 max-w-md w-full space-y-5 shadow-2xl animate-scaleUp">
+            
+            <div className="flex items-center justify-between border-b border-[#D9DEDA] pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-[#E8F0EE] border border-[#355F58]/30 flex items-center justify-center text-[#355F58]">
+                  <CloudRain className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-[#1F2522]">Live Weather AI Alert</h3>
+                  <p className="text-xs text-[#5F6863] font-medium">Automatic rain protection & indoor replacements</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setWeatherReplanModal({ isOpen: false, data: null })}
+                className="w-8 h-8 rounded-full bg-[#F0F2EF] text-[#5F6863] hover:text-[#1F2522] flex items-center justify-center font-bold text-xs"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Weather Banner */}
+            <div className="p-3.5 rounded-2xl bg-[#E8F0EE] border border-[#355F58]/30 flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-extrabold uppercase text-[#355F58] block">Forecast Alert</span>
+                <span className="text-sm font-black text-[#1F2522]">{weatherReplanModal.data.forecast?.condition || 'Rain Alert'}</span>
+              </div>
+              <span className="px-3 py-1 rounded-full bg-white text-[#355F58] font-bold text-xs border border-[#D9DEDA]">
+                {weatherReplanModal.data.affectedActivities.length} Outdoor Activities Flagged
+              </span>
+            </div>
+
+            {/* Swaps & Suggestions List */}
+            <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+              <h4 className="text-xs font-extrabold uppercase text-[#355F58] tracking-wider">Proposed Indoor Replacements</h4>
+              {weatherReplanModal.data.recommendations.length === 0 ? (
+                <p className="text-xs text-[#5F6863] font-medium p-3 bg-[#F0F2EF] rounded-2xl text-center">
+                  All outdoor activities are clear! No weather adjustments needed.
+                </p>
+              ) : (
+                weatherReplanModal.data.recommendations.map((rec: any, idx: number) => (
+                  <div key={idx} className="p-3 rounded-2xl bg-[#F0F2EF] border border-[#D9DEDA] space-y-1">
+                    <div className="flex items-start gap-2">
+                      <Sparkles className="w-4 h-4 text-[#355F58] shrink-0 mt-0.5" />
+                      <p className="text-xs font-bold text-[#1F2522]">{rec.reason || rec.suggestion || (typeof rec === 'string' ? rec : 'Replace outdoor activity with indoor venue')}</p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setWeatherReplanModal({ isOpen: false, data: null })}
+              className="w-full py-3.5 rounded-2xl bg-[#355F58] hover:bg-[#2C504A] text-white font-extrabold text-xs shadow-xs press-scale"
+            >
+              Understand & Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 3. ERROR TOAST BANNER */}
+      {errorMessage && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 max-w-sm w-full p-4 bg-rose-600 text-white rounded-2xl font-bold text-xs shadow-2xl flex items-center justify-between animate-fadeIn">
+          <span>{errorMessage}</span>
+          <button type="button" onClick={() => setErrorMessage(null)} className="ml-2 font-black text-sm">✕</button>
+        </div>
+      )}
+
     </div>
   );
 };

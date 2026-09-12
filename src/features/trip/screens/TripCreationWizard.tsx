@@ -187,7 +187,7 @@ export const TripCreationWizard: React.FC = () => {
       customBudgetAmount,
     });
     discardDraft();
-    navigate(`/trip`);
+    navigate(`/trip/itinerary`);
   };
 
   return (
