@@ -7,6 +7,7 @@ import {
   Flame, Compass, RefreshCw
 } from 'lucide-react';
 import { wsClient } from '../../services/wsClient';
+import { SafeImage } from '../common/SafeImage';
 
 interface FoodItem {
   id: string;
@@ -188,7 +189,7 @@ export const FoodPage: React.FC = () => {
               key={dish.id}
               className="p-3.5 rounded-2xl bg-white border border-[#D9DEDA] hover:border-[#355F58]/40 transition-all flex gap-3.5 shadow-xs group"
             >
-              <img
+              <SafeImage
                 src={dish.image}
                 alt={dish.name}
                 className="w-24 h-24 rounded-xl object-cover shrink-0 border border-[#D9DEDA] group-hover:scale-105 transition-all"

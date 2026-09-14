@@ -11,7 +11,7 @@ const getApiBaseUrl = (): string => {
   const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
   if (isLocalhost) {
     const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
-    return `${protocol}//${window.location.hostname}:8000`;
+    return `${protocol}//${window.location.hostname}`;
   }
   return 'https://voyageai-wp2o.onrender.com';
 };

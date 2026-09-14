@@ -37,8 +37,36 @@ export const DesktopSidebar: React.FC = () => {
     navigate(path);
   };
 
-  const destinationName = currentTrip?.destination?.name || 'Kerala';
-  const tripDates = currentTrip ? `${currentTrip.startDate} to ${currentTrip.endDate}` : 'Active Journey';
+  const destinationName = currentTrip?.destination?.name;
+  const tripDates = currentTrip ? `${currentTrip.startDate} to ${currentTrip.endDate}` : '';
+
+  // Determine if the selected trip has actually started (today >= startDate or status === 'ACTIVE')
+  const hasTripStarted = React.useMemo(() => {
+    if (!currentTrip || !currentTrip.startDate) return false;
+    if (currentTrip.status === 'ACTIVE') return true;
+    const todayStr = new Date().toISOString().split('T')[0];
+    return todayStr >= currentTrip.startDate;
+  }, [currentTrip]);
+
+  // Calculate current active day number
+  const currentDayNumber = React.useMemo(() => {
+    if (!currentTrip?.startDate) return 1;
+    const start = new Date(currentTrip.startDate);
+    const today = new Date();
+    start.setHours(0, 0, 0, 0);
+    today.setHours(0, 0, 0, 0);
+    const diffDays = Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    return Math.max(1, diffDays);
+  }, [currentTrip?.startDate]);
+
+  // Context is switched if user is on a /trip route or explicitly active
+  const isTripContextActive = isTripsActive || currentPath.startsWith('/trip');
+
+  // Should we show the journey widget?
+  // Only show ACTIVE JOURNEY when trip has started AND context is switched or trip is active.
+  // Show UPCOMING TRIP when context is explicitly switched to a future trip.
+  const showActiveWidget = currentTrip && hasTripStarted && isTripContextActive;
+  const showUpcomingWidget = currentTrip && !hasTripStarted && isTripContextActive;
 
   return (
     <aside className="hidden lg:flex flex-col w-60 sticky top-14 h-[calc(100dvh-56px)] border-r border-[#D9DEDA] bg-white p-4 justify-between">
@@ -64,79 +92,107 @@ export const DesktopSidebar: React.FC = () => {
           })}
         </nav>
 
-        {/* Active Trip Widget with Sub-View Shortcut Buttons */}
-        <div className="p-3.5 rounded-2xl bg-[#F0F2EF] border border-[#D9DEDA] space-y-2.5">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase tracking-wider text-[#355F58]">Active Journey</span>
-            <span className="text-[10px] font-mono text-[#5F6863] font-bold">Day 2</span>
-          </div>
+        {/* Active Journey Widget — Rendered ONLY when trip has started & context is active */}
+        {showActiveWidget && (
+          <div className="p-3.5 rounded-2xl bg-[#F0F2EF] border border-[#D9DEDA] space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-[#355F58]">Active Journey</span>
+              <span className="text-[10px] font-mono text-[#5F6863] font-bold">Day {currentDayNumber}</span>
+            </div>
 
-          <div>
-            <div className="text-sm font-extrabold text-[#1F2522] truncate">{destinationName} Trip</div>
-            <div className="text-[11px] text-[#5F6863] truncate">{tripDates}</div>
-          </div>
+            <div>
+              <div className="text-sm font-extrabold text-[#1F2522] truncate">{destinationName} Trip</div>
+              <div className="text-[11px] text-[#5F6863] truncate">{tripDates}</div>
+            </div>
 
-          {/* Sub Navigation Tools */}
-          <div className="pt-1 space-y-1">
+            {/* Sub Navigation Tools */}
+            <div className="pt-1 space-y-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('trips');
+                  navigate('/trip/map');
+                }}
+                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white hover:bg-[#E8F0EE] text-xs font-bold text-[#1F2522] border border-[#D9DEDA] transition-all"
+              >
+                <span className="flex items-center gap-2">
+                  <MapPin className="w-3.5 h-3.5 text-[#355F58]" />
+                  <span>Route Map</span>
+                </span>
+                <span className="text-[10px] text-[#355F58] font-mono font-bold">Live</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  navigate('/trip/food');
+                }}
+                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white hover:bg-[#E8F0EE] text-xs font-bold text-[#1F2522] border border-[#D9DEDA] transition-all"
+              >
+                <span className="flex items-center gap-2">
+                  <UtensilsCrossed className="w-3.5 h-3.5 text-[#355F58]" />
+                  <span>Food Guide</span>
+                </span>
+                <span className="text-[10px] text-amber-700 font-mono font-bold">Local</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  navigate('/trip/rides');
+                }}
+                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white hover:bg-[#E8F0EE] text-xs font-bold text-[#1F2522] border border-[#D9DEDA] transition-all"
+              >
+                <span className="flex items-center gap-2">
+                  <Car className="w-3.5 h-3.5 text-[#355F58]" />
+                  <span>Rides & Cabs</span>
+                </span>
+                <span className="text-[10px] text-[#355F58] font-mono font-bold">Instant</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('trips');
+                  navigate('/trip/expenses');
+                }}
+                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white hover:bg-[#E8F0EE] text-xs font-bold text-[#1F2522] border border-[#D9DEDA] transition-all"
+              >
+                <span className="flex items-center gap-2">
+                  <Wallet className="w-3.5 h-3.5 text-[#355F58]" />
+                  <span>Expense Ledger</span>
+                </span>
+                <span className="text-[10px] text-[#355F58] font-mono font-bold">Budget</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Upcoming Trip Widget — Rendered ONLY when context is switched to a future trip */}
+        {showUpcomingWidget && (
+          <div className="p-3.5 rounded-2xl bg-[#F0F2EF] border border-[#D9DEDA] space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-amber-800">Upcoming Trip</span>
+              <span className="text-[10px] font-mono text-[#5F6863] font-bold">Starts {currentTrip.startDate}</span>
+            </div>
+
+            <div>
+              <div className="text-sm font-extrabold text-[#1F2522] truncate">{destinationName} Trip</div>
+              <div className="text-[11px] text-[#5F6863] truncate">{tripDates}</div>
+            </div>
+
             <button
               type="button"
               onClick={() => {
                 setActiveTab('trips');
-                navigate('/trip/map');
+                navigate('/trip');
               }}
-              className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white hover:bg-[#E8F0EE] text-xs font-bold text-[#1F2522] border border-[#D9DEDA] transition-all"
+              className="w-full mt-1 py-1.5 px-2.5 rounded-lg bg-white hover:bg-[#E8F0EE] text-xs font-bold text-[#355F58] border border-[#D9DEDA] text-center transition-all"
             >
-              <span className="flex items-center gap-2">
-                <MapPin className="w-3.5 h-3.5 text-[#355F58]" />
-                <span>Route Map</span>
-              </span>
-              <span className="text-[10px] text-[#355F58] font-mono font-bold">Live</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                navigate('/trip/food');
-              }}
-              className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white hover:bg-[#E8F0EE] text-xs font-bold text-[#1F2522] border border-[#D9DEDA] transition-all"
-            >
-              <span className="flex items-center gap-2">
-                <UtensilsCrossed className="w-3.5 h-3.5 text-[#355F58]" />
-                <span>Food Guide</span>
-              </span>
-              <span className="text-[10px] text-amber-700 font-mono font-bold">Local</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                navigate('/trip/rides');
-              }}
-              className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white hover:bg-[#E8F0EE] text-xs font-bold text-[#1F2522] border border-[#D9DEDA] transition-all"
-            >
-              <span className="flex items-center gap-2">
-                <Car className="w-3.5 h-3.5 text-[#355F58]" />
-                <span>Rides & Cabs</span>
-              </span>
-              <span className="text-[10px] text-[#355F58] font-mono font-bold">Instant</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab('trips');
-                navigate('/trip/expenses');
-              }}
-              className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white hover:bg-[#E8F0EE] text-xs font-bold text-[#1F2522] border border-[#D9DEDA] transition-all"
-            >
-              <span className="flex items-center gap-2">
-                <Wallet className="w-3.5 h-3.5 text-[#355F58]" />
-                <span>Expense Ledger</span>
-              </span>
-              <span className="text-[10px] text-[#355F58] font-mono font-bold">Budget</span>
+              View Plan Details
             </button>
           </div>
-        </div>
+        )}
       </div>
 
       <button

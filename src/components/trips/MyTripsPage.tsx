@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTrip } from '../../features/trip/TripContext';
+import { getTripCoverImage } from '../../utils/imageUtils';
+import { SafeImage } from '../common/SafeImage';
 import {
   Calendar, MapPin, Plus, AlertTriangle, Archive, Trash2, ArrowRight
 } from 'lucide-react';
@@ -158,8 +160,12 @@ export const MyTripsPage: React.FC = () => {
                 `}
               >
                 {/* Cover Image */}
-                <div className="relative h-36 w-full overflow-hidden">
-                  <img src={trip.coverImage} alt={trip.title} className="w-full h-full object-cover" />
+                <div className="relative h-36 w-full overflow-hidden bg-[#2C504A]">
+                  <SafeImage
+                    src={getTripCoverImage(trip)}
+                    alt={trip.title}
+                    className="w-full h-full object-cover"
+                  />
                   <div className="absolute inset-0 bg-gradient-to-t from-white via-white/30 to-transparent" />
                   
                   <div className="absolute top-3 left-3 flex items-center gap-2">

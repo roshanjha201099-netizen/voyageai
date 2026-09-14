@@ -66,7 +66,7 @@ class LocationSocketClient {
 
     let baseUrl = '';
     if (isLocalhost) {
-      baseUrl = 'ws://127.0.0.1:8000/ws/location';
+      baseUrl = 'ws://localhost/ws/location';
     } else if (envWsUrl) {
       baseUrl = envWsUrl.replace('/ws/tour-app', '/ws/location');
     } else {

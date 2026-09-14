@@ -2,10 +2,12 @@ import os
 import re
 import ast
 import json
+import time
 import asyncio
 import logging
+import requests
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from dotenv import load_dotenv
 
 # Load environment variables (force override so running server process picks up .env updates)
@@ -22,11 +24,23 @@ def _extract_msg_attr(m: Any, attr: str, default: str = "") -> str:
         return str(val if val is not None else default)
     return default
 
-def _resolve_model_name(requested_model: str = None) -> str:
-    model = requested_model or os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
-    if "3.6" in model or "flash" not in model:
-        return "gemini-2.0-flash"
+def _resolve_model_name(requested_model: Optional[str] = None) -> str:
+    """
+    Resolves the Gemini model name.
+    Defaults to the active production alias 'gemini-flash-latest'.
+    Strips leading 'models/' prefix if present.
+    """
+    model = requested_model or os.getenv("GEMINI_MODEL", "gemini-flash-latest")
+    model = model.strip()
+    if model.startswith("models/"):
+        model = model[7:]
+    if not model or model in ("gemini-1.5-flash", "gemini-2.0-flash", "gemini-2.5-flash"):
+        return "gemini-flash-latest"
     return model
+
+
+
+
 
 class AIProviderInterface(ABC):
     @abstractmethod
@@ -97,7 +111,9 @@ class MockAIProvider(AIProviderInterface):
         except Exception:
             base_date = datetime(2026, 10, 15)
 
-        is_goa = "goa" in dest_name.lower()
+        dest_lower = dest_name.lower()
+        is_goa = "goa" in dest_lower
+        is_bihar = "bihar" in dest_lower or "patna" in dest_lower
 
         # Rich Goa Landmark Clusters
         goa_clusters = [
@@ -355,6 +371,94 @@ class MockAIProvider(AIProviderInterface):
             }
         ]
 
+        # Rich Bihar / Patna Heritage Clusters
+        bihar_clusters = [
+            {
+                "title": "Day 1: Patna Heritage & Ganges Riverfront",
+                "summary": "Discover historic monuments, sacred temples, and scenic riverfront vistas.",
+                "activities": [
+                    {
+                        "timeSlot": "09:30 AM",
+                        "title": "Golghar Granary Heritage Walk & Panoramic View",
+                        "description": "Climb the iconic 1786 beehive granary overlooking the Ganges River.",
+                        "activityType": "SIGHTSEEING",
+                        "locationName": "Golghar, Patna",
+                        "latitude": 25.6190,
+                        "longitude": 85.1444,
+                        "estimatedCostInr": 50,
+                        "bookingRequired": False,
+                        "isConfirmed": False
+                    },
+                    {
+                        "timeSlot": "01:00 PM",
+                        "title": "Authentic Litti Chokha Lunch at Maurya Lok",
+                        "description": "Traditional roasted sattu litti served with spicy eggplant chokha and desi ghee.",
+                        "activityType": "DINING",
+                        "locationName": "Maurya Lok Complex, Patna",
+                        "latitude": 25.6112,
+                        "longitude": 85.1378,
+                        "estimatedCostInr": 250,
+                        "bookingRequired": False,
+                        "isConfirmed": False
+                    },
+                    {
+                        "timeSlot": "05:30 PM",
+                        "title": "Takht Sri Harmandir Sahib & Marine Drive Sunset Walk",
+                        "description": "Visit sacred historic gurdwara followed by evening breeze on Ganga Path.",
+                        "activityType": "CULTURE",
+                        "locationName": "Patna Sahib & Ganga Path, Patna",
+                        "latitude": 25.6025,
+                        "longitude": 85.2280,
+                        "estimatedCostInr": 100,
+                        "bookingRequired": False,
+                        "isConfirmed": False
+                    }
+                ]
+            },
+            {
+                "title": "Day 2: Nalanda World Heritage Ruins & Rajgir Peace Pagoda",
+                "summary": "Explore ancient 5th-century university ruins and serene aerial ropeway vistas.",
+                "activities": [
+                    {
+                        "timeSlot": "09:00 AM",
+                        "title": "Nalanda University Archaeological Site Tour",
+                        "description": "Guided walk through ancient monastic cells, stupas, and brick temple ruins.",
+                        "activityType": "CULTURE",
+                        "locationName": "Nalanda Mahavihara, Nalanda",
+                        "latitude": 25.1357,
+                        "longitude": 85.4452,
+                        "estimatedCostInr": 300,
+                        "bookingRequired": False,
+                        "isConfirmed": False
+                    },
+                    {
+                        "timeSlot": "01:30 PM",
+                        "title": "Regional Bihari Thali Lunch at Rajgir",
+                        "description": "Hearty traditional meal with sattu parathas, khaja, and local curries.",
+                        "activityType": "DINING",
+                        "locationName": "Rajgir Heritage Dining, Rajgir",
+                        "latitude": 25.0270,
+                        "longitude": 85.4200,
+                        "estimatedCostInr": 400,
+                        "bookingRequired": False,
+                        "isConfirmed": False
+                    },
+                    {
+                        "timeSlot": "04:30 PM",
+                        "title": "Vishwa Shanti Stupa & Ropeway Ride",
+                        "description": "Ropeway ride to the Japanese Peace Pagoda atop Ratnagiri Hill.",
+                        "activityType": "SIGHTSEEING",
+                        "locationName": "Vishwa Shanti Stupa, Rajgir",
+                        "latitude": 25.0068,
+                        "longitude": 85.4389,
+                        "estimatedCostInr": 200,
+                        "bookingRequired": False,
+                        "isConfirmed": False
+                    }
+                ]
+            }
+        ]
+
         days_list = []
         for d in range(1, total_days + 1):
             day_date = (base_date + timedelta(days=d - 1)).strftime("%Y-%m-%d")
@@ -368,49 +472,58 @@ class MockAIProvider(AIProviderInterface):
                     "summary": cluster["summary"],
                     "activities": cluster["activities"]
                 })
+            elif is_bihar and d <= len(bihar_clusters):
+                cluster = bihar_clusters[d - 1]
+                days_list.append({
+                    "dayNumber": d,
+                    "date": day_date,
+                    "title": cluster["title"],
+                    "summary": cluster["summary"],
+                    "activities": cluster["activities"]
+                })
             else:
-                lat_offset = (destination.get("latitude") or 15.2993) + (d * 0.015)
-                lng_offset = (destination.get("longitude") or 74.124) + (d * 0.012)
+                lat_offset = (destination.get("latitude") or 25.5941) + (d * 0.015)
+                lng_offset = (destination.get("longitude") or 85.1376) + (d * 0.012)
                 
                 days_list.append({
                     "dayNumber": d,
                     "date": day_date,
-                    "title": f"Day {d}: Exploring {dest_name} District {d}",
-                    "summary": f"Curated itinerary exploring highlights of {dest_name} Zone {d}.",
+                    "title": f"Day {d}: Historic Sights & Local Culture in {dest_name}",
+                    "summary": f"Full day exploring primary landmarks, heritage spots, and regional food in {dest_name}.",
                     "activities": [
                         {
                             "timeSlot": "09:30 AM",
-                            "title": f"Morning Highlight at {dest_name} Landmark {d}A",
-                            "description": f"Scenic start exploring primary attractions in Zone {d}.",
+                            "title": f"Day {d} {dest_name} Landmark & Heritage Tour",
+                            "description": f"Morning guided exploration of prominent cultural and historical highlights in {dest_name} (Zone {d}).",
                             "activityType": "SIGHTSEEING",
-                            "locationName": f"{dest_name} Cultural Spot {d}A",
+                            "locationName": f"{dest_name} Zone {d} Heritage Square",
                             "latitude": lat_offset,
                             "longitude": lng_offset,
-                            "estimatedCostInr": 400 + (d * 50),
+                            "estimatedCostInr": 350 + (d * 50),
                             "bookingRequired": False,
                             "isConfirmed": False
                         },
                         {
                             "timeSlot": "01:00 PM",
-                            "title": f"Regional Lunch at {dest_name} Bistro {d}B",
-                            "description": f"Authentic local dining experience in Zone {d}.",
+                            "title": f"Day {d} Regional Lunch Experience in {dest_name}",
+                            "description": f"Sample authentic culinary specialties and local dining delicacies in {dest_name}.",
                             "activityType": "DINING",
-                            "locationName": f"{dest_name} Local Dining {d}B",
+                            "locationName": f"{dest_name} Zone {d} Bistro",
                             "latitude": lat_offset + 0.002,
                             "longitude": lng_offset + 0.003,
-                            "estimatedCostInr": 750,
+                            "estimatedCostInr": 550,
                             "bookingRequired": False,
                             "isConfirmed": False
                         },
                         {
                             "timeSlot": "05:30 PM",
-                            "title": f"Sunset View at {dest_name} Promenade {d}C",
-                            "description": f"Evening walk and relaxation in Zone {d}.",
+                            "title": f"Day {d} Evening Promenade & Sunset View in {dest_name}",
+                            "description": f"Relaxing evening walk and scenic views at {dest_name}'s popular gathering spot.",
                             "activityType": "RELAXATION",
-                            "locationName": f"{dest_name} Waterfront {d}C",
+                            "locationName": f"{dest_name} Zone {d} Riverfront Promenade",
                             "latitude": lat_offset + 0.005,
                             "longitude": lng_offset + 0.007,
-                            "estimatedCostInr": 300,
+                            "estimatedCostInr": 200,
                             "bookingRequired": False,
                             "isConfirmed": False
                         }
@@ -698,427 +811,258 @@ class MockAIProvider(AIProviderInterface):
 # ---------------------------------------------------------
 # Vertex AI Integration Setup (matching template)
 # ---------------------------------------------------------
-SA_KEY_PATH = os.getenv("SA_KEY_PATH", "./keys/demos-others-89a2bdcf7612.json")
-PROJECT_ID  = os.getenv("PROJECT_ID", "demos-others")
-LOCATION    = os.getenv("LOCATION", "us-central1")
-MODEL_NAME  = os.getenv("MODEL_NAME", "meta/llama-3.3-70b-instruct-maas")
-
-_vertex_creds = None
-_vertex_async_client = None
-
-def get_valid_async_client():
-    global _vertex_creds, _vertex_async_client
-    from google.auth.transport.requests import Request
-    from google.oauth2 import service_account
-    from openai import AsyncOpenAI
-
-    if not os.path.exists(SA_KEY_PATH):
-        raise FileNotFoundError(f"Service account key file not found at path: {SA_KEY_PATH}")
-
-    if _vertex_creds is None:
-        _vertex_creds = service_account.Credentials.from_service_account_file(
-            SA_KEY_PATH,
-            scopes=["https://www.googleapis.com/auth/cloud-platform"]
-        )
-
-    if not _vertex_creds.valid:
-        _vertex_creds.refresh(Request())
-
-        _vertex_async_client = AsyncOpenAI(
-            base_url=f"https://{LOCATION}-aiplatform.googleapis.com/v1/projects/{PROJECT_ID}/locations/{LOCATION}/endpoints/openapi",
-            api_key=_vertex_creds.token,
-        )
-
-    return _vertex_async_client
-
-async def call_vertex_async(prompt: str, temperature: float = 0.2, max_tokens: int = 4000) -> str:
-    client = get_valid_async_client()
-    response = await client.chat.completions.create(
-        model=MODEL_NAME,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=temperature,
-        max_tokens=max_tokens
-    )
-    return response.choices[0].message.content
-
-def clean_output(output: str):
-    if not output:
-        return {}
-    json_match = re.search(r'\{.*\}', output, re.DOTALL)
-    if json_match:
-        json_string = json_match.group(0)
-        try:
-            return json.loads(json_string)
-        except Exception:
-            try:
-                return ast.literal_eval(json_string)
-            except Exception:
-                pass
-    return {"raw_output": output}
-
-class VertexAIProvider(AIProviderInterface):
-    """
-    Vertex AI MaaS Endpoint Provider (Llama-3.3-70b / OpenAI MaaS compatible endpoint).
-    Fallbacks cleanly to MockAIProvider if credentials or network is unavailable.
-    """
-    def generate_itinerary_json(self, ai_input: Dict[str, Any], prompt: str) -> str:
-        try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                raw_result = loop.run_until_complete(call_vertex_async(prompt))
-            finally:
-                loop.close()
-
-            if raw_result:
-                cleaned = clean_output(raw_result)
-                if isinstance(cleaned, dict) and "days" in cleaned:
-                    return json.dumps(cleaned)
-                elif "raw_output" not in cleaned:
-                    return json.dumps(cleaned)
-        except Exception:
-            pass
-
-        return MockAIProvider().generate_itinerary_json(ai_input, prompt)
-
-    def generate_swap_recommendations(self, current_activity: Dict[str, Any], trip_context: Dict[str, Any]) -> List[Dict[str, Any]]:
-        return MockAIProvider().generate_swap_recommendations(current_activity, trip_context)
-
 class GeminiProvider(AIProviderInterface):
     """
-    Google Gemini API Provider for Itinerary Generation.
-    Uses Gemini REST API with structured JSON response enforcement.
-    Does NOT fall back to MockAIProvider on failure.
+    Google Gemini API Provider for Itinerary Generation & Assistant tools.
+    Uses centralized HTTP execution with automatic JSON fence stripping.
     """
-    def __init__(self, api_key: str = None, model_name: str = None):
+    def __init__(self, api_key: Optional[str] = None, model_name: Optional[str] = None):
         self.api_key = api_key
         self.model_name = model_name
 
-    def generate_itinerary_json(self, ai_input: Dict[str, Any], prompt: str) -> str:
-        api_key = self.api_key if self.api_key is not None else os.getenv("GEMINI_API_KEY")
-        if self.api_key is None and not api_key:
-            load_dotenv(override=True)
-            api_key = os.getenv("GEMINI_API_KEY")
-
-        if not api_key or not api_key.strip():
-            logger.error("[AI_CONFIG_ERROR] GEMINI_API_KEY environment variable is missing or empty.")
+    def _get_api_key(self) -> str:
+        key = self.api_key or os.getenv("GEMINI_API_KEY")
+        if not key or not key.strip():
+            logger.error("[AI_CONFIG_ERROR] GEMINI_API_KEY is missing or empty.")
             raise ValueError("AI_CONFIG_ERROR: GEMINI_API_KEY is missing or empty.")
+        return key.strip()
 
+    def _execute_gemini_request(self, prompt: str, temperature: float = 0.2, timeout: int = 25) -> str:
+        """Centralized executor handling network calls, status logging, and JSON extraction."""
+        api_key = self._get_api_key()
         model_name = _resolve_model_name(self.model_name)
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
 
-        headers = {
-            "Content-Type": "application/json"
-        }
-
-        payload = {
-            "contents": [
-                {
-                    "parts": [
-                        {"text": prompt}
-                    ]
-                }
-            ],
-            "generationConfig": {
-                "response_mime_type": "application/json",
-                "temperature": 0.2
-            }
-        }
-
-        import time
-        import requests
-        max_http_retries = 2
-
-        try:
-            for attempt in range(1, max_http_retries + 1):
-                try:
-                    response = requests.post(url, json=payload, headers=headers, timeout=30)
-
-                    if response.status_code in (401, 403):
-                        logger.error(f"[AI_AUTH_ERROR] Gemini authentication failed (HTTP {response.status_code}).")
-                        raise RuntimeError(f"AI_AUTH_ERROR: Gemini authentication failed (HTTP {response.status_code}).")
-                    elif response.status_code == 429:
-                        logger.error("[AI_QUOTA_ERROR] Gemini quota or rate limit exceeded (HTTP 429).")
-                        raise RuntimeError("AI_QUOTA_ERROR: Gemini API rate limit or quota exceeded (HTTP 429).")
-                    elif response.status_code in (500, 502, 503, 504) and attempt < max_http_retries:
-                        time.sleep(1.5)
-                        continue
-                    elif response.status_code != 200:
-                        logger.error(f"[AI_GENERATION_ERROR] Gemini API returned error status HTTP {response.status_code}")
-                        raise RuntimeError(f"AI_GENERATION_ERROR: Gemini API error HTTP {response.status_code}")
-
-                    res_json = response.json()
-                    candidates = res_json.get("candidates", [])
-                    if not candidates:
-                        logger.error("[AI_INVALID_OUTPUT] Gemini response contained no candidates.")
-                        raise ValueError("AI_INVALID_OUTPUT: Gemini returned empty candidates.")
-
-                    parts = candidates[0].get("content", {}).get("parts", [])
-                    if not parts or "text" not in parts[0]:
-                        logger.error("[AI_INVALID_OUTPUT] Gemini response contained no text part.")
-                        raise ValueError("AI_INVALID_OUTPUT: Gemini returned no text content.")
-
-                    raw_text = parts[0]["text"].strip()
-
-                    # Strip markdown json code block fences if present
-                    if raw_text.startswith("```"):
-                        raw_text = re.sub(r"^```(?:json)?\n?", "", raw_text, flags=re.IGNORECASE)
-                        raw_text = re.sub(r"\n?```$", "", raw_text)
-
-                    try:
-                        json_data = json.loads(raw_text)
-                        return json.dumps(json_data)
-                    except Exception as parse_err:
-                        logger.error(f"[AI_INVALID_OUTPUT] Gemini output is not valid JSON: {parse_err}")
-                        raise ValueError(f"AI_INVALID_OUTPUT: Gemini model response is not valid JSON: {parse_err}")
-
-                except requests.exceptions.Timeout:
-                    if attempt < max_http_retries:
-                        time.sleep(1.0)
-                        continue
-                    logger.error("[AI_TIMEOUT] Gemini API request timed out.")
-                    raise RuntimeError("AI_TIMEOUT: Gemini API request timed out.")
-                except requests.exceptions.RequestException as net_err:
-                    if attempt < max_http_retries:
-                        time.sleep(1.0)
-                        continue
-                    logger.error(f"[AI_GENERATION_ERROR] Gemini network request failed: {type(net_err).__name__}")
-                    raise RuntimeError(f"AI_GENERATION_ERROR: Network error communicating with Gemini API: {type(net_err).__name__}")
-        except Exception as e:
-            if any(prefix in str(e) for prefix in ["AI_CONFIG_ERROR", "AI_AUTH_ERROR", "AI_QUOTA_ERROR", "AI_TIMEOUT", "AI_INVALID_OUTPUT", "AI_GENERATION_ERROR"]):
-                raise
-            logger.error(f"[AI_GENERATION_ERROR] Unexpected error in GeminiProvider: {e}")
-            raise RuntimeError(f"AI_GENERATION_ERROR: Unexpected error in GeminiProvider: {e}")
-
-    def generate_swap_recommendations(self, current_activity: Dict[str, Any], trip_context: Dict[str, Any]) -> List[Dict[str, Any]]:
-        api_key = self.api_key if self.api_key is not None else os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            load_dotenv(override=True)
-            api_key = os.getenv("GEMINI_API_KEY")
-
-        if not api_key or not api_key.strip():
-            return MockAIProvider().generate_swap_recommendations(current_activity, trip_context)
-
-        dest_name = (trip_context.get("destination") or {}).get("name") or "India"
-        model_name = _resolve_model_name(self.model_name)
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
-
-        prompt = f"""
-You are a senior travel concierge for VoyageAI.
-The traveler wants 3 distinct, realistic alternatives to replace an activity in their itinerary for {dest_name}, India.
-
-CURRENT ACTIVITY TO SWAP:
-- Title: {current_activity.get('title')}
-- Time Slot: {current_activity.get('timeSlot')}
-- Location: {current_activity.get('locationName')}
-- Description: {current_activity.get('description')}
-- Cost: ₹{current_activity.get('estimatedCostInr', 0)}
-
-TRIP CONTEXT:
-- Destination: {dest_name}
-- Total Days: {trip_context.get('totalDays', 5)}
-- Budget Tier: {trip_context.get('budgetLevel', 'MODERATE')}
-
-INSTRUCTION:
-Generate EXACTLY 3 distinct, high-quality, realistic alternative recommendations in {dest_name} that fit the time slot '{current_activity.get('timeSlot')}' and suit the locale.
-Return ONLY valid JSON matching this schema:
-{{
-  "recommendations": [
-    {{
-      "id": "recommendation-1",
-      "name": "Alternative Name",
-      "description": "Short 1-2 sentence description",
-      "date": "{current_activity.get('date', '2026-10-15')}",
-      "startTime": "{current_activity.get('timeSlot', '10:00 AM')}",
-      "durationMinutes": 120,
-      "locationName": "Specific Place Name, City",
-      "latitude": 22.5576,
-      "longitude": 88.3500,
-      "estimatedCost": 200,
-      "reason": "Why this is a great alternative"
-    }}
-  ]
-}}
-"""
+        headers = {"Content-Type": "application/json"}
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {
                 "response_mime_type": "application/json",
-                "temperature": 0.3
+                "temperature": temperature
             }
         }
 
-        try:
-            import requests
-            res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=4)
-            if res.status_code == 200:
-                res_json = res.json()
-                text = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
-                if text.startswith("```"):
-                    text = re.sub(r"^```(?:json)?\n?", "", text, flags=re.IGNORECASE)
-                    text = re.sub(r"\n?```$", "", text)
-                data = json.loads(text)
-                recs = data.get("recommendations")
-                if isinstance(recs, list) and len(recs) > 0:
-                    return recs
-        except Exception:
-            pass
+        max_retries = 2
+        for attempt in range(1, max_retries + 1):
+            try:
+                response = requests.post(url, json=payload, headers=headers, timeout=timeout)
 
+                if response.status_code == 200:
+                    res_json = response.json()
+                    candidates = res_json.get("candidates", [])
+                    if not candidates:
+                        raise ValueError("AI_INVALID_OUTPUT: Gemini returned empty candidates.")
+
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    if not parts or "text" not in parts[0]:
+                        raise ValueError("AI_INVALID_OUTPUT: Gemini returned no text content.")
+
+                    raw_text = parts[0]["text"].strip()
+                    if raw_text.startswith("```"):
+                        raw_text = re.sub(r"^```(?:json)?\n?", "", raw_text, flags=re.IGNORECASE)
+                        raw_text = re.sub(r"\n?```$", "", raw_text)
+                    return raw_text
+
+                logger.error(f"[GEMINI HTTP {response.status_code}] Details: {response.text}")
+
+                if response.status_code in (401, 403):
+                    raise RuntimeError(f"AI_AUTH_ERROR: Invalid API Key (HTTP {response.status_code})")
+                elif response.status_code == 404:
+                    raise RuntimeError(f"AI_GENERATION_ERROR: Model '{model_name}' not found (HTTP 404). Check GEMINI_MODEL.")
+                elif response.status_code == 429:
+                    raise RuntimeError("AI_QUOTA_ERROR: Gemini rate limit exceeded (HTTP 429)")
+                elif response.status_code in (500, 502, 503, 504) and attempt < max_retries:
+                    time.sleep(1.5)
+                    continue
+                else:
+                    raise RuntimeError(f"AI_GENERATION_ERROR: Gemini API error HTTP {response.status_code}")
+
+            except requests.exceptions.Timeout:
+                if attempt < max_retries:
+                    time.sleep(1.0)
+                    continue
+                raise RuntimeError("AI_TIMEOUT: Gemini API request timed out.")
+            except requests.exceptions.RequestException as net_err:
+                if attempt < max_retries:
+                    time.sleep(1.0)
+                    continue
+                raise RuntimeError(f"AI_GENERATION_ERROR: Network error: {net_err}")
+
+    def generate_itinerary_json(self, ai_input: Dict[str, Any], prompt: str) -> str:
+        raw_text = self._execute_gemini_request(prompt, temperature=0.2, timeout=30)
+        json_data = json.loads(raw_text)
+        return json.dumps(json_data)
+
+    def generate_swap_recommendations(self, current_activity: Dict[str, Any], trip_context: Dict[str, Any]) -> List[Dict[str, Any]]:
+        dest_name = (trip_context.get("destination") or {}).get("name") or "India"
+        prompt = f"""You are an expert travel concierge for VoyageAI. Provide 3 high-quality, realistic alternative activities to replace a specific item in a traveler's itinerary.
+
+LOCATION & TRIP CONTEXT:
+- Destination: {dest_name}
+- Current Trip Budget: {trip_context.get('budgetLevel', 'MODERATE')}
+
+ACTIVITY TO REPLACE:
+- Name: {current_activity.get('title')}
+- Slot: {current_activity.get('timeSlot')} (Date: {current_activity.get('date', 'N/A')})
+- Location: {current_activity.get('locationName')}
+- Est. Cost: ₹{current_activity.get('estimatedCostInr', 0)}
+- Description: {current_activity.get('description')}
+
+REQUIREMENTS:
+1. Provide EXACTLY 3 distinct alternatives that fit the time slot "{current_activity.get('timeSlot')}".
+2. Diversify options:
+   - Option 1: Similar vibe/category in the same district.
+   - Option 2: Lower-cost or culturally distinct alternative.
+   - Option 3: Relaxed or experiential alternative.
+3. Do NOT recommend the venue being replaced.
+4. Keep durations realistic (60 to 180 minutes).
+
+Output ONLY a valid JSON object matching this schema:
+{{
+  "recommendations": [
+    {{
+      "id": "swap-1",
+      "name": "Distinct Alternative Name",
+      "description": "Concise summary of what makes this experience worthwhile.",
+      "date": "{current_activity.get('date', '2026-10-15')}",
+      "startTime": "{current_activity.get('timeSlot', '10:00 AM')}",
+      "durationMinutes": 90,
+      "locationName": "Precise Establishment Name, Neighborhood",
+      "latitude": 22.5726,
+      "longitude": 88.3639,
+      "estimatedCost": 300,
+      "reason": "Direct explanation of why this replaces the original activity effectively."
+    }}
+  ]
+}}
+"""
+        try:
+            raw_text = self._execute_gemini_request(prompt, temperature=0.3, timeout=12)
+            data = json.loads(raw_text)
+            recs = data.get("recommendations")
+            if isinstance(recs, list) and len(recs) > 0:
+                return recs
+        except Exception as e:
+            logger.warning(f"[SWAP RECS WARN] Live Gemini call failed: {e}. Falling back to mock.")
         return MockAIProvider().generate_swap_recommendations(current_activity, trip_context)
 
     def generate_chat_response(self, messages: List[Dict[str, str]], trip_context: Dict[str, Any]) -> Dict[str, Any]:
-        api_key = self.api_key if self.api_key is not None else os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            load_dotenv(override=True)
-            api_key = os.getenv("GEMINI_API_KEY")
-
-        if not api_key or not api_key.strip():
-            return MockAIProvider().generate_chat_response(messages, trip_context)
-
         dest_name = (trip_context.get("destination") or {}).get("name") or "India"
-        model_name = _resolve_model_name(self.model_name)
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
-
         formatted_messages = "\n".join([f"{_extract_msg_attr(m, 'role', 'user').upper()}: {_extract_msg_attr(m, 'text', '')}" for m in (messages or [])[-6:]])
 
         nearby_str = ""
         if trip_context.get("nearbyPlaces"):
             nearby_str = f"\n- User Physical Location & Real Nearby Spots: {json.dumps(trip_context.get('nearbyPlaces'))}"
 
-        prompt = f"""
-You are VoyageAI's expert travel concierge assistant. Provide helpful, concise, contextual travel advice for {dest_name}, India.
+        prompt = f"""You are VoyageAI's in-trip AI Concierge. Deliver direct, contextual, and accurate travel assistance for {dest_name}, India.
 
-TRIP CONTEXT:
-- Destination: {dest_name}
-- Total Days: {trip_context.get('totalDays', 4)}
-- Budget Tier: {trip_context.get('budgetLevel', 'MODERATE')}
-- Current Active Itinerary: {json.dumps(trip_context.get('currentItinerarySummary', 'Not provided'))}{nearby_str}
+TRIP PROFILE:
+- Target Destination: {dest_name}
+- Duration: {trip_context.get('totalDays', 4)} Days | Budget: {trip_context.get('budgetLevel', 'MODERATE')}
+- Current Itinerary Context: {json.dumps(trip_context.get('currentItinerarySummary', 'Not provided'))}{nearby_str}
 
 CONVERSATION HISTORY:
 {formatted_messages}
 
-INSTRUCTION:
-Answer the user's latest query directly, accurately, naturally, and warmly. If the user asks about places/food near them, refer to the verified nearby spots or local region. If the query logically relates to food/dining, cab/ride bookings, map navigation, or tracking expenses, specify an `actionType` ("food", "cab", "map", "expense").
-Return ONLY valid JSON matching this schema:
+OPERATING GUIDELINES:
+1. Be warm, hyper-local, and practical. Keep responses under 3-4 sentences unless detailed recommendations are explicitly requested.
+2. If suggesting dining or locations, prioritize places physically near the active itinerary stops or current POIs.
+3. ACTION ROUTING:
+   - Set `actionType: "food"` if user asks for dining, cafes, bars, or food spots.
+   - Set `actionType: "cab"` if user asks to travel, hail a cab, or navigate between locations.
+   - Set `actionType: "map"` if user asks where a place is or asks for directions.
+   - Set `actionType: "expense"` if user mentions spending, logging costs, or budgets.
+   - Otherwise, set `actionType: null`.
+4. Set `actionPayload` to the specific search query or destination string for the UI to consume (or null if none).
+
+Output ONLY valid JSON:
 {{
-  "reply": "Conversational, helpful response string",
+  "reply": "Conversational, accurate response directly answering the traveler.",
   "actionType": "food|cab|map|expense|null",
-  "actionPayload": "Optional search term or destination payload"
+  "actionPayload": "string or null"
 }}
 """
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"response_mime_type": "application/json", "temperature": 0.3}
-        }
-
         try:
-            import requests
-            res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=4)
-            if res.status_code == 200:
-                text = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-                if text.startswith("```"):
-                    text = re.sub(r"^```(?:json)?\n?", "", text, flags=re.IGNORECASE)
-                    text = re.sub(r"\n?```$", "", text)
-                data = json.loads(text)
-                if isinstance(data, dict) and "reply" in data:
-                    raw_reply = data["reply"]
-                    if isinstance(raw_reply, dict):
-                        data["reply"] = raw_reply.get("reply") or raw_reply.get("text") or str(raw_reply)
-                    elif isinstance(raw_reply, str) and raw_reply.strip().startswith("{") and raw_reply.strip().endswith("}"):
-                        try:
-                            sub_json = json.loads(raw_reply.strip())
-                            if isinstance(sub_json, dict) and "reply" in sub_json:
-                                data["reply"] = sub_json["reply"]
-                        except Exception:
-                            pass
-                    return data
-        except Exception:
-            pass
-
+            raw_text = self._execute_gemini_request(prompt, temperature=0.3, timeout=12)
+            data = json.loads(raw_text)
+            if isinstance(data, dict) and "reply" in data:
+                raw_reply = data["reply"]
+                if isinstance(raw_reply, dict):
+                    data["reply"] = raw_reply.get("reply") or raw_reply.get("text") or str(raw_reply)
+                elif isinstance(raw_reply, str) and raw_reply.strip().startswith("{") and raw_reply.strip().endswith("}"):
+                    try:
+                        sub_json = json.loads(raw_reply.strip())
+                        if isinstance(sub_json, dict) and "reply" in sub_json:
+                            data["reply"] = sub_json["reply"]
+                    except Exception:
+                        pass
+                return data
+        except Exception as e:
+            logger.warning(f"[CHAT WARN] Live Gemini call failed: {e}. Falling back to mock.")
         return MockAIProvider().generate_chat_response(messages, trip_context)
 
     def generate_day_optimization(self, day_info: Dict[str, Any], activities: List[Dict[str, Any]], goal: str) -> List[Dict[str, Any]]:
-        api_key = self.api_key if self.api_key is not None else os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            return MockAIProvider().generate_day_optimization(day_info, activities, goal)
+        prompt = f"""You are VoyageAI's Route Optimization Engine. Reorder and balance activities for Day {day_info.get('dayNumber', 1)} to achieve: "{goal}".
 
-        model_name = _resolve_model_name(self.model_name)
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
-
-        prompt = f"""
-You are VoyageAI's itinerary route optimization engine.
-Reorder and adjust the time slots for these activities on Day {day_info.get('dayNumber', 1)} to achieve goal '{goal}'.
-
-CURRENT ACTIVITIES:
+CURRENT ACTIVITIES ON SCHEDULE:
 {json.dumps(activities, indent=2)}
 
-INSTRUCTION:
-Return ONLY valid JSON matching this schema:
+RULES:
+1. PRESERVE IDs: Every input `id` must be returned in `optimizedActivities` with its original value unchanged. Do NOT invent new IDs or drop existing ones.
+2. GEOGRAPHIC SEQUENCING: Reorder stops to minimize transit distance and eliminate geographic backtracking.
+3. TIME ALLOCATION: Reassign `timeSlot` sequentially (format: "hh:mm AM/PM"), allowing reasonable transit and dwell buffers between stops.
+
+Output ONLY valid JSON:
 {{
   "optimizedActivities": [
     {{
-      "id": "act_id_preserved_exactly",
+      "id": "original_id_preserved",
       "timeSlot": "09:30 AM",
-      "title": "Exact activity title",
-      "locationName": "Location name",
+      "title": "Activity Name",
+      "locationName": "Location Name",
       "latitude": 15.54,
       "longitude": 73.75
     }}
   ]
 }}
 """
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"response_mime_type": "application/json", "temperature": 0.2}
-        }
-
         try:
-            import requests
-            res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=4)
-            if res.status_code == 200:
-                text = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-                if text.startswith("```"):
-                    text = re.sub(r"^```(?:json)?\n?", "", text, flags=re.IGNORECASE)
-                    text = re.sub(r"\n?```$", "", text)
-                data = json.loads(text)
-                opt = data.get("optimizedActivities")
-                if isinstance(opt, list) and len(opt) > 0:
-                    act_map = {a["id"]: a for a in activities if "id" in a}
-                    result = []
-                    for item in opt:
-                        orig = act_map.get(item.get("id"))
-                        if orig:
-                            merged = dict(orig)
-                            if item.get("timeSlot"):
-                                merged["timeSlot"] = item["timeSlot"]
-                            result.append(merged)
-                    if len(result) == len(activities):
-                        return result
-        except Exception:
-            pass
-
+            raw_text = self._execute_gemini_request(prompt, temperature=0.2, timeout=15)
+            data = json.loads(raw_text)
+            opt = data.get("optimizedActivities")
+            if isinstance(opt, list) and len(opt) > 0:
+                act_map = {a["id"]: a for a in activities if "id" in a}
+                result = []
+                for item in opt:
+                    orig = act_map.get(item.get("id"))
+                    if orig:
+                        merged = dict(orig)
+                        if item.get("timeSlot"):
+                            merged["timeSlot"] = item["timeSlot"]
+                        result.append(merged)
+                if len(result) == len(activities):
+                    return result
+        except Exception as e:
+            logger.warning(f"[DAY OPTIMIZATION WARN] Live Gemini call failed: {e}. Falling back to mock.")
         return MockAIProvider().generate_day_optimization(day_info, activities, goal)
 
     def generate_budget_optimization(self, trip_budget: Dict[str, Any], current_costs: Dict[str, Any], activities: List[Dict[str, Any]]) -> Dict[str, Any]:
-        api_key = self.api_key if self.api_key is not None else os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            return MockAIProvider().generate_budget_optimization(trip_budget, current_costs, activities)
+        prompt = f"""You are VoyageAI's Budget Optimization Specialist. Identify disproportionately expensive activities in the itinerary and propose lower-cost, high-value alternatives to meet the target budget.
 
-        model_name = _resolve_model_name(self.model_name)
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+FINANCIAL SNAPSHOT:
+- Target Budget: ₹{trip_budget.get('targetAmount', 30000)}
+- Current Total Projected: ₹{current_costs.get('totalProjected', 35000)}
+- Deficit to Cut: ₹{max(0, current_costs.get('totalProjected', 35000) - trip_budget.get('targetAmount', 30000))}
 
-        prompt = f"""
-You are VoyageAI's budget optimization expert.
-Analyze current trip spending vs target budget and propose cost-saving replacements for high-cost activities.
-
-TARGET BUDGET: ₹{trip_budget.get('targetAmount', 30000)}
-CURRENT PROJECTED: ₹{current_costs.get('totalProjected', 35000)}
-
-CURRENT ACTIVITIES:
+SCHEDULED ACTIVITIES:
 {json.dumps(activities, indent=2)}
 
-INSTRUCTION:
-Return ONLY valid JSON matching this schema:
+INSTRUCTIONS:
+1. Target activities where premium costs can be reduced without ruining the travel experience.
+2. Math check: Ensure `currentCost - replacementCost = savings` exactly.
+3. Match the replacement's `timeSlot` and geographical vicinity to the original activity.
+
+Output ONLY valid JSON:
 {{
   "currentProjectedCost": {current_costs.get('totalProjected', 35000)},
   "targetBudget": {trip_budget.get('targetAmount', 30000)},
@@ -1126,116 +1070,83 @@ Return ONLY valid JSON matching this schema:
   "recommendations": [
     {{
       "type": "REPLACE_ACTIVITY",
-      "activityId": "activity_id_to_replace",
-      "activityTitle": "Original Title",
-      "currentCost": 800,
-      "replacementCost": 200,
-      "savings": 600,
+      "activityId": "original_activity_id",
+      "activityTitle": "Original Activity Title",
+      "currentCost": 1200,
+      "replacementCost": 300,
+      "savings": 900,
       "replacement": {{
-        "name": "New Budget Alternative Title",
-        "description": "Short description",
-        "timeSlot": "10:00 AM",
+        "name": "High-Value Alternative Title",
+        "description": "Why this is an authentic, budget-friendly replacement.",
+        "timeSlot": "Original or adjusted timeSlot",
         "locationName": "Specific Place Name",
         "latitude": 15.54,
         "longitude": 73.75,
-        "estimatedCost": 200
+        "estimatedCost": 300
       }},
-      "reason": "Why this saves budget while preserving experience"
+      "reason": "Clear financial and experiential justification."
     }}
   ]
 }}
 """
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"response_mime_type": "application/json", "temperature": 0.2}
-        }
-
         try:
-            import requests
-            res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=4)
-            if res.status_code == 200:
-                text = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-                if text.startswith("```"):
-                    text = re.sub(r"^```(?:json)?\n?", "", text, flags=re.IGNORECASE)
-                    text = re.sub(r"\n?```$", "", text)
-                data = json.loads(text)
-                if "recommendations" in data:
-                    return data
-        except Exception:
-            pass
-
+            raw_text = self._execute_gemini_request(prompt, temperature=0.2, timeout=15)
+            data = json.loads(raw_text)
+            if "recommendations" in data:
+                return data
+        except Exception as e:
+            logger.warning(f"[BUDGET OPTIMIZATION WARN] Live Gemini call failed: {e}. Falling back to mock.")
         return MockAIProvider().generate_budget_optimization(trip_budget, current_costs, activities)
 
     def generate_weather_replan(self, forecast: Dict[str, Any], activities: List[Dict[str, Any]]) -> Dict[str, Any]:
-        api_key = self.api_key if self.api_key is not None else os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            return MockAIProvider().generate_weather_replan(forecast, activities)
+        prompt = f"""You are VoyageAI's Dynamic Weather Re-planning Assistant.
+Audit the scheduled activities against the weather forecast. Identify exposed outdoor activities at risk from severe weather and propose verified indoor or sheltered alternatives.
 
-        model_name = _resolve_model_name(self.model_name)
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+WEATHER ADVISORY:
+{json.dumps(forecast)}
 
-        prompt = f"""
-You are VoyageAI's weather replanning assistant.
-Identify outdoor activities affected by the weather forecast and propose indoor/covered alternatives.
+CURRENT ACTIVITIES:
+{json.dumps(activities, indent=2)}
 
-FORECAST: {json.dumps(forecast)}
-ACTIVITIES: {json.dumps(activities, indent=2)}
+INSTRUCTIONS:
+1. Flag ONLY activities genuinely compromised by the forecast condition.
+2. Provide an indoor alternative in the same general neighborhood matching the original time slot.
+3. Retain exact `activityId` from the input for tracking.
 
-INSTRUCTION:
-Return ONLY valid JSON matching this schema:
+Output ONLY valid JSON:
 {{
   "weatherAlert": {json.dumps(forecast)},
   "recommendations": [
     {{
       "action": "REPLACE_ACTIVITY",
-      "activityId": "activity_id_affected",
-      "activityTitle": "Original Title",
-      "weatherAlert": "{forecast.get('condition', 'Heavy Rain')}",
+      "activityId": "original_activity_id",
+      "activityTitle": "Original Outdoor Activity Title",
+      "weatherAlert": "{forecast.get('condition', 'Adverse Weather')}",
       "replacement": {{
         "name": "Indoor Alternative Title",
-        "description": "Short description",
-        "timeSlot": "02:00 PM",
-        "locationName": "Specific Indoor Location",
+        "description": "Short explanation of the indoor experience.",
+        "timeSlot": "Preserved timeSlot",
+        "locationName": "Specific Indoor Location, City",
         "latitude": 15.5,
         "longitude": 73.8,
         "estimatedCost": 250
       }},
-      "reason": "Why this indoor alternative works during weather alert"
+      "reason": "Why this indoor alternative is safe and enjoyable under current conditions."
     }}
   ]
 }}
 """
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"response_mime_type": "application/json", "temperature": 0.2}
-        }
-
         try:
-            import requests
-            res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=4)
-            if res.status_code == 200:
-                text = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-                if text.startswith("```"):
-                    text = re.sub(r"^```(?:json)?\n?", "", text, flags=re.IGNORECASE)
-                    text = re.sub(r"\n?```$", "", text)
-                data = json.loads(text)
-                if "recommendations" in data:
-                    return data
-        except Exception:
-            pass
-
+            raw_text = self._execute_gemini_request(prompt, temperature=0.2, timeout=15)
+            data = json.loads(raw_text)
+            if "recommendations" in data:
+                return data
+        except Exception as e:
+            logger.warning(f"[WEATHER REPLAN WARN] Live Gemini call failed: {e}. Falling back to mock.")
         return MockAIProvider().generate_weather_replan(forecast, activities)
 
     def generate_refinement_actions(self, instruction: str, current_itinerary: Dict[str, Any]) -> List[Dict[str, Any]]:
-        api_key = self.api_key if self.api_key is not None else os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            return MockAIProvider().generate_refinement_actions(instruction, current_itinerary)
-
-        model_name = _resolve_model_name(self.model_name)
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
-
-        prompt = f"""
-You are VoyageAI's conversational itinerary editing engine.
+        prompt = f"""You are VoyageAI's conversational itinerary editing engine.
 Translate the user's natural language instruction into precise structured modification actions.
 
 USER INSTRUCTION: "{instruction}"
@@ -1265,81 +1176,24 @@ Generate structured actions to execute. Return ONLY valid JSON matching this sch
   ]
 }}
 """
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"response_mime_type": "application/json", "temperature": 0.2}
-        }
-
         try:
-            import requests
-            res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=4)
-            if res.status_code == 200:
-                text = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-                if text.startswith("```"):
-                    text = re.sub(r"^```(?:json)?\n?", "", text, flags=re.IGNORECASE)
-                    text = re.sub(r"\n?```$", "", text)
-                data = json.loads(text)
-                acts = data.get("actions")
-                if isinstance(acts, list):
-                    return acts
-        except Exception:
-            pass
-
+            raw_text = self._execute_gemini_request(prompt, temperature=0.2, timeout=15)
+            data = json.loads(raw_text)
+            acts = data.get("actions")
+            if isinstance(acts, list):
+                return acts
+        except Exception as e:
+            logger.warning(f"[REFINEMENT WARN] Live Gemini call failed: {e}. Falling back to mock.")
         return MockAIProvider().generate_refinement_actions(instruction, current_itinerary)
 
-class VertexAIProvider(AIProviderInterface):
-    """
-    Vertex AI MaaS Endpoint Provider (Llama-3.3-70b / OpenAI MaaS compatible endpoint).
-    Fallbacks cleanly to MockAIProvider if credentials or network is unavailable.
-    """
-    def generate_itinerary_json(self, ai_input: Dict[str, Any], prompt: str) -> str:
-        try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                raw_result = loop.run_until_complete(call_vertex_async(prompt))
-            finally:
-                loop.close()
-
-            if raw_result:
-                cleaned = clean_output(raw_result)
-                if isinstance(cleaned, dict) and "days" in cleaned:
-                    return json.dumps(cleaned)
-                elif "raw_output" not in cleaned:
-                    return json.dumps(cleaned)
-        except Exception:
-            pass
-
-        return MockAIProvider().generate_itinerary_json(ai_input, prompt)
-
-    def generate_swap_recommendations(self, current_activity: Dict[str, Any], trip_context: Dict[str, Any]) -> List[Dict[str, Any]]:
-        return MockAIProvider().generate_swap_recommendations(current_activity, trip_context)
-
-    def generate_chat_response(self, messages: List[Dict[str, str]], trip_context: Dict[str, Any]) -> Dict[str, Any]:
-        return MockAIProvider().generate_chat_response(messages, trip_context)
-
-    def generate_day_optimization(self, day_info: Dict[str, Any], activities: List[Dict[str, Any]], goal: str) -> List[Dict[str, Any]]:
-        return MockAIProvider().generate_day_optimization(day_info, activities, goal)
-
-    def generate_budget_optimization(self, trip_budget: Dict[str, Any], current_costs: Dict[str, Any], activities: List[Dict[str, Any]]) -> Dict[str, Any]:
-        return MockAIProvider().generate_budget_optimization(trip_budget, current_costs, activities)
-
-    def generate_weather_replan(self, forecast: Dict[str, Any], activities: List[Dict[str, Any]]) -> Dict[str, Any]:
-        return MockAIProvider().generate_weather_replan(forecast, activities)
-
-    def generate_refinement_actions(self, instruction: str, current_itinerary: Dict[str, Any]) -> List[Dict[str, Any]]:
-        return MockAIProvider().generate_refinement_actions(instruction, current_itinerary)
 
 def get_ai_provider() -> AIProviderInterface:
     provider_type = os.getenv("AI_PROVIDER", "gemini").lower().strip()
     if provider_type == "mock":
         return MockAIProvider()
-    elif provider_type == "vertex":
-        return VertexAIProvider()
-    elif provider_type == "gemini":
-        return GeminiProvider()
     else:
         return GeminiProvider()
+
 
 class DynamicAIProviderProxy(AIProviderInterface):
     """
@@ -1353,8 +1207,8 @@ class DynamicAIProviderProxy(AIProviderInterface):
             return provider.generate_itinerary_json(ai_input, prompt)
         except Exception as err:
             if not isinstance(provider, MockAIProvider):
-                print(f"\n⚠️ [AI_FALLBACK] Primary AI Provider ({provider.__class__.__name__}) error: {err}", flush=True)
-                print(f"🔄 Automatically falling back to MockAIProvider to complete generation cleanly...\n", flush=True)
+                print(f"\n[AI_FALLBACK] Primary AI Provider ({provider.__class__.__name__}) error: {err}", flush=True)
+                print(f"[AI_FALLBACK] Automatically falling back to MockAIProvider to complete generation cleanly...\n", flush=True)
                 return MockAIProvider().generate_itinerary_json(ai_input, prompt)
             raise
 
@@ -1364,7 +1218,7 @@ class DynamicAIProviderProxy(AIProviderInterface):
             return provider.generate_swap_recommendations(current_activity, trip_context)
         except Exception as err:
             if not isinstance(provider, MockAIProvider):
-                print(f"\n⚠️ [AI_FALLBACK] Swap recommendations error ({err}). Falling back to MockAIProvider...", flush=True)
+                print(f"\n[AI_FALLBACK] Swap recommendations error ({err}). Falling back to MockAIProvider...", flush=True)
                 return MockAIProvider().generate_swap_recommendations(current_activity, trip_context)
             raise
 
@@ -1374,7 +1228,7 @@ class DynamicAIProviderProxy(AIProviderInterface):
             return provider.generate_chat_response(messages, trip_context)
         except Exception as err:
             if not isinstance(provider, MockAIProvider):
-                print(f"\n⚠️ [AI_FALLBACK] Chat response error ({err}). Falling back to MockAIProvider...", flush=True)
+                print(f"\n[AI_FALLBACK] Chat response error ({err}). Falling back to MockAIProvider...", flush=True)
                 return MockAIProvider().generate_chat_response(messages, trip_context)
             raise
 
@@ -1384,7 +1238,7 @@ class DynamicAIProviderProxy(AIProviderInterface):
             return provider.generate_day_optimization(day_info, activities, goal)
         except Exception as err:
             if not isinstance(provider, MockAIProvider):
-                print(f"\n⚠️ [AI_FALLBACK] Day optimization error ({err}). Falling back to MockAIProvider...", flush=True)
+                print(f"\n[AI_FALLBACK] Day optimization error ({err}). Falling back to MockAIProvider...", flush=True)
                 return MockAIProvider().generate_day_optimization(day_info, activities, goal)
             raise
 
@@ -1394,7 +1248,7 @@ class DynamicAIProviderProxy(AIProviderInterface):
             return provider.generate_budget_optimization(trip_budget, current_costs, activities)
         except Exception as err:
             if not isinstance(provider, MockAIProvider):
-                print(f"\n⚠️ [AI_FALLBACK] Budget optimization error ({err}). Falling back to MockAIProvider...", flush=True)
+                print(f"\n[AI_FALLBACK] Budget optimization error ({err}). Falling back to MockAIProvider...", flush=True)
                 return MockAIProvider().generate_budget_optimization(trip_budget, current_costs, activities)
             raise
 
@@ -1404,7 +1258,7 @@ class DynamicAIProviderProxy(AIProviderInterface):
             return provider.generate_weather_replan(forecast, activities)
         except Exception as err:
             if not isinstance(provider, MockAIProvider):
-                print(f"\n⚠️ [AI_FALLBACK] Weather replan error ({err}). Falling back to MockAIProvider...", flush=True)
+                print(f"\n[AI_FALLBACK] Weather replan error ({err}). Falling back to MockAIProvider...", flush=True)
                 return MockAIProvider().generate_weather_replan(forecast, activities)
             raise
 
@@ -1414,11 +1268,12 @@ class DynamicAIProviderProxy(AIProviderInterface):
             return provider.generate_refinement_actions(instruction, current_itinerary)
         except Exception as err:
             if not isinstance(provider, MockAIProvider):
-                print(f"\n⚠️ [AI_FALLBACK] Refinement error ({err}). Falling back to MockAIProvider...", flush=True)
+                print(f"\n[AI_FALLBACK] Refinement error ({err}). Falling back to MockAIProvider...", flush=True)
                 return MockAIProvider().generate_refinement_actions(instruction, current_itinerary)
             raise
 
 # Active Provider Service Instance
 ai_provider_service = DynamicAIProviderProxy()
+
 
 

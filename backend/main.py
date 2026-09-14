@@ -7,7 +7,7 @@ import json
 import uuid
 from datetime import datetime
 
-from database import get_db, SessionLocal, engine, Base
+from database import get_db, SessionLocal, engine, Base, get_db_context, get_db_pool_status
 from models import LoginRequest, OnboardingRequest, SessionResponse
 from models_trip import TripModel
 from models_itinerary import ItineraryModel, ItineraryDayModel, ItineraryActivityModel
@@ -17,6 +17,7 @@ from places import search_places, search_nearby_restaurants, validate_destinatio
 import auth
 
 from pydantic import BaseModel
+from task_queue import enqueue_itinerary_generation
 from itinerary_service import (
     process_async_itinerary_generation,
     optimize_day_flow_service,
@@ -25,15 +26,55 @@ from itinerary_service import (
     execute_refinement_actions_service
 )
 
+import asyncio
+from contextlib import asynccontextmanager
+from events_listener import start_redis_events_listener
+from websocket_manager import ws_manager
+
 # Ensure database tables are created
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="VoyageAI Auth, Preferences & Trip API", version="1.0.0")
+async def broadcast_trip_update_to_clients(trip_id: str, payload: dict):
+    """Dispatches the Redis Pub/Sub message to local WebSockets."""
+    await ws_manager.broadcast_to_local_subscribers(trip_id, payload)
+    try:
+        if 'connection_registry' in globals():
+            await connection_registry.broadcast_push("ITINERARY_READY", payload)
+    except Exception as e:
+        logger.error(f"[WS BROADCAST ERROR] Failed to push WebSocket update: {e}")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # STARTUP: Launch Pub/Sub listener as a concurrent background task
+    listener_task = asyncio.create_task(
+        start_redis_events_listener(broadcast_trip_update_to_clients)
+    )
+    yield
+    # SHUTDOWN: Cancel task cleanly when server stops
+    listener_task.cancel()
+    try:
+        await listener_task
+    except asyncio.CancelledError:
+        pass
+
+app = FastAPI(title="VoyageAI Auth, Preferences & Trip API", version="1.0.0", lifespan=lifespan)
+
+@app.websocket("/ws/trips/{trip_id}")
+async def websocket_trip_endpoint(websocket: WebSocket, trip_id: str):
+    """Distributed WebSocket endpoint for trip-specific real-time updates."""
+    await ws_manager.connect(trip_id, websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        ws_manager.disconnect(trip_id, websocket)
 
 # Enable CORS for localhost frontend with credentials (cookies) support
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        "http://localhost",
+        "http://127.0.0.1",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:3000",
@@ -126,18 +167,21 @@ def log_frontend_payload(endpoint: str, payload: Any, user_email: Optional[str] 
     Formatted terminal output printer for all incoming data received from the frontend.
     """
     print("\n" + "=" * 80, flush=True)
-    print(f"📥 [FRONTEND DATA RECEIVED] -> Endpoint: {endpoint}", flush=True)
+    print(f"[FRONTEND DATA RECEIVED] -> Endpoint: {endpoint}", flush=True)
     if user_email:
-        print(f"👤 User: {user_email}", flush=True)
+        print(f"[USER] User: {user_email}", flush=True)
     print("-" * 80, flush=True)
-    print("📦 Payload Data Received From Frontend:", flush=True)
-    print(print_json_pretty(payload), flush=True)
+    print("[PAYLOAD] Payload Data Received From Frontend:", flush=True)
+    try:
+        print(print_json_pretty(payload), flush=True)
+    except Exception:
+        print(str(payload), flush=True)
     
     if usage_summary:
         print("-" * 80, flush=True)
-        print("💡 Field Usage & Explanation in Backend:", flush=True)
+        print("[FIELD USAGE] Field Usage & Explanation in Backend:", flush=True)
         for key, explanation in usage_summary.items():
-            print(f"   • {key}: {explanation}", flush=True)
+            print(f"   * {key}: {explanation}", flush=True)
     print("=" * 80 + "\n", flush=True)
 
 def extract_token(request: Request, authorization: Optional[str] = Header(None)) -> str:
@@ -178,6 +222,29 @@ def get_current_user(
     except Exception as err:
         log_event(f"❌ Session user lookup failed: {str(err)}")
         raise HTTPException(status_code=401, detail=str(err))
+
+def get_current_user_optional(
+    request: Request,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    try:
+        token = extract_token(request, authorization)
+        if token:
+            return auth.get_session_user(db, token)
+    except Exception:
+        pass
+    from models_db import AuthUserModel, UserProfileModel, UserPreferencesModel
+    demo_user = db.query(AuthUserModel).first()
+    if demo_user:
+        profile = db.query(UserProfileModel).filter(UserProfileModel.user_id == demo_user.id).first()
+        prefs = db.query(UserPreferencesModel).filter(UserPreferencesModel.user_id == demo_user.id).first()
+        return (
+            auth.to_pydantic_auth_user(demo_user),
+            auth.to_pydantic_user_profile(profile) if profile else None,
+            auth.to_pydantic_user_prefs(prefs) if prefs else None
+        )
+    raise HTTPException(status_code=401, detail="Authentication required")
 
 def verify_trip_ownership(trip_id: str, user_id: str, db: Session) -> TripModel:
     trip = db.query(TripModel).filter(TripModel.id == trip_id, TripModel.user_id == user_id).first()
@@ -1005,7 +1072,7 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
         db.commit()
         print(f"💾 [TRIP CREATION] Trip saved to PostgreSQL (ID: {trip_id}, Title: '{new_trip.title}')", flush=True)
 
-        threading.Thread(target=process_async_itinerary_generation, args=(trip_id, SessionLocal), daemon=True).start()
+        enqueue_itinerary_generation(trip_id)
 
         return {
             "id": new_trip.id,
@@ -1344,8 +1411,7 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
         if trip:
             trip.itinerary_status = "GENERATING"
             db.commit()
-            import threading
-            threading.Thread(target=process_async_itinerary_generation, args=(trip_id, SessionLocal), daemon=True).start()
+            enqueue_itinerary_generation(trip_id)
         return {"status": "GENERATING", "tripId": trip_id}
 
     elif reqname == "trips:swap_activity":
@@ -1377,44 +1443,89 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
     else:
         raise ValueError(f"Unknown WebSocket request action: [{reqname}]")
 
+class ConnectionRegistry:
+    def __init__(self):
+        self.active_connections: Dict[str, WebSocket] = {}
+
+    async def connect(self, connection_id: str, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections[connection_id] = websocket
+
+    def disconnect(self, connection_id: str):
+        if connection_id in self.active_connections:
+            del self.active_connections[connection_id]
+
+    async def broadcast_push(self, action: str, data: dict):
+        frame_v4 = {
+            "id": None,
+            "action": action,
+            "data": data
+        }
+        to_remove = []
+        for cid, ws in list(self.active_connections.items()):
+            try:
+                await ws.send_json(frame_v4)
+            except Exception:
+                to_remove.append(cid)
+        for cid in to_remove:
+            self.disconnect(cid)
+
+connection_registry = ConnectionRegistry()
+
+@app.websocket("/ws")
+@app.websocket("/ws/app")
 @app.websocket("/ws/tour-app")
 async def websocket_tour_app_endpoint(websocket: WebSocket):
     """
-    Central WebSocket endpoint for entire VoyageAI frontend application.
-    All requests flow over payload frames: { type, reqname, data, requestId }
+    Central WebSocket endpoint for entire VoyageAI application.
+    Supports both Pure WebSocket Envelope RPC Schema ({ id, action, payload })
+    and Legacy Schema ({ type, reqname, data, requestId })
     """
-    await websocket.accept()
-    log_event("🔌 [WS TOUR-APP CONNECTED] Client established persistent WebSocket connection")
+    conn_id = f"conn_{uuid.uuid4().hex[:10]}"
+    await connection_registry.connect(conn_id, websocket)
+    log_event(f"🔌 [WS CONNECTED] Client established persistent connection (ID: {conn_id})")
 
     try:
         while True:
             frame = await websocket.receive_json()
-            req_type = frame.get("type", "request")
-            reqname = frame.get("reqname")
-            data = frame.get("data") or {}
-            request_id = frame.get("requestId")
+            
+            # Support both { id, action, payload } and { requestId, reqname, data }
+            req_id = frame.get("id") or frame.get("requestId")
+            action = frame.get("action") or frame.get("reqname")
+            payload = frame.get("payload") if "payload" in frame else (frame.get("data") or {})
 
-            if not reqname:
+            if not action:
                 continue
 
+            # Thread-safe DB session per action handler execution
             db = SessionLocal()
             try:
-                result = await process_ws_action(reqname, data, db, websocket)
+                result = await process_ws_action(action, payload, db, websocket)
+                
+                # Dual response compatibility frame
                 response_frame = {
-                    "type": "response",
-                    "reqname": f"{reqname}:response",
-                    "status": "success",
+                    "id": req_id,
+                    "action": f"{action}:reply",
+                    "status": 200,
                     "data": jsonable_encoder(result),
-                    "requestId": request_id
+                    "error": None,
+                    # Legacy compatibility fields
+                    "type": "response",
+                    "reqname": f"{action}:response",
+                    "requestId": req_id
                 }
             except Exception as err:
-                log_event(f"❌ [WS ACTION ERROR] {reqname}: {str(err)}")
+                log_event(f"❌ [WS ACTION ERROR] {action}: {str(err)}")
                 response_frame = {
-                    "type": "response",
-                    "reqname": f"{reqname}:response",
-                    "status": "error",
+                    "id": req_id,
+                    "action": f"{action}:reply",
+                    "status": 400,
+                    "data": None,
                     "error": str(err),
-                    "requestId": request_id
+                    # Legacy compatibility fields
+                    "type": "response",
+                    "reqname": f"{action}:response",
+                    "requestId": req_id
                 }
             finally:
                 db.close()
@@ -1422,9 +1533,21 @@ async def websocket_tour_app_endpoint(websocket: WebSocket):
             await websocket.send_json(response_frame)
 
     except WebSocketDisconnect:
-        log_event("🔌 [WS TOUR-APP DISCONNECTED] Client connection closed")
+        connection_registry.disconnect(conn_id)
+        log_event(f"🔌 [WS DISCONNECTED] Client connection closed (ID: {conn_id})")
     except Exception as e:
-        log_event(f"⚠️ [WS TOUR-APP ERROR] {e}")
+        connection_registry.disconnect(conn_id)
+        log_event(f"⚠️ [WS ERROR] {e}")
+
+@app.get("/api/admin/pool-status")
+def get_pool_status():
+    """
+    Returns real-time SQLAlchemy connection pool metrics:
+    size, checkedout, and overflow connections.
+    """
+    status_data = get_db_pool_status()
+    log_event(f"📊 [POOL STATUS] Size: {status_data['pool_size']} | Checked Out: {status_data['checkedout']} | Overflow: {status_data['overflow']}")
+    return status_data
 
 @app.get("/api/user/location/latest")
 def get_latest_user_location(
@@ -1509,10 +1632,11 @@ def get_trips(user_data = Depends(get_current_user), db: Session = Depends(get_d
 
 import threading
 
+@app.post("/trips", status_code=status.HTTP_201_CREATED)
 @app.post("/api/trips", status_code=status.HTTP_201_CREATED)
 def create_trip(
     trip_data: dict,
-    user_data = Depends(get_current_user),
+    user_data = Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 ):
     auth_user, user_profile, user_prefs = user_data
@@ -1577,7 +1701,7 @@ def create_trip(
         total_days = 4
 
     print(f"\n==================================================", flush=True)
-    print(f"🚀 [TRIP CREATION STARTED] Destination: '{dest_name}' ({total_days} Days) | User: {auth_user.email}", flush=True)
+    print(f"[TRIP CREATION STARTED] Destination: '{dest_name}' ({total_days} Days) | User: {auth_user.email}", flush=True)
 
     # 4. Resolve Cover Media
     cover_media = media_service.resolve_cover_media(destination)
@@ -1634,10 +1758,10 @@ def create_trip(
     )
     db.add(new_trip)
     db.commit()
-    print(f"💾 [TRIP CREATION] Trip saved to PostgreSQL (ID: {trip_id}, Title: '{new_trip.title}')", flush=True)
+    print(f"[TRIP CREATION] Trip saved to PostgreSQL (ID: {trip_id}, Title: '{new_trip.title}')", flush=True)
 
-    # 7. Spawn Async Thread for AI Itinerary Generation
-    threading.Thread(target=process_async_itinerary_generation, args=(trip_id, SessionLocal), daemon=True).start()
+    # 7. Enqueue AI Itinerary Generation task in Redis Queue
+    enqueue_itinerary_generation(trip_id)
 
     return {
         "id": new_trip.id,
@@ -1656,6 +1780,33 @@ def create_trip(
         "progress": new_trip.progress,
         "createdAt": new_trip.created_at,
         "updatedAt": new_trip.updated_at
+    }
+
+@app.get("/trips/{trip_id}")
+@app.get("/api/trips/{trip_id}")
+def get_trip_by_id(trip_id: str, db: Session = Depends(get_db)):
+    trip = db.query(TripModel).filter(TripModel.id == trip_id).first()
+    if not trip:
+        raise HTTPException(status_code=404, detail=f"Trip '{trip_id}' not found")
+    return {
+        "id": trip.id,
+        "tripId": trip.id,
+        "userId": trip.user_id,
+        "title": trip.title,
+        "status": trip.status,
+        "itinerary_status": trip.itinerary_status,
+        "itineraryStatus": trip.itinerary_status,
+        "startDate": trip.start_date,
+        "endDate": trip.end_date,
+        "totalDays": trip.total_days,
+        "destination": trip.destination,
+        "coverMedia": trip.cover_media,
+        "travelers": trip.travelers,
+        "preferencesSnapshot": trip.preferences_snapshot,
+        "budget": trip.budget,
+        "progress": trip.progress,
+        "createdAt": trip.created_at,
+        "updatedAt": trip.updated_at
     }
 
 @app.get("/api/trips/{trip_id}/itinerary")
@@ -1726,7 +1877,7 @@ def regenerate_itinerary(
     trip.itinerary_status = "GENERATING"
     db.commit()
 
-    threading.Thread(target=process_async_itinerary_generation, args=(trip_id, SessionLocal), daemon=True).start()
+    enqueue_itinerary_generation(trip_id)
     return {"status": "GENERATING", "tripId": trip_id}
 
 @app.delete("/api/trips/{trip_id}")

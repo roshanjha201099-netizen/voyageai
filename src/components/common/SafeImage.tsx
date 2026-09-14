@@ -1,0 +1,50 @@
+import React, { useState } from 'react';
+
+interface SafeImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
+  fallbackSrc?: string;
+  containerClassName?: string;
+}
+
+/**
+ * Safe Image component that handles broken image URLs gracefully without displaying broken browser icons.
+ */
+export const SafeImage: React.FC<SafeImageProps> = ({
+  src,
+  alt = 'Image',
+  className = 'w-full h-full object-cover',
+  fallbackSrc = 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=800&q=80',
+  containerClassName = '',
+  ...props
+}) => {
+  const [hasError, setHasError] = useState(false);
+  const [currentSrc, setCurrentSrc] = useState(src || fallbackSrc);
+
+  const handleError = () => {
+    if (!hasError) {
+      setHasError(true);
+      setCurrentSrc(fallbackSrc);
+    }
+  };
+
+  if (hasError && currentSrc === fallbackSrc) {
+    // Render gradient banner if fallback also fails or network offline
+    return (
+      <div className={`w-full h-full bg-gradient-to-br from-[#1F2522] via-[#2C504A] to-[#355F58] flex items-center justify-center p-3 text-center ${containerClassName}`}>
+        <span className="text-white font-extrabold text-xs tracking-wider uppercase opacity-90 truncate max-w-full">
+          {alt}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={currentSrc || fallbackSrc}
+      alt={alt}
+      className={className}
+      onError={handleError}
+      loading="lazy"
+      {...props}
+    />
+  );
+};

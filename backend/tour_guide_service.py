@@ -15,6 +15,9 @@ import urllib.request
 import urllib.parse
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
+from redis_client import redis_conn
+
+OSM_CACHE_TTL = 24 * 60 * 60
 
 
 # ── Haversine Distance (meters) ──
@@ -186,22 +189,39 @@ def _fetch_nominatim_location(lat: float, lng: float) -> List[Dict[str, Any]]:
 
 def search_nearby_pois(lat: float, lng: float, radius_m: int = 5000) -> List[Dict[str, Any]]:
     """
-    Search for real nearby POIs using the Overpass API (OpenStreetMap).
-    Returns places within the specified radius, each with Haversine distance.
-    Maximum radius: 5000m.
+    Search for real nearby POIs using Overpass API (OpenStreetMap).
+    Uses Redis Cache-Aside Pattern with 24-Hour TTL and Spatial Clustered Keys.
     """
     radius_m = min(radius_m, 5000)
 
-    # Check cache
+    # 1. Spatial Coordinate Bucketing to ~1.1 km grid
+    grid_lat = round(lat, 2)
+    grid_lon = round(lng, 2)
+    cache_key = f"osm:poi:{grid_lat}:{grid_lon}:{radius_m}"
+
+    # 2. Check Redis Cache
+    try:
+        cached_result = redis_conn.get(cache_key)
+        if cached_result:
+            print(f">>> [REDIS CACHE HIT] Key: {cache_key} (~2ms)")
+            cached_places = json.loads(cached_result)
+            for p in cached_places:
+                p["distanceMeters"] = round(haversine_meters(lat, lng, p["latitude"], p["longitude"]))
+            return cached_places
+    except Exception as e:
+        print(f"⚠️ [REDIS WARNING] Failed to read cache: {e}")
+
+    # Fallback to local in-memory cache if Redis is down
     ck = _cache_key(lat, lng, radius_m)
     if ck in _overpass_cache:
         cached_time, cached_results = _overpass_cache[ck]
         if time.time() - cached_time < CACHE_TTL_SECONDS:
-            # Recalculate distances from exact current position
             for p in cached_results:
                 p["distanceMeters"] = round(haversine_meters(lat, lng, p["latitude"], p["longitude"]))
             return cached_results
 
+    # 3. Cache Miss: Execute Overpass HTTP API call
+    print(f">>> [REDIS CACHE MISS] Fetching fresh data from Overpass API for {cache_key}...")
     query = OVERPASS_QUERY_TEMPLATE.format(lat=lat, lng=lng, radius=radius_m)
     endpoints = [
         "https://overpass-api.de/api/interpreter",
@@ -243,13 +263,11 @@ def search_nearby_pois(lat: float, lng: float, radius_m: int = 5000) -> List[Dic
         if not name or len(name.strip()) < 3:
             continue
 
-        # Deduplicate by name
         name_key = name.strip().lower()
         if name_key in seen_names:
             continue
         seen_names.add(name_key)
 
-        # Get coordinates (nodes have lat/lon directly, ways have center)
         el_lat = el.get("lat") or ((el.get("center") or {}).get("lat"))
         el_lng = el.get("lon") or ((el.get("center") or {}).get("lon"))
         if el_lat is None or el_lng is None:
@@ -258,7 +276,6 @@ def search_nearby_pois(lat: float, lng: float, radius_m: int = 5000) -> List[Dic
         el_lat = float(el_lat)
         el_lng = float(el_lng)
 
-        # Strict radius filter (Haversine)
         dist = haversine_meters(lat, lng, el_lat, el_lng)
         if dist > radius_m:
             continue
@@ -282,10 +299,15 @@ def search_nearby_pois(lat: float, lng: float, radius_m: int = 5000) -> List[Dic
         }
         places.append(place)
 
-    # Cache results
-    _overpass_cache[ck] = (time.time(), places)
+    # 4. Save to Redis with 24-Hour Expiration (and local backup)
+    try:
+        redis_conn.setex(cache_key, OSM_CACHE_TTL, json.dumps(places))
+    except Exception as e:
+        print(f"⚠️ [REDIS WARNING] Failed to write cache: {e}")
 
+    _overpass_cache[ck] = (time.time(), places)
     return places
+
 
 
 # ── Place Ranking ──
@@ -407,46 +429,29 @@ def resolve_active_place(
 
 # ── Tour Guide AI (Gemini) ──
 
-TOUR_GUIDE_SYSTEM_PROMPT = """You are a knowledgeable, friendly local tour guide for VoyageAI — a travel companion app.
+TOUR_GUIDE_SYSTEM_PROMPT = """You are a knowledgeable, charismatic local tour guide for VoyageAI. You accompany the traveler in real time.
 
-PERSONALITY:
-- Curious, concise, conversational, locally aware, warm, helpful.
-- You sound like a real, experienced human guide walking alongside the traveler.
-- You are NOT a Wikipedia dumping tool, a corporate chatbot, or a repetitive assistant.
+CORE PERSONA:
+- Concise, engaging, culturally sharp, and conversational.
+- Speak like a seasoned human guide walking beside the traveler. Never sound like a database entry, encyclopedia, or bureaucratic chatbot.
+- Keep standard responses between 2 to 4 sentences unless the user explicitly asks for an in-depth story.
 
-OPERATING MODES:
-1. LOCAL MODE (Current Physical Location Context):
-   - Answer based primarily on the user's current physical location and local surroundings.
-   - When asked about "famous food", "what to eat here", "nearby places", or "culture", answer using the local region/city context where the user physically is right now.
-   - Do NOT mention or inject the user's upcoming trip unless the user explicitly asks about their trip or mentions the trip destination by name.
+STRICT OPERATING MODES:
+1. LOCAL MODE (Current Real-Time Location Context):
+   - Anchor responses in the user's current physical coordinates and city.
+   - If asked "What is that building?", "What's good to eat here?", or "Tell me the story of this street", answer strictly for their current location.
+   - Do NOT reference their upcoming trip plans unless explicitly asked.
 
-2. TRIP MODE (Selected Planned Journey Context):
-   - Answer based primarily on the selected trip destination, itinerary, booked stays, and trip plans.
-   - Focus on itinerary activities, trip dining, trip attractions, and travel tips for that trip destination.
-   - Do NOT claim the user is physically near their trip destination unless GPS coordinates confirm it.
+2. TRIP MODE (Upcoming / Selected Itinerary Context):
+   - Anchor responses in the planned destination itinerary.
+   - Discuss planned activities, destinations, and local customs of the journey destination.
+   - Do NOT imply the user is physically there unless their current GPS matches the trip destination.
 
-CRITICAL ISOLATION RULE:
-Never mix up the user's physical current location with their upcoming trip destination. If the user is physically in Bihar and has an upcoming trip to Goa:
-- "What's famous near me?" -> Answer about Bihar.
-- "What food is famous here?" -> Answer about Bihar cuisine.
-- "What should I see in Goa?" -> Answer about Goa attractions.
-- "What food should I try on my Goa trip?" -> Answer about Goa cuisine.
-
-STRICT CONVERSATIONAL & CONTEXT RULES:
-1. ACTIVE PLACE FOCUS & FOLLOW-UPS:
-   - When a CURRENTLY SELECTED PLACE is provided in the context, all follow-up questions ("tell me the history", "why is it famous?", "is it worth visiting?", "how old is it?", "who built it?") refer to THIS active place.
-   - Answer the user's EXACT question about the active place directly.
-   - NEVER repeat the initial greeting, distance introduction, or category overview when answering a follow-up question unless specifically asked ("where is it?" or "how far is it?").
-   - If the user asks about a NEW place by name, switch your focus immediately to that new place.
-
-2. FACTUAL GROUNDING & HALLUCINATION PREVENTION:
-   - Use the verified OpenStreetMap data and verified location details provided in the context.
-   - If the user asks for historical origins, dates, or builders, and the exact fact is NOT in the provided metadata or established verified history, answer clearly and naturally without inventing facts:
-     "I can confirm it's an important landmark in this area, but I don't have a verified historical record for its exact founding date or builder."
-   - NEVER invent historical dates, kings, religious myths, or prices.
-
-3. SUGGESTED ACTIONS:
-   - Return 2-3 logical follow-up action chips that continue the conversation in the current mode.
+HALLUCINATION GUARDRAILS:
+- Rely strictly on verified local data and known history.
+- If asked who built a structure, its founding year, or a specific metric that is unverified or obscure, state naturally:
+  "While it's a celebrated local spot, its exact builder and founding date aren't conclusively documented."
+- Never invent dates, dynasties, or fake historical claims.
 """
 
 

@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { Compass, Star, Sparkles, MapPin, ArrowRight, Building2, Car } from 'lucide-react';
 import { mockTourPackages } from '../../data/mockData';
 import { PackageDetailView } from '../travel/PackageDetailView';
+import { SafeImage } from '../common/SafeImage';
 import type { TourPackage } from '../../types';
 
 export const ExplorePage: React.FC = () => {
@@ -61,12 +62,11 @@ export const ExplorePage: React.FC = () => {
             className="surface-card overflow-hidden cursor-pointer border border-white/10 hover:border-teal-500/40 transition-all press-scale"
           >
             {/* Image */}
-            <div className="h-48 relative overflow-hidden">
-              <img
+            <div className="h-48 relative overflow-hidden bg-[#2C504A]">
+              <SafeImage
                 src={pkg.coverImage}
                 alt={pkg.title}
                 className="w-full h-full object-cover"
-                loading="lazy"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-[#080B10] via-black/20 to-transparent" />
 

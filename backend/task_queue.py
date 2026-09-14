@@ -1,0 +1,36 @@
+import json
+import logging
+from redis_client import redis_conn
+
+logger = logging.getLogger(__name__)
+
+TASK_QUEUE_KEY = "voyageai:tasks:itinerary"
+TRIP_EVENTS_CHANNEL = "voyageai:events:trip"
+
+def enqueue_itinerary_generation(trip_id: str) -> bool:
+    """Pushes an itinerary generation job onto the Redis queue."""
+    try:
+        payload = json.dumps({"action": "GENERATE_ITINERARY", "trip_id": trip_id})
+        redis_conn.lpush(TASK_QUEUE_KEY, payload)
+        logger.info(f"[TASK ENQUEUED] Trip ID: {trip_id}")
+        print(f">>> [TASK QUEUE] Enqueued itinerary generation for {trip_id}", flush=True)
+        return True
+    except Exception as e:
+        logger.error(f"[TASK QUEUE ERROR] Failed to enqueue task: {e}")
+        print(f"[TASK QUEUE ERROR] Failed to enqueue task: {e}", flush=True)
+        return False
+
+def publish_trip_event(trip_id: str, status: str, event_type: str = "ITINERARY_READY"):
+    """Publishes a completion event to Redis Pub/Sub."""
+    try:
+        payload = json.dumps({
+            "event": event_type,
+            "trip_id": trip_id,
+            "status": status
+        })
+        redis_conn.publish(TRIP_EVENTS_CHANNEL, payload)
+        logger.info(f"[EVENT PUBLISHED] {event_type} for {trip_id}")
+        print(f">>> [PUB/SUB EVENT] Published {event_type} for {trip_id}", flush=True)
+    except Exception as e:
+        logger.warning(f"[EVENT PUBLISH WARN] Failed to publish event: {e}")
+        print(f"[EVENT PUBLISH WARN] Failed to publish event: {e}", flush=True)

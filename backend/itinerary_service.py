@@ -9,6 +9,8 @@ from models_trip import TripModel
 from models_itinerary import ItineraryModel, ItineraryDayModel, ItineraryActivityModel
 from schemas_itinerary import GeneratedItinerarySchema
 from ai_provider import ai_provider_service
+from itinerary_cache_service import build_itinerary_cache_key, get_cached_itinerary, set_cached_itinerary
+
 
 def calculate_day_date(start_date_str: str, day_number: int) -> str:
     """
@@ -127,85 +129,52 @@ def validate_and_sanitize_itinerary(parsed_schema: GeneratedItinerarySchema, exp
 
 def construct_ai_prompt(ai_input: Dict[str, Any]) -> str:
     dest = ai_input.get('destination', {})
-    dest_name = dest.get('name', 'Goa')
-    total_days = ai_input.get('totalDays', 6)
+    dest_name = dest.get('name', 'India')
+    total_days = ai_input.get('totalDays', 5)
     start_date = ai_input.get('startDate', '2026-10-15')
     prefs = ai_input.get('preferencesSnapshot', {})
-    styles = prefs.get('travelStyles', ['RELAXED'])
+    styles = prefs.get('travelStyles', ['BALANCED'])
     budget = ai_input.get('budget', {}).get('level', 'MODERATE')
+    country = dest.get('country', 'India')
 
-    return f"""You are VoyageAI's expert travel planner. Generate a detailed, highly specific {total_days}-day itinerary for {dest_name}.
+    return f"""You are VoyageAI's lead itinerary architect. Generate an authentic, logistically viable {total_days}-day travel itinerary for {dest_name}, {country}.
 
---- TRIP PARAMETERS ---
-Destination: {dest_name} ({dest.get('country', 'India')})
-Start Date: {start_date} (Format YYYY-MM-DD)
-Total Days: {total_days}
-Travelers: {ai_input.get('travelersCount', 2)}
-Style/Vibe: {', '.join(styles)}
-Budget Tier: {budget}
+TRIP PARAMETERS:
+- Destination: {dest_name}
+- Start Date: {start_date} (YYYY-MM-DD)
+- Duration: Exactly {total_days} days
+- Group Size: {ai_input.get('travelersCount', 2)} travelers
+- Travel Style: {', '.join(styles)}
+- Budget Tier: {budget}
 
---- CRITICAL INTEGRITY RULES ---
-1. DETERMINISTIC DATES: Compute dates sequentially for each day starting from {start_date}:
-   Day 1 = {start_date}
-   Day 2 = next day, Day 3 = day after, etc.
-2. GEOGRAPHIC & ACTIVITY VARIETY:
-   - Every day MUST focus on a distinct area/cluster of {dest_name} and feature 100% UNIQUE activities.
-   - For Goa, organize by distinct regions:
-     * Day 1: North Goa Beaches & Forts (Calangute, Baga, Fort Aguada)
-     * Day 2: Old Goa UNESCO Heritage (Basilica of Bom Jesus, Se Cathedral, Museums)
-     * Day 3: Panaji Capital & Fontainhas Latin Quarter Promenade
-     * Day 4: Ponda Tropical Spice Plantations & Heritage Temples
-     * Day 5: South Goa Scenic Coastline (Palolem Beach, Cabo de Rama Fort)
-     * Day 6: Mandovi Sunset Cruise & Local Flea Markets
-3. CHRONOLOGICAL SORTING: Order activities within each day strictly by time (e.g. 09:00 AM -> 01:00 PM -> 05:00 PM).
-4. SPECIFIC LOCATIONS: Every activity MUST have a real, specific `locationName` (e.g. "Basilica of Bom Jesus, Old Goa", "Calangute Beach, North Goa"). NEVER use generic placeholders like "Central Goa", "Old Quarter Goa", or "Waterfront Goa".
-5. REALISTIC COORDINATES: Provide accurate latitude and longitude for each unique location. Do NOT repeat identical coordinates for different venues.
-6. EXACT DAY COUNT: The `days` array MUST contain exactly {total_days} day objects.
-7. RECOMMENDATION ONLY: Set `isConfirmed = false` and `bookingRequired = false`.
+OPERATIONAL CONSTRAINTS:
+1. DATE ARITHMETIC: Days must strictly sequence from Day 1 ({start_date}) to Day {total_days} with no gaps.
+2. LOGISTICAL CLUSTERING: Group activities within each day by geographic proximity to minimize transit time. Never bounce across opposite ends of a city on the same day.
+3. PACING & REALISM: Schedule 3 to 4 activities per day (Morning, Lunch/Midday, Afternoon, Evening). Do not overload.
+4. SPECIFICITY: Use verified, concrete attraction and establishment names (e.g., "Amber Palace, Amer" or "Victoria Memorial, Kolkata" instead of generic placeholders).
+5. TEMPORAL CONTINUITY: Activities must follow strict 12-hour chronological order (e.g., "09:00 AM" -> "01:00 PM" -> "04:30 PM" -> "08:00 PM").
+6. COORDINATES: Provide accurate, best-known latitude and longitude for the named attraction.
+7. FLAGS: Set `bookingRequired: false` and `isConfirmed: false` for all generated options.
 
-Return ONLY valid JSON matching this schema:
+Output ONLY a single valid JSON object following this exact structure:
 {{
-  "title": "{dest_name} Tour Package",
+  "title": "{total_days}-Day Curated {dest_name} Itinerary",
   "days": [
     {{
       "dayNumber": 1,
       "date": "{start_date}",
-      "title": "Day 1: North Goa Coastal & Fort Exploration",
-      "summary": "Scenic coastal drive, beach exploration, and historic fort views.",
+      "title": "Concise theme for Day 1",
+      "summary": "1-2 sentence overview of geographic area and experiences covered.",
       "activities": [
         {{
           "timeSlot": "09:30 AM",
-          "title": "Calangute Beach Promenade Walk",
-          "description": "Morning coastal walk along golden sands.",
+          "title": "Specific Attraction or Experience Name",
+          "description": "Engaging, practical 1-2 sentence description highlighting key highlights.",
           "activityType": "SIGHTSEEING",
-          "locationName": "Calangute Beach, North Goa",
-          "latitude": 15.5438,
-          "longitude": 73.7554,
-          "estimatedCostInr": 200,
-          "bookingRequired": false,
-          "isConfirmed": false
-        }},
-        {{
-          "timeSlot": "01:00 PM",
-          "title": "Goan Seafood Lunch at Souza Lobo",
-          "description": "Authentic fish curry rice and beachfront dining.",
-          "activityType": "DINING",
-          "locationName": "Souza Lobo, Calangute",
-          "latitude": 15.5420,
-          "longitude": 73.7560,
-          "estimatedCostInr": 800,
-          "bookingRequired": false,
-          "isConfirmed": false
-        }},
-        {{
-          "timeSlot": "04:30 PM",
-          "title": "Fort Aguada & 17th Century Lighthouse Tour",
-          "description": "Historic Portuguese fort overviewing Arabian Sea.",
-          "activityType": "SIGHTSEEING",
-          "locationName": "Fort Aguada, Candolim",
-          "latitude": 15.4920,
-          "longitude": 73.7737,
-          "estimatedCostInr": 300,
+          "locationName": "Real Venue Name, Specific Neighborhood/District",
+          "latitude": 22.5726,
+          "longitude": 88.3639,
+          "estimatedCostInr": 250,
           "bookingRequired": false,
           "isConfirmed": false
         }}
@@ -237,48 +206,78 @@ def process_async_itinerary_generation(trip_id: str, db_session_factory):
             "preferencesSnapshot": trip.preferences_snapshot
         }
 
-        print(f"\n[TRIP CREATION STEP 1/3] Generating AI itinerary for '{trip.title}' (Destination: {trip.destination.get('name')}, {trip.total_days} Days)", flush=True)
+        dest_dict = trip.destination if isinstance(trip.destination, dict) else {}
+        dest_name = dest_dict.get('name') or str(trip.destination or 'India')
+        prefs = trip.preferences_snapshot or {}
+        travel_style = ', '.join(prefs.get('travelStyles', ['standard']))
+        budget_dict = trip.budget if isinstance(trip.budget, dict) else {}
+        pace = budget_dict.get('level', 'moderate')
+
+        cache_key = build_itinerary_cache_key(
+            destination=dest_name,
+            days=trip.total_days,
+            travel_style=travel_style,
+            pace=pace
+        )
+
+        print(f"\n[TRIP CREATION STEP 1/3] Generating AI itinerary for '{trip.title}' (Destination: {dest_name}, {trip.total_days} Days)", flush=True)
 
         prompt = construct_ai_prompt(ai_input)
-
-        # 1. Invoke AI Provider
-        print(f"[TRIP CREATION STEP 2/3] Invoking AI Provider ({ai_provider_service.__class__.__name__})...", flush=True)
-        raw_json = ai_provider_service.generate_itinerary_json(ai_input, prompt)
-
-        # 2. Pydantic Schema Validation & Integrity Check
         parsed_schema = None
         is_valid = False
         validation_msg = ""
 
-        try:
-            parsed_schema = GeneratedItinerarySchema.model_validate_json(raw_json)
-            is_valid, validation_msg = validate_and_sanitize_itinerary(parsed_schema, trip.total_days, trip.start_date)
-        except Exception as pyd_err:
-            validation_msg = f"Schema parsing failed: {pyd_err}"
-
-        # 3. Maximum 1 retry attempt with active AI Provider if initial generation was invalid (and provider is not mock)
-        import os
-        current_provider = os.getenv("AI_PROVIDER", "gemini").lower().strip()
-        if not is_valid and current_provider != "mock":
-            print(f"[TRIP CREATION WARN] Validation retry triggered: {validation_msg}", flush=True)
-            retry_prompt = prompt + f"\n\nIMPORTANT CORRECTION: Your previous JSON response failed validation: {validation_msg}. Please fix this and return a valid JSON itinerary."
+        # 1. Try to fetch baseline itinerary template from Redis Cache
+        cached_base_plan = get_cached_itinerary(cache_key)
+        if cached_base_plan:
+            print(f">>> [CACHE HIT] Serving baseline itinerary from Redis (~2ms) for key: {cache_key}", flush=True)
             try:
-                raw_json_retry = ai_provider_service.generate_itinerary_json(ai_input, retry_prompt)
-                parsed_schema = GeneratedItinerarySchema.model_validate_json(raw_json_retry)
+                parsed_schema = GeneratedItinerarySchema.model_validate(cached_base_plan)
                 is_valid, validation_msg = validate_and_sanitize_itinerary(parsed_schema, trip.total_days, trip.start_date)
-            except Exception as retry_err:
-                validation_msg = f"Retry failed: {retry_err}"
+            except Exception as cache_err:
+                print(f"[CACHE WARN] Invalid cached schema: {cache_err}. Falling back to fresh generation.", flush=True)
+                cached_base_plan = None
 
-        if not is_valid:
-            print(f"❌ [TRIP CREATION FAILED] Integrity check failed: {validation_msg}", flush=True)
-            raise ValueError(f"AI_GENERATION_ERROR: {validation_msg}")
+        if not cached_base_plan or not is_valid:
+            print(f">>> [CACHE MISS] Calling Gemini for {cache_key} (~3-4 seconds)...", flush=True)
+            print(f"[TRIP CREATION STEP 2/3] Invoking AI Provider ({ai_provider_service.__class__.__name__})...", flush=True)
+            raw_json = ai_provider_service.generate_itinerary_json(ai_input, prompt)
+
+            try:
+                parsed_schema = GeneratedItinerarySchema.model_validate_json(raw_json)
+                is_valid, validation_msg = validate_and_sanitize_itinerary(parsed_schema, trip.total_days, trip.start_date)
+            except Exception as pyd_err:
+                validation_msg = f"Schema parsing failed: {pyd_err}"
+
+            # Retry attempt if initial LLM generation was invalid
+            import os
+            current_provider = os.getenv("AI_PROVIDER", "gemini").lower().strip()
+            if not is_valid and current_provider != "mock":
+                print(f"[TRIP CREATION WARN] Validation retry triggered: {validation_msg}", flush=True)
+                retry_prompt = prompt + f"\n\nIMPORTANT CORRECTION: Your previous JSON response failed validation: {validation_msg}. Please fix this and return a valid JSON itinerary."
+                try:
+                    raw_json_retry = ai_provider_service.generate_itinerary_json(ai_input, retry_prompt)
+                    parsed_schema = GeneratedItinerarySchema.model_validate_json(raw_json_retry)
+                    is_valid, validation_msg = validate_and_sanitize_itinerary(parsed_schema, trip.total_days, trip.start_date)
+                except Exception as retry_err:
+                    validation_msg = f"Retry failed: {retry_err}"
+
+            if not is_valid:
+                print(f"[TRIP CREATION FAILED] Integrity check failed: {validation_msg}", flush=True)
+                raise ValueError(f"AI_GENERATION_ERROR: {validation_msg}")
+
+            # Store clean baseline template in Redis with 7-Day TTL
+            set_cached_itinerary(cache_key, parsed_schema.model_dump())
+
+        # Copy-on-Write: Clone this baseline plan into PostgreSQL under the user's trip_id
+
 
         # 4. Save to Database
         from ai_provider import get_ai_provider
         active_provider_instance = get_ai_provider()
         provider_name = active_provider_instance.__class__.__name__
 
-        print(f"💾 [TRIP CREATION STEP 3/3] Saving itinerary ({len(parsed_schema.days)} Days) to PostgreSQL database...", flush=True)
+        print(f"[TRIP CREATION STEP 3/3] Saving itinerary ({len(parsed_schema.days)} Days) to PostgreSQL database...", flush=True)
         itinerary_id = f"itin_{uuid.uuid4().hex[:12]}"
         
         existing_itin = db.query(ItineraryModel).filter(ItineraryModel.trip_id == trip_id).first()
@@ -335,7 +334,7 @@ def process_async_itinerary_generation(trip_id: str, db_session_factory):
         trip.itinerary_status = "READY"
         trip.updated_at = now
         db.commit()
-        print(f"✨ [TRIP CREATION SUCCESS] Trip '{trip.title}' ready with {len(parsed_schema.days)} Days and {total_activities} Activities!\n", flush=True)
+        print(f"[TRIP CREATION SUCCESS] Trip '{trip.title}' ready with {len(parsed_schema.days)} Days and {total_activities} Activities!\n", flush=True)
 
         try:
             from main import log_pipeline_5_steps
