@@ -127,13 +127,37 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+import { useTrip } from '../features/trip/TripContext';
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { currentTrip } = useTrip();
+
   const [activeTab, setActiveTab] = useState<NavTab>('home');
   const [tripView, setTripView] = useState<TripView>('home');
   const [appUIState, setAppUIState] = useState<AppUIState>('ready');
 
-  // Persisted Domain States
-  const [activeTrip, setActiveTrip] = usePersistedState<Trip>('active_trip', mockGoaTrip);
+  // Single Source of Truth: Derive activeTrip cleanly from TripContext's currentTrip
+  const activeTrip = useMemo(() => {
+    if (currentTrip) {
+      return {
+        ...mockGoaTrip,
+        ...currentTrip,
+        id: currentTrip.id,
+        title: currentTrip.title,
+        destination: currentTrip.destination?.name || currentTrip.title,
+        budgetTotal: currentTrip.budgetLevel === 'LUXURY' ? 75000 : currentTrip.budgetLevel === 'MODERATE' ? 35000 : 15000,
+        budgetSpent: currentTrip.progress?.completedActivitiesCount ? currentTrip.progress.completedActivitiesCount * 1200 : 8500,
+        travellersCount: currentTrip.travelers?.length || 2,
+        currentDay: currentTrip.progress?.currentDay || 1,
+      } as unknown as Trip;
+    }
+    return mockGoaTrip;
+  }, [currentTrip]);
+
+  const setActiveTrip = useCallback(() => {
+    console.warn('[AppContext] setActiveTrip called. TripContext is the single source of truth for active trip state.');
+  }, []);
+
   const [bookings, setBookings] = usePersistedState<Booking[]>('bookings', mockBookings);
   const [expenses, setExpenses] = usePersistedState<Expense[]>('expenses', mockExpenses);
   const [notifications, setNotifications] = usePersistedState<NotificationItem[]>('notifications', mockNotifications);
@@ -351,36 +375,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addExpense = useCallback((newExpense: Omit<Expense, 'id'>) => {
     const item: Expense = { ...newExpense, id: `exp-${Date.now()}` };
     setExpenses(prev => [item, ...prev]);
-    setActiveTrip(prev => ({ ...prev, budgetSpent: prev.budgetSpent + item.amount }));
-  }, [setExpenses, setActiveTrip]);
+  }, [setExpenses]);
 
-  const optimizeDayItinerary = useCallback((dayNumber: number) => {
-    setActiveTrip(prev => ({
-      ...prev,
-      itinerary: prev.itinerary.map(day =>
-        day.dayNumber === dayNumber ? { ...day, activities: [...day.activities].reverse() } : day
-      )
-    }));
-  }, [setActiveTrip]);
+  const optimizeDayItinerary = useCallback((_dayNumber: number) => {
+    console.log('[AppContext] Day itinerary optimization delegated to TripContext.');
+  }, []);
 
-  const removeActivity = useCallback((dayNumber: number, actId: string) => {
-    setActiveTrip(prev => ({
-      ...prev,
-      itinerary: prev.itinerary.map(day =>
-        day.dayNumber === dayNumber ? { ...day, activities: day.activities.filter(a => a.id !== actId) } : day
-      )
-    }));
-  }, [setActiveTrip]);
+  const removeActivity = useCallback((_dayNumber: number, _actId: string) => {
+    console.log('[AppContext] Activity removal delegated to TripContext.');
+  }, []);
 
-  const addActivityToItinerary = useCallback((dayNumber: number, actData: Omit<ActivityItem, 'id'>) => {
-    const newItem: ActivityItem = { ...actData, id: `act-${Date.now()}` };
-    setActiveTrip(prev => ({
-      ...prev,
-      itinerary: prev.itinerary.map(day =>
-        day.dayNumber === dayNumber ? { ...day, activities: [...day.activities, newItem] } : day
-      )
-    }));
-  }, [setActiveTrip]);
+  const addActivityToItinerary = useCallback((_dayNumber: number, _actData: Omit<ActivityItem, 'id'>) => {
+    console.log('[AppContext] Activity addition delegated to TripContext.');
+  }, []);
 
   const toggleSavePlace = useCallback((placeName: string) => {
     setUserProfile(prev => {

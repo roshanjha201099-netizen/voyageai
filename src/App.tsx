@@ -136,49 +136,53 @@ const AppShell: React.FC = () => {
   );
 };
 
+import { ErrorBoundary } from './components/common/ErrorBoundary';
+
 export default function App() {
   return (
-    <BrowserRouter>
-      <AuthProvider>
-        <TripProvider>
-          <AppProvider>
-            <Routes>
-              {/* Public Auth Route */}
-              <Route path="/login" element={<LoginScreen />} />
+    <ErrorBoundary>
+      <BrowserRouter>
+        <AuthProvider>
+          <TripProvider>
+            <AppProvider>
+              <Routes>
+                {/* Public Auth Route */}
+                <Route path="/login" element={<LoginScreen />} />
 
-              {/* Protected Onboarding Flow */}
-              <Route
-                path="/onboarding"
-                element={
-                  <AuthGuard>
-                    <OnboardingContainer />
-                  </AuthGuard>
-                }
-              />
+                {/* Protected Onboarding Flow */}
+                <Route
+                  path="/onboarding"
+                  element={
+                    <AuthGuard>
+                      <OnboardingContainer />
+                    </AuthGuard>
+                  }
+                />
 
-              {/* Protected Trip Creation Wizard Route */}
-              <Route
-                path="/trips/new"
-                element={
-                  <AuthGuard>
-                    <TripCreationWizard />
-                  </AuthGuard>
-                }
-              />
+                {/* Protected Trip Creation Wizard Route */}
+                <Route
+                  path="/trips/new"
+                  element={
+                    <AuthGuard>
+                      <TripCreationWizard />
+                    </AuthGuard>
+                  }
+                />
 
-              {/* Protected Main App Shell */}
-              <Route
-                path="/*"
-                element={
-                  <AuthGuard>
-                    <AppShell />
-                  </AuthGuard>
-                }
-              />
-            </Routes>
-          </AppProvider>
-        </TripProvider>
-      </AuthProvider>
-    </BrowserRouter>
+                {/* Protected Main App Shell */}
+                <Route
+                  path="/*"
+                  element={
+                    <AuthGuard>
+                      <AppShell />
+                    </AuthGuard>
+                  }
+                />
+              </Routes>
+            </AppProvider>
+          </TripProvider>
+        </AuthProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }

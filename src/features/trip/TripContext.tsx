@@ -3,6 +3,7 @@ import type { Trip, TripDraft, CreateTripPayload, TripStatus, Itinerary, Itinera
 import { tripRepository } from './tripRepository';
 import { useAuth } from '../../auth/AuthContext';
 import { wsClient } from '../../services/wsClient';
+import { useSyncRevalidation } from '../../utils/useSyncRevalidation';
 
 interface TripContextType {
   trips: Trip[];
@@ -54,6 +55,36 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const userId = authUser?.id;
+
+  // Refetch itinerary helper function
+  const refetchItinerary = useCallback(async (targetTripId?: string) => {
+    const tid = targetTripId || currentTripId;
+    if (!tid) return;
+    try {
+      const data: Itinerary = await wsClient.sendRequest('trips:get_itinerary', { trip_id: tid });
+      if (data) {
+        setCurrentItinerary(data);
+        if (data.status) setItineraryStatus(data.status);
+      }
+    } catch (err) {
+      console.warn('WebSocket failed to refetch itinerary, trying HTTP fallback...', err);
+      try {
+        const res = await fetch(`/api/trips/${tid}/itinerary`, {
+          headers: { 'ngrok-skip-browser-warning': 'true' },
+          credentials: 'include'
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data) {
+            setCurrentItinerary(data);
+            if (data.status) setItineraryStatus(data.status);
+          }
+        }
+      } catch (httpErr) {
+        console.error('HTTP refetch itinerary fallback failed:', httpErr);
+      }
+    }
+  }, [currentTripId]);
 
   // Load user-specific trips when user session changes
   useEffect(() => {
@@ -159,44 +190,73 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [currentTripId, fetchPackageData]);
 
-  // Poll itinerary via WebSocket while itineraryStatus === 'GENERATING'
+  // ── Reactive WebSocket Event Listeners (No 3-Second Polling) ──
   useEffect(() => {
     if (!currentTripId) return;
 
-    let isMounted = true;
-    let pollInterval: any = null;
+    // Fetch initial itinerary on selection
+    refetchItinerary(currentTripId);
 
-    const fetchItinerary = async () => {
-      try {
-        const data: Itinerary = await wsClient.sendRequest('trips:get_itinerary', { trip_id: currentTripId });
-
-        if (data && isMounted) {
-          setCurrentItinerary(data);
-          if (data.status) {
-            setItineraryStatus(data.status);
-            setTrips(prev => prev.map(t => t.id === currentTripId ? { ...t, itineraryStatus: data.status } : t));
-          }
-          if (data.status === 'READY' || data.status === 'FAILED') {
-            clearInterval(pollInterval);
-          }
-        }
-      } catch (err) {
-        console.warn('Itinerary WebSocket polling error:', err);
+    const handleItineraryReady = (payload: any) => {
+      const payloadTripId = payload?.trip_id || payload?.tripId || payload?.id;
+      if (!payloadTripId || payloadTripId === currentTripId) {
+        setItineraryStatus('READY');
+        setTrips(prev => prev.map(t => t.id === currentTripId ? { ...t, itineraryStatus: 'READY' } : t));
+        refetchItinerary(currentTripId);
       }
     };
 
-    fetchItinerary();
+    const handleTripUpdated = (payload: any) => {
+      const payloadTripId = payload?.trip_id || payload?.tripId || payload?.id;
+      if (!payloadTripId || payloadTripId === currentTripId) {
+        refetchItinerary(currentTripId);
+      }
+    };
 
-    if (currentTrip?.itineraryStatus === 'GENERATING') {
-      setItineraryStatus('GENERATING');
-      pollInterval = setInterval(fetchItinerary, 3000);
-    }
+    const unsubscribeReady = wsClient.on('ITINERARY_READY', handleItineraryReady);
+    const unsubscribeUpdated = wsClient.on('TRIP_UPDATED', handleTripUpdated);
+    const unsubscribeGenCompleted = wsClient.on('trips:generation_completed', handleItineraryReady);
 
     return () => {
-      isMounted = false;
-      if (pollInterval) clearInterval(pollInterval);
+      unsubscribeReady();
+      unsubscribeUpdated();
+      unsubscribeGenCompleted();
     };
-  }, [currentTripId, currentTrip?.itineraryStatus]);
+  }, [currentTripId, refetchItinerary]);
+
+  // ── Window Focus & Cross-Tab Storage Revalidation ──
+  useSyncRevalidation({
+    onFocus: useCallback(() => {
+      if (!isAuthenticated || !userId) return;
+      console.log('[REVALIDATION] Window focused, refreshing trips & active itinerary...');
+      wsClient.sendRequest('trips:list', {})
+        .then((fetchedTrips: Trip[]) => {
+          if (fetchedTrips && Array.isArray(fetchedTrips) && fetchedTrips.length > 0) {
+            setTrips(fetchedTrips);
+          }
+        })
+        .catch(err => console.warn('[REVALIDATION FOCUS ERROR]', err));
+
+      if (currentTripId) {
+        refetchItinerary(currentTripId);
+      }
+    }, [isAuthenticated, userId, currentTripId, refetchItinerary]),
+
+    onStorageChange: useCallback((key: string | null) => {
+      if (!userId) return;
+      if (!key || key.includes('voyageai_user_trips') || key.includes('voyageai_current_trip_id')) {
+        console.log('[REVALIDATION] Cross-tab storage change detected, syncing trips...');
+        const stored = tripRepository.getStoredTrips(userId);
+        if (stored.length > 0) {
+          setTrips(stored);
+        }
+        const preferredId = tripRepository.getCurrentTripId(userId);
+        if (preferredId && preferredId !== currentTripId) {
+          setCurrentTripIdState(preferredId);
+        }
+      }
+    }, [userId, currentTripId])
+  });
 
   const addStay = useCallback(async (payload: Partial<TripStay>): Promise<TripStay> => {
     if (!currentTripId) throw new Error('No active trip selected');
@@ -439,35 +499,6 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const archiveTrip = useCallback(async (tripId: string) => {
     await updateTripStatus(tripId, 'ARCHIVED');
   }, [updateTripStatus]);
-
-  const refetchItinerary = useCallback(async (targetTripId?: string) => {
-    const tid = targetTripId || currentTripId;
-    if (!tid) return;
-    try {
-      const data: Itinerary = await wsClient.sendRequest('trips:get_itinerary', { trip_id: tid });
-      if (data) {
-        setCurrentItinerary(data);
-        if (data.status) setItineraryStatus(data.status);
-      }
-    } catch (err) {
-      console.warn('WebSocket failed to refetch itinerary, trying HTTP fallback...', err);
-      try {
-        const res = await fetch(`/api/trips/${tid}/itinerary`, {
-          headers: { 'ngrok-skip-browser-warning': 'true' },
-          credentials: 'include'
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data) {
-            setCurrentItinerary(data);
-            if (data.status) setItineraryStatus(data.status);
-          }
-        }
-      } catch (httpErr) {
-        console.error('HTTP refetch itinerary fallback failed:', httpErr);
-      }
-    }
-  }, [currentTripId]);
 
   const swapActivity = useCallback(async (
     tripId: string,
