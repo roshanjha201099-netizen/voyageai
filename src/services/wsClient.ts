@@ -53,16 +53,16 @@ class WebSocketClient {
   private resolveReady: (() => void) | null = null;
 
   constructor() {
-    const envWsUrl = import.meta.env.VITE_WS_URL;
+    const envWsUrl = import.meta.env.VITE_WS_BASE_URL || import.meta.env.VITE_WS_URL;
     if (envWsUrl) {
-      this.url = envWsUrl;
+      this.url = envWsUrl.endsWith('/ws') || envWsUrl.endsWith('/ws/app') ? envWsUrl : `${envWsUrl.replace(/\/$/, '')}/ws/app`;
     } else {
       const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
       if (isLocalhost) {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         this.url = `${protocol}//${window.location.hostname}/ws/app`;
       } else {
-        this.url = 'wss://voyageai-wp2o.onrender.com/ws/app';
+        this.url = 'wss://4026-2401-4900-8927-d7dc-acf3-768e-20d0-d258.ngrok-free.app/ws/app';
       }
     }
     this.connect();

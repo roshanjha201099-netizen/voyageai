@@ -4,7 +4,7 @@ import { wsClient } from '../services/wsClient';
 const SESSION_CACHE_KEY = 'voyageai_session_data';
 
 const getApiBaseUrl = (): string => {
-  const envApiUrl = import.meta.env.VITE_API_URL;
+  const envApiUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL;
   if (envApiUrl) {
     return envApiUrl;
   }
@@ -13,7 +13,12 @@ const getApiBaseUrl = (): string => {
     const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
     return `${protocol}//${window.location.hostname}`;
   }
-  return 'https://voyageai-wp2o.onrender.com';
+  return 'https://4026-2401-4900-8927-d7dc-acf3-768e-20d0-d258.ngrok-free.app';
+};
+
+const DEFAULT_HEADERS = {
+  'Content-Type': 'application/json',
+  'ngrok-skip-browser-warning': 'true'
 };
 
 export const authService = {
@@ -39,7 +44,7 @@ export const authService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: DEFAULT_HEADERS,
         body: JSON.stringify(payload),
         credentials: 'include',
       });
@@ -72,7 +77,7 @@ export const authService = {
     try {
       const response = await fetch(url, {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
+        headers: DEFAULT_HEADERS,
         credentials: 'include',
       });
 
@@ -108,7 +113,7 @@ export const authService = {
     try {
       await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: DEFAULT_HEADERS,
         credentials: 'include',
       });
     } catch (e) {
@@ -130,7 +135,7 @@ export const authService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: DEFAULT_HEADERS,
         body: JSON.stringify(payload),
         credentials: 'include',
       });

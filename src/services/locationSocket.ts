@@ -62,15 +62,16 @@ class LocationSocketClient {
 
     this.isConnecting = true;
     const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-    const envWsUrl = import.meta.env.VITE_WS_URL;
+    const envWsUrl = import.meta.env.VITE_WS_BASE_URL || import.meta.env.VITE_WS_URL;
 
     let baseUrl = '';
     if (isLocalhost) {
       baseUrl = 'ws://localhost/ws/location';
     } else if (envWsUrl) {
-      baseUrl = envWsUrl.replace('/ws/tour-app', '/ws/location');
+      const cleanUrl = envWsUrl.replace(/\/ws.*$/, '');
+      baseUrl = `${cleanUrl}/ws/location`;
     } else {
-      baseUrl = 'wss://voyageai-wp2o.onrender.com/ws/location';
+      baseUrl = 'wss://4026-2401-4900-8927-d7dc-acf3-768e-20d0-d258.ngrok-free.app/ws/location';
     }
 
     let url = baseUrl;

@@ -411,7 +411,11 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err) {
       console.warn('WebSocket trips:delete failed, trying HTTP fallback...', err);
       try {
-        await fetch(`/api/trips/${tripId}`, { method: 'DELETE', credentials: 'include' });
+        await fetch(`/api/trips/${tripId}`, {
+          method: 'DELETE',
+          headers: { 'ngrok-skip-browser-warning': 'true' },
+          credentials: 'include'
+        });
       } catch (httpErr) {
         console.error('Failed to delete trip from backend database:', httpErr);
       }
@@ -448,7 +452,10 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err) {
       console.warn('WebSocket failed to refetch itinerary, trying HTTP fallback...', err);
       try {
-        const res = await fetch(`/api/trips/${tid}/itinerary`, { credentials: 'include' });
+        const res = await fetch(`/api/trips/${tid}/itinerary`, {
+          headers: { 'ngrok-skip-browser-warning': 'true' },
+          credentials: 'include'
+        });
         if (res.ok) {
           const data = await res.json();
           if (data) {
@@ -474,7 +481,10 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         await fetch(`/api/trips/${tripId}/itinerary/activities/${activityId}`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'ngrok-skip-browser-warning': 'true'
+          },
           body: JSON.stringify(payload),
           credentials: 'include'
         });

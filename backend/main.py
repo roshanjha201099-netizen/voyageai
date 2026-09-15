@@ -69,10 +69,11 @@ async def websocket_trip_endpoint(websocket: WebSocket, trip_id: str):
     except WebSocketDisconnect:
         ws_manager.disconnect(trip_id, websocket)
 
-# Enable CORS for localhost frontend with credentials (cookies) support
+# Enable CORS for localhost, Netlify, and ngrok tunnel
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        "https://4026-2401-4900-8927-d7dc-acf3-768e-20d0-d258.ngrok-free.app",
         "http://localhost",
         "http://127.0.0.1",
         "http://localhost:5173",
@@ -80,10 +81,17 @@ app.add_middleware(
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ],
+    allow_origin_regex=r"https://.*\.netlify\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def add_ngrok_skip_header(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["ngrok-skip-browser-warning"] = "true"
+    return response
 
 import os
 
@@ -315,8 +323,8 @@ def login(req: LoginRequest, response: Response, db: Session = Depends(get_db)):
             value=token,
             httponly=True,
             max_age=86400 * 7,
-            samesite="lax",
-            secure=COOKIE_SECURE,
+            samesite="none",
+            secure=True,
             path="/"
         )
         return {
@@ -362,7 +370,7 @@ def logout(
     except Exception:
         pass
 
-    response.delete_cookie(key=COOKIE_NAME, path="/", httponly=True, samesite="lax")
+    response.delete_cookie(key=COOKIE_NAME, path="/", httponly=True, samesite="none", secure=True)
     log_event("🚪 POST /api/auth/logout | Cookie Deleted & Session Revoked")
     return {"message": "Logged out successfully"}
 
