@@ -95,6 +95,17 @@ async def add_ngrok_skip_header(request: Request, call_next):
     return response
 
 import os
+
+SERVER_PORT = os.environ.get("PORT")
+
+@app.middleware("http")
+async def add_server_identity_header(request: Request, call_next):
+    response = await call_next(request)
+    server_info = request.scope.get("server") if hasattr(request, "scope") and request.scope else None
+    port = SERVER_PORT or (server_info[1] if server_info and len(server_info) > 1 else "8000")
+    response.headers["X-Backend-Node"] = f"node-{port}"
+    return response
+
 from rate_limiter import RateLimiter
 
 # Application-Layer Rate Limiters
