@@ -52,17 +52,14 @@ class LocationSocketClient {
   private lastPayload: LocationSocketPayload | null = null;
 
   public connect(tripId?: string | null): void {
-    const effectiveTripId = (tripId === 'trip-goa-2026' && this.currentTripId && this.currentTripId !== 'trip-goa-2026')
-      ? this.currentTripId
-      : tripId;
-
-    if (effectiveTripId !== undefined && effectiveTripId !== null) {
-      this.currentTripId = effectiveTripId;
-    }
+    const targetTripId = tripId || null;
 
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+      this.currentTripId = targetTripId;
       return;
     }
+
+    this.currentTripId = targetTripId;
 
     this.isConnecting = true;
     const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');

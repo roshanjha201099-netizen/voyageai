@@ -151,7 +151,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         currentDay: currentTrip.progress?.currentDay || 1,
       } as unknown as Trip;
     }
-    return mockGoaTrip;
+    return { ...mockGoaTrip, id: '' } as unknown as Trip;
   }, [currentTrip]);
 
   const setActiveTrip = useCallback(() => {
@@ -216,7 +216,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       accuracy_meters: accuracyMeters !== undefined ? accuracyMeters : 10,
       source,
       address_name: addressName || 'User Location',
-      trip_id: activeTrip?.id || null
+      trip_id: currentTrip?.id || null
     });
 
     if (!sentViaWs) {
@@ -228,7 +228,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         source
       }).catch(err => console.warn('[LOCATION SYNC WS ERROR]', err));
     }
-  }, [activeTrip?.id]);
+  }, [currentTrip?.id]);
 
   const retryGPS = useCallback(async () => {
     locationService.clearManualOverride();
@@ -304,10 +304,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Unified single mount effect for geolocation watcher & WebSocket connection
   useEffect(() => {
-    const rawTripId = activeTrip?.id;
-    const effectiveTripId = (rawTripId === 'trip-goa-2026' && currentTrip?.id && currentTrip.id !== 'trip-goa-2026')
-      ? currentTrip.id
-      : rawTripId;
+    const effectiveTripId = currentTrip?.id || null;
 
     if (lastConnectedTripIdRef.current !== effectiveTripId) {
       lastConnectedTripIdRef.current = effectiveTripId;
@@ -316,7 +313,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     startLiveTracking();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTrip?.id, currentTrip?.id]);
+  }, [currentTrip?.id]);
 
   // Modals & Sheets
   const [isAiOpen, setIsAiOpen] = useState(false);
