@@ -95,6 +95,12 @@ async def add_ngrok_skip_header(request: Request, call_next):
     return response
 
 import os
+from rate_limiter import RateLimiter
+
+# Application-Layer Rate Limiters
+ai_limiter = RateLimiter(requests=5, window_seconds=60, key_prefix="rl:trip_gen")
+osm_limiter = RateLimiter(requests=20, window_seconds=60, key_prefix="rl:osm_search")
+general_limiter = RateLimiter(requests=100, window_seconds=60, key_prefix="rl:general")
 
 COOKIE_NAME = "voyageai_session"
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
@@ -307,7 +313,7 @@ class RefinementExecutionRequest(BaseModel):
 def root():
     return {"app": "VoyageAI OS PostgreSQL API", "status": "online"}
 
-@app.post("/api/auth/login")
+@app.post("/api/auth/login", dependencies=[Depends(general_limiter)])
 def login(req: LoginRequest, response: Response, db: Session = Depends(get_db)):
     log_frontend_payload(
         endpoint="POST /api/auth/login",
@@ -337,7 +343,7 @@ def login(req: LoginRequest, response: Response, db: Session = Depends(get_db)):
         log_event(f"❌ Login Execution Error: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
-@app.get("/api/auth/session")
+@app.get("/api/auth/session", dependencies=[Depends(general_limiter)])
 def get_session(
     request: Request,
     authorization: Optional[str] = Header(None),
@@ -376,7 +382,7 @@ def logout(
     return {"message": "Logged out successfully"}
 
 
-@app.post("/api/user/onboarding")
+@app.post("/api/user/onboarding", dependencies=[Depends(general_limiter)])
 def update_onboarding(
     req: OnboardingRequest,
     user_data = Depends(get_current_user),
@@ -1558,7 +1564,7 @@ def get_pool_status():
     log_event(f"📊 [POOL STATUS] Size: {status_data['pool_size']} | Checked Out: {status_data['checkedout']} | Overflow: {status_data['overflow']}")
     return status_data
 
-@app.get("/api/user/location/latest")
+@app.get("/api/user/location/latest", dependencies=[Depends(general_limiter)])
 def get_latest_user_location(
     request: Request,
     authorization: Optional[str] = Header(None),
@@ -1586,7 +1592,7 @@ def get_latest_user_location(
         "total_updates": len(history)
     }
 
-@app.get("/api/user/location/search")
+@app.get("/api/user/location/search", dependencies=[Depends(osm_limiter)])
 def search_user_location(query: str = ""):
     if not query or len(query.strip()) < 2:
         return []
@@ -1595,14 +1601,14 @@ def search_user_location(query: str = ""):
 
 # ── PLACES & GEOCODING ENDPOINTS ──
 
-@app.get("/api/places/search")
+@app.get("/api/places/search", dependencies=[Depends(osm_limiter)])
 def search_destinations(q: str = ""):
     if not q or len(q.strip()) < 2:
         return []
     log_event(f"🔍 GET /api/places/search?q={q}")
     return search_places(q)
 
-@app.get("/api/places/nearby")
+@app.get("/api/places/nearby", dependencies=[Depends(osm_limiter)])
 def get_nearby_places(
     q: Optional[str] = None,
     lat: Optional[float] = None,
@@ -1613,7 +1619,7 @@ def get_nearby_places(
 
 # ── TRIP DOMAIN ENDPOINTS ──
 
-@app.get("/api/trips")
+@app.get("/api/trips", dependencies=[Depends(general_limiter)])
 def get_trips(user_data = Depends(get_current_user), db: Session = Depends(get_db)):
     auth_user, _, _ = user_data
     db_trips = db.query(TripModel).filter(TripModel.user_id == auth_user.id).all()
@@ -1641,8 +1647,8 @@ def get_trips(user_data = Depends(get_current_user), db: Session = Depends(get_d
 
 import threading
 
-@app.post("/trips", status_code=status.HTTP_201_CREATED)
-@app.post("/api/trips", status_code=status.HTTP_201_CREATED)
+@app.post("/trips", status_code=status.HTTP_201_CREATED, dependencies=[Depends(ai_limiter)])
+@app.post("/api/trips", status_code=status.HTTP_201_CREATED, dependencies=[Depends(ai_limiter)])
 def create_trip(
     trip_data: dict,
     user_data = Depends(get_current_user_optional),
@@ -1791,8 +1797,8 @@ def create_trip(
         "updatedAt": new_trip.updated_at
     }
 
-@app.get("/trips/{trip_id}")
-@app.get("/api/trips/{trip_id}")
+@app.get("/trips/{trip_id}", dependencies=[Depends(general_limiter)])
+@app.get("/api/trips/{trip_id}", dependencies=[Depends(general_limiter)])
 def get_trip_by_id(trip_id: str, db: Session = Depends(get_db)):
     trip = db.query(TripModel).filter(TripModel.id == trip_id).first()
     if not trip:
@@ -1818,7 +1824,7 @@ def get_trip_by_id(trip_id: str, db: Session = Depends(get_db)):
         "updatedAt": trip.updated_at
     }
 
-@app.get("/api/trips/{trip_id}/itinerary")
+@app.get("/api/trips/{trip_id}/itinerary", dependencies=[Depends(general_limiter)])
 def get_itinerary(trip_id: str, user_data = Depends(get_current_user), db: Session = Depends(get_db)):
     auth_user, _, _ = user_data
     trip = db.query(TripModel).filter(TripModel.id == trip_id, TripModel.user_id == auth_user.id).first()
@@ -1872,7 +1878,7 @@ def get_itinerary(trip_id: str, user_data = Depends(get_current_user), db: Sessi
         "createdAt": itin.created_at
     }
 
-@app.post("/api/trips/{trip_id}/itinerary/regenerate", status_code=status.HTTP_202_ACCEPTED)
+@app.post("/api/trips/{trip_id}/itinerary/regenerate", status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(ai_limiter)])
 def regenerate_itinerary(
     trip_id: str,
     user_data = Depends(get_current_user),
@@ -1889,7 +1895,7 @@ def regenerate_itinerary(
     enqueue_itinerary_generation(trip_id)
     return {"status": "GENERATING", "tripId": trip_id}
 
-@app.delete("/api/trips/{trip_id}")
+@app.delete("/api/trips/{trip_id}", dependencies=[Depends(general_limiter)])
 def delete_trip(trip_id: str, user_data = Depends(get_current_user), db: Session = Depends(get_db)):
     auth_user, _, _ = user_data
     itineraries = db.query(ItineraryModel).filter(ItineraryModel.trip_id == trip_id).all()
@@ -1948,7 +1954,7 @@ class DayOptimizationRequest(BaseModel):
 class RefinementExecutionRequest(BaseModel):
     actions: List[Dict[str, Any]]
 
-@app.post("/api/ai/concierge")
+@app.post("/api/ai/concierge", dependencies=[Depends(ai_limiter)])
 def ai_concierge(
     req: ConciergeRequest,
     user_data = Depends(get_current_user),
@@ -2115,7 +2121,7 @@ def ai_concierge(
 
     return res_payload
 
-@app.patch("/api/trips/{trip_id}/itinerary/activities/{activity_id}")
+@app.patch("/api/trips/{trip_id}/itinerary/activities/{activity_id}", dependencies=[Depends(ai_limiter)])
 def swap_itinerary_activity(
     trip_id: str,
     activity_id: str,
@@ -2187,7 +2193,7 @@ def swap_itinerary_activity(
         }
     }
 
-@app.post("/api/trips/{trip_id}/itinerary/days/{day_id}/optimize")
+@app.post("/api/trips/{trip_id}/itinerary/days/{day_id}/optimize", dependencies=[Depends(ai_limiter)])
 def optimize_day_flow_endpoint(
     trip_id: str,
     day_id: str,
@@ -2203,7 +2209,7 @@ def optimize_day_flow_endpoint(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@app.post("/api/trips/{trip_id}/itinerary/optimize-budget")
+@app.post("/api/trips/{trip_id}/itinerary/optimize-budget", dependencies=[Depends(ai_limiter)])
 def optimize_budget_endpoint(
     trip_id: str,
     user_data = Depends(get_current_user),
@@ -2217,7 +2223,7 @@ def optimize_budget_endpoint(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@app.post("/api/trips/{trip_id}/itinerary/weather-replan")
+@app.post("/api/trips/{trip_id}/itinerary/weather-replan", dependencies=[Depends(ai_limiter)])
 def weather_replan_endpoint(
     trip_id: str,
     user_data = Depends(get_current_user),
@@ -2231,7 +2237,7 @@ def weather_replan_endpoint(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@app.post("/api/trips/{trip_id}/itinerary/refine")
+@app.post("/api/trips/{trip_id}/itinerary/refine", dependencies=[Depends(ai_limiter)])
 def execute_refinements_endpoint(
     trip_id: str,
     req: RefinementExecutionRequest,
@@ -2249,7 +2255,7 @@ def execute_refinements_endpoint(
 # ── PACKAGE DIMENSION ENDPOINTS (STAYS, TRANSPORTS, EXPENSES) ──
 
 
-@app.post("/api/trips/{trip_id}/stays", status_code=status.HTTP_201_CREATED)
+@app.post("/api/trips/{trip_id}/stays", status_code=status.HTTP_201_CREATED, dependencies=[Depends(general_limiter)])
 def create_trip_stay(
     trip_id: str,
     stay_data: dict,
@@ -2303,7 +2309,7 @@ def create_trip_stay(
         "updatedAt": new_stay.updated_at
     }
 
-@app.get("/api/trips/{trip_id}/stays")
+@app.get("/api/trips/{trip_id}/stays", dependencies=[Depends(general_limiter)])
 def get_trip_stays(
     trip_id: str,
     user_data = Depends(get_current_user),
@@ -2333,7 +2339,7 @@ def get_trip_stays(
         for s in stays
     ]
 
-@app.post("/api/trips/{trip_id}/transports", status_code=status.HTTP_201_CREATED)
+@app.post("/api/trips/{trip_id}/transports", status_code=status.HTTP_201_CREATED, dependencies=[Depends(general_limiter)])
 def create_trip_transport(
     trip_id: str,
     transport_data: dict,
@@ -2385,7 +2391,7 @@ def create_trip_transport(
         "updatedAt": new_transport.updated_at
     }
 
-@app.get("/api/trips/{trip_id}/transports")
+@app.get("/api/trips/{trip_id}/transports", dependencies=[Depends(general_limiter)])
 def get_trip_transports(
     trip_id: str,
     user_data = Depends(get_current_user),
@@ -2414,7 +2420,7 @@ def get_trip_transports(
         for t in transports
     ]
 
-@app.post("/api/trips/{trip_id}/expenses", status_code=status.HTTP_201_CREATED)
+@app.post("/api/trips/{trip_id}/expenses", status_code=status.HTTP_201_CREATED, dependencies=[Depends(general_limiter)])
 def create_trip_expense(
     trip_id: str,
     expense_data: dict,
@@ -2458,7 +2464,7 @@ def create_trip_expense(
         "createdAt": new_expense.created_at
     }
 
-@app.get("/api/trips/{trip_id}/expenses")
+@app.get("/api/trips/{trip_id}/expenses", dependencies=[Depends(general_limiter)])
 def get_trip_expenses(
     trip_id: str,
     user_data = Depends(get_current_user),
@@ -2505,7 +2511,7 @@ class TourGuideVisitRequest(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
 
-@app.get("/api/tour-guide/nearby")
+@app.get("/api/tour-guide/nearby", dependencies=[Depends(osm_limiter)])
 def tour_guide_nearby(
     lat: float,
     lng: float,
@@ -2558,7 +2564,7 @@ def tour_guide_nearby(
         "proactive_alert": alert_place
     }
 
-@app.post("/api/tour-guide/chat")
+@app.post("/api/tour-guide/chat", dependencies=[Depends(ai_limiter)])
 def tour_guide_chat(
     req: TourGuideChatRequest,
     request: Request = None,
@@ -2718,7 +2724,7 @@ def tour_guide_chat(
 
     return res_payload
 
-@app.post("/api/tour-guide/visit")
+@app.post("/api/tour-guide/visit", dependencies=[Depends(general_limiter)])
 def tour_guide_visit(
     req: TourGuideVisitRequest,
     request: Request = None,
@@ -2752,7 +2758,7 @@ def tour_guide_visit(
         "session_messages": len(session.get("messages", []))
     }
 
-@app.get("/api/tour-guide/session")
+@app.get("/api/tour-guide/session", dependencies=[Depends(general_limiter)])
 def tour_guide_session(
     request: Request = None,
     authorization: Optional[str] = Header(None),
