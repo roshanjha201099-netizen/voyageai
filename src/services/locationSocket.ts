@@ -51,15 +51,18 @@ class LocationSocketClient {
   private broadcastListeners: Set<(broadcast: LocationBroadcast) => void> = new Set();
   private lastPayload: LocationSocketPayload | null = null;
 
-  public connect(tripId?: string | null): void {
-    const targetTripId = tripId || null;
+  public setActiveTripId(tripId: string | null): void {
+    this.currentTripId = tripId || null;
+  }
 
-    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
-      this.currentTripId = targetTripId;
-      return;
+  public connect(tripId?: string | null): void {
+    if (tripId !== undefined) {
+      this.currentTripId = tripId || null;
     }
 
-    this.currentTripId = targetTripId;
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
 
     this.isConnecting = true;
     const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
@@ -77,10 +80,9 @@ class LocationSocketClient {
 
     let url = baseUrl;
 
-    const params = new URLSearchParams();
-    if (this.currentTripId) params.append('trip_id', this.currentTripId);
-
-    if (params.toString()) {
+    if (this.currentTripId) {
+      const params = new URLSearchParams();
+      params.append('trip_id', this.currentTripId);
       url += `?${params.toString()}`;
     }
 
@@ -145,11 +147,19 @@ class LocationSocketClient {
   }
 
   public sendLocation(payload: LocationSocketPayload): boolean {
+    const finalPayload = {
+      ...payload,
+      lat: payload.latitude,
+      lng: payload.longitude,
+      accuracy: payload.accuracy_meters !== undefined ? payload.accuracy_meters : 10,
+      trip_id: this.currentTripId || payload.trip_id || null
+    };
+
     this.lastPayload = payload;
 
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       try {
-        this.ws.send(JSON.stringify(payload));
+        this.ws.send(JSON.stringify(finalPayload));
         return true;
       } catch (err) {
         console.warn('[LOCATION SOCKET] Send error:', err);
@@ -157,9 +167,20 @@ class LocationSocketClient {
       }
     } else {
       // Connect if disconnected
-      this.connect(payload.trip_id);
+      this.connect();
       return false;
     }
+  }
+
+  public sendPosition(coords: { latitude: number; longitude: number; accuracy?: number }): boolean {
+    return this.sendLocation({
+      type: 'location_update',
+      latitude: coords.latitude,
+      longitude: coords.longitude,
+      accuracy_meters: coords.accuracy,
+      source: 'gps',
+      trip_id: this.currentTripId || null
+    });
   }
 
   public disconnect(): void {

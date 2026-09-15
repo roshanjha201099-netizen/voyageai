@@ -573,12 +573,12 @@ async def websocket_location_endpoint(
     try:
         while True:
             data = await websocket.receive_json()
-            lat = data.get("latitude")
-            lng = data.get("longitude")
-            acc = data.get("accuracy_meters") or data.get("accuracy")
+            lat = data.get("lat") if data.get("lat") is not None else data.get("latitude")
+            lng = data.get("lng") if data.get("lng") is not None else data.get("longitude")
+            acc = data.get("accuracy") if data.get("accuracy") is not None else data.get("accuracy_meters")
             source = data.get("source", "gps")
             address_name = data.get("address_name") or "Live Position"
-            req_trip_id = data.get("trip_id") or trip_id
+            req_trip_id = data.get("trip_id") if data.get("trip_id") is not None else trip_id
 
             if lat is not None and lng is not None:
                 uid_key = user_id

@@ -151,7 +151,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         currentDay: currentTrip.progress?.currentDay || 1,
       } as unknown as Trip;
     }
-    return { ...mockGoaTrip, id: '' } as unknown as Trip;
+    return null as unknown as Trip;
   }, [currentTrip]);
 
   const setActiveTrip = useCallback(() => {
@@ -209,14 +209,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     // Real-time WebSocket transmission as primary transport
-    const sentViaWs = locationSocket.sendLocation({
-      type: 'location_update',
+    const sentViaWs = locationSocket.sendPosition({
       latitude: lat,
       longitude: lng,
-      accuracy_meters: accuracyMeters !== undefined ? accuracyMeters : 10,
-      source,
-      address_name: addressName || 'User Location',
-      trip_id: currentTrip?.id || null
+      accuracy: accuracyMeters !== undefined ? accuracyMeters : 10
     });
 
     if (!sentViaWs) {
@@ -225,7 +221,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         longitude: lng,
         accuracy_meters: accuracyMeters !== undefined ? accuracyMeters : 10,
         address_name: addressName || 'User Location',
-        source
+        source,
+        trip_id: currentTrip?.id || null
       }).catch(err => console.warn('[LOCATION SYNC WS ERROR]', err));
     }
   }, [currentTrip?.id]);
@@ -300,20 +297,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [isLiveTracking, startLiveTracking, stopLiveTracking]);
 
-  const lastConnectedTripIdRef = React.useRef<string | null | undefined>(undefined);
-
-  // Unified single mount effect for geolocation watcher & WebSocket connection
+  // Unified single mount effect for ambient geolocation watcher & WebSocket connection
   useEffect(() => {
     const effectiveTripId = currentTrip?.id || null;
+    locationSocket.setActiveTripId(effectiveTripId);
 
-    if (lastConnectedTripIdRef.current !== effectiveTripId) {
-      lastConnectedTripIdRef.current = effectiveTripId;
-      locationSocket.connect(effectiveTripId);
-    }
-
+    // Immediately connect ambient WebSocket and request browser GPS permission on launch
+    locationSocket.connect();
     startLiveTracking();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentTrip?.id]);
+  }, [currentTrip?.id, startLiveTracking]);
 
   // Modals & Sheets
   const [isAiOpen, setIsAiOpen] = useState(false);
