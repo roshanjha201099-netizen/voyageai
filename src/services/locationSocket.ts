@@ -71,7 +71,7 @@ class LocationSocketClient {
       const cleanUrl = envWsUrl.replace(/\/ws.*$/, '');
       baseUrl = `${cleanUrl}/ws/location`;
     } else {
-      baseUrl = 'wss://4026-2401-4900-8927-d7dc-acf3-768e-20d0-d258.ngrok-free.app/ws/location';
+      baseUrl = 'wss://e461-2401-4900-8927-d7dc-79ef-73bc-4a0d-5fa0.ngrok-free.app/ws/location';
     }
 
     let url = baseUrl;
