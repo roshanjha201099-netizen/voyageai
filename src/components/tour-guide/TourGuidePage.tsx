@@ -49,6 +49,7 @@ export const TourGuidePage: React.FC = () => {
   const [isContextDropdownOpen, setIsContextDropdownOpen] = useState(false);
 
   const [nearbyPlaces, setNearbyPlaces] = useState<TourPlace[]>([]);
+  const [isLoadingNearby, setIsLoadingNearby] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<TourPlace | null>(null);
   const [messages, setMessages] = useState<TourGuideMessage[]>([]);
   const [inputText, setInputText] = useState('');
@@ -297,7 +298,7 @@ export const TourGuidePage: React.FC = () => {
           >
             {guideMode === 'local' ? (
               <>
-                <MapPin className="w-3.5 h-3.5 text-[#355F58] shrink-0" />
+                {isLoadingNearby ? <Loader2 className="w-3.5 h-3.5 animate-spin text-[#355F58] shrink-0" /> : <MapPin className="w-3.5 h-3.5 text-[#355F58] shrink-0" />}
                 <span className="truncate max-w-[110px]">Near You</span>
               </>
             ) : (

@@ -18,8 +18,6 @@ export const ProfileSheet: React.FC = () => {
 
   const name = userProfile?.firstName
     ? `${userProfile.firstName} ${userProfile.lastName || ''}`.trim()
-    : authUser?.displayName
-    ? authUser.displayName
     : authUser?.email
     ? authUser.email.split('@')[0]
     : 'Traveler';

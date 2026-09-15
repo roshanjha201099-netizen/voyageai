@@ -73,6 +73,7 @@ async def websocket_trip_endpoint(websocket: WebSocket, trip_id: str):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        "https://tour-guide-v1.netlify.app",
         "https://4026-2401-4900-8927-d7dc-acf3-768e-20d0-d258.ngrok-free.app",
         "http://localhost",
         "http://127.0.0.1",
@@ -81,7 +82,7 @@ app.add_middleware(
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ],
-    allow_origin_regex=r"https://.*\.netlify\.app",
+    allow_origin_regex=r"https://.*\.netlify\.app|https://.*\.ngrok-free\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
