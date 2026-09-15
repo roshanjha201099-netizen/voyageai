@@ -3,11 +3,13 @@ import { useEffect, useRef } from 'react';
 export interface UseSyncRevalidationOptions {
   onFocus?: () => void;
   onStorageChange?: (key: string | null, newValue: string | null) => void;
+  throttleMs?: number;
 }
 
-export function useSyncRevalidation({ onFocus, onStorageChange }: UseSyncRevalidationOptions) {
+export function useSyncRevalidation({ onFocus, onStorageChange, throttleMs = 5000 }: UseSyncRevalidationOptions) {
   const onFocusRef = useRef(onFocus);
   const onStorageChangeRef = useRef(onStorageChange);
+  const lastRevalidatedRef = useRef<number>(0);
 
   useEffect(() => {
     onFocusRef.current = onFocus;
@@ -15,16 +17,24 @@ export function useSyncRevalidation({ onFocus, onStorageChange }: UseSyncRevalid
   }, [onFocus, onStorageChange]);
 
   useEffect(() => {
+    const triggerFocusThrottled = () => {
+      const now = Date.now();
+      if (now - lastRevalidatedRef.current > throttleMs) {
+        lastRevalidatedRef.current = now;
+        if (onFocusRef.current) {
+          onFocusRef.current();
+        }
+      }
+    };
+
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && onFocusRef.current) {
-        onFocusRef.current();
+      if (document.visibilityState === 'visible') {
+        triggerFocusThrottled();
       }
     };
 
     const handleWindowFocus = () => {
-      if (onFocusRef.current) {
-        onFocusRef.current();
-      }
+      triggerFocusThrottled();
     };
 
     const handleStorage = (event: StorageEvent) => {
@@ -42,5 +52,5 @@ export function useSyncRevalidation({ onFocus, onStorageChange }: UseSyncRevalid
       window.removeEventListener('focus', handleWindowFocus);
       window.removeEventListener('storage', handleStorage);
     };
-  }, []);
+  }, [throttleMs]);
 }

@@ -240,7 +240,7 @@ export const AIAssistantSheet: React.FC = () => {
         replacement: {
           name: recommendation.name,
           description: recommendation.description,
-          timeSlot: recommendation.startTime,
+          timeSlot: recommendation?.startTime ?? '10:00 AM',
           locationName: recommendation.locationName,
           latitude: recommendation.latitude,
           longitude: recommendation.longitude,
@@ -258,7 +258,7 @@ export const AIAssistantSheet: React.FC = () => {
         {
           id: `ai-swap-${Date.now()}`,
           role: 'ai',
-          text: `**Activity Swapped!** Updated your itinerary to **${recommendation.name}** at ${recommendation.startTime} (₹${recommendation.estimatedCost}). Budget and schedule updated.`
+          text: `**Activity Swapped!** Updated your itinerary to **${recommendation.name}** at ${recommendation?.startTime ?? '10:00 AM'} (₹${recommendation.estimatedCost ?? 0}). Budget and schedule updated.`
         }
       ]);
 
@@ -346,7 +346,7 @@ export const AIAssistantSheet: React.FC = () => {
 
                             <div className="flex items-center justify-between text-[11px] text-[#1F2522] pt-1 border-t border-[#D9DEDA]">
                               <span className="font-mono text-[#355F58] font-bold">
-                                {rec.startTime} • {rec.durationMinutes} mins
+                                {rec?.startTime ?? '10:00 AM'} • {rec?.durationMinutes ?? 60} mins
                               </span>
                               <span className="font-extrabold text-[#1F2522]">
                                 {rec.estimatedCost ? `₹${rec.estimatedCost}` : 'Free'}
@@ -450,7 +450,7 @@ export const AIAssistantSheet: React.FC = () => {
               <div className="p-3 rounded-2xl bg-[#E8F0EE] border border-[#D9DEDA] text-xs">
                 <span className="text-[10px] uppercase font-bold text-[#355F58] tracking-wider">With Selected Alternative</span>
                 <h5 className="font-bold text-[#1F2522] text-sm mt-0.5">{pendingSwap.recommendation.name}</h5>
-                <p className="text-[#5F6863] mt-1 font-medium">{pendingSwap.recommendation.startTime} • {pendingSwap.recommendation.estimatedCost ? `₹${pendingSwap.recommendation.estimatedCost}` : 'Free'}</p>
+                <p className="text-[#5F6863] mt-1 font-medium">{pendingSwap?.recommendation?.startTime ?? '10:00 AM'} • {pendingSwap?.recommendation?.estimatedCost ? `₹${pendingSwap.recommendation.estimatedCost}` : 'Free'}</p>
                 <p className="text-[#5F6863] text-[11px] font-medium">{pendingSwap.recommendation.locationName}</p>
               </div>
             </div>

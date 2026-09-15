@@ -215,7 +215,7 @@ export const ItineraryView: React.FC = () => {
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <span className="text-[10px] uppercase font-bold text-[#355F58] tracking-wider block">
-                            Activity {idx + 1} · {act.timeSlot}
+                            Activity {idx + 1} · {act?.timeSlot ?? 'Flexible'}
                           </span>
                           <h3 className={`text-base font-extrabold ${isDone ? 'text-[#5F6863] line-through' : 'text-[#1F2522]'}`}>
                             {act.title}

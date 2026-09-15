@@ -52,8 +52,12 @@ class LocationSocketClient {
   private lastPayload: LocationSocketPayload | null = null;
 
   public connect(tripId?: string | null): void {
-    if (tripId !== undefined) {
-      this.currentTripId = tripId;
+    const effectiveTripId = (tripId === 'trip-goa-2026' && this.currentTripId && this.currentTripId !== 'trip-goa-2026')
+      ? this.currentTripId
+      : tripId;
+
+    if (effectiveTripId !== undefined && effectiveTripId !== null) {
+      this.currentTripId = effectiveTripId;
     }
 
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {

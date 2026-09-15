@@ -248,7 +248,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           console.warn('[RETRY GPS ERROR]', err.message);
           setIsLocationModalOpen(true);
         },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        { enableHighAccuracy: false, timeout: 15000, maximumAge: 10000 }
       );
     }
   }, [syncUserLocation]);
@@ -283,9 +283,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (success) {
       setIsLiveTracking(true);
-      locationSocket.connect(activeTrip?.id);
     }
-  }, [syncUserLocation, activeTrip?.id]);
+  }, [syncUserLocation]);
 
   const stopLiveTracking = useCallback(() => {
     locationService.stopWatcher();
@@ -301,16 +300,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [isLiveTracking, startLiveTracking, stopLiveTracking]);
 
+  const lastConnectedTripIdRef = React.useRef<string | null | undefined>(undefined);
+
   // Unified single mount effect for geolocation watcher & WebSocket connection
   useEffect(() => {
-    locationSocket.connect(activeTrip?.id);
-    startLiveTracking();
+    const rawTripId = activeTrip?.id;
+    const effectiveTripId = (rawTripId === 'trip-goa-2026' && currentTrip?.id && currentTrip.id !== 'trip-goa-2026')
+      ? currentTrip.id
+      : rawTripId;
 
-    return () => {
-      stopLiveTracking();
-    };
+    if (lastConnectedTripIdRef.current !== effectiveTripId) {
+      lastConnectedTripIdRef.current = effectiveTripId;
+      locationSocket.connect(effectiveTripId);
+    }
+
+    startLiveTracking();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTrip?.id]);
+  }, [activeTrip?.id, currentTrip?.id]);
 
   // Modals & Sheets
   const [isAiOpen, setIsAiOpen] = useState(false);

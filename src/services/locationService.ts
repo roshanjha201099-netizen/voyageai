@@ -27,9 +27,9 @@ export interface LocationWatcherConfig {
 const DEFAULT_CONFIG: LocationWatcherConfig = {
   distanceThresholdMeters: 10,
   timeThresholdMs: 5000,
-  enableHighAccuracy: true,
+  enableHighAccuracy: false,
   timeoutMs: 15000,
-  maximumAgeMs: 3000
+  maximumAgeMs: 10000
 };
 
 // Haversine distance calculator in meters
@@ -50,6 +50,8 @@ class LocationService {
   private lastNormalizedPoint: NormalizedLocationPoint | null = null;
   private lastSyncedPoint: NormalizedLocationPoint | null = null;
   private config: LocationWatcherConfig = DEFAULT_CONFIG;
+  private onUpdateCallback: ((point: NormalizedLocationPoint, shouldSyncBackend: boolean) => void) | null = null;
+  private onErrorCallback: ((err: GeolocationPositionError) => void) | null = null;
 
   /**
    * Single owner of the geolocation watcher.
@@ -59,6 +61,9 @@ class LocationService {
     onError?: (err: GeolocationPositionError) => void,
     customConfig?: Partial<LocationWatcherConfig>
   ): boolean {
+    this.onUpdateCallback = onLocationUpdate;
+    if (onError) this.onErrorCallback = onError;
+
     if (this.watchId !== null) {
       console.log('[LOCATION SERVICE] Watcher already running.');
       return true;
@@ -123,11 +128,15 @@ class LocationService {
           this.lastSyncedPoint = point;
         }
 
-        onLocationUpdate(point, shouldSync);
+        if (this.onUpdateCallback) {
+          this.onUpdateCallback(point, shouldSync);
+        }
       },
       (err) => {
         console.warn('[LOCATION SERVICE] Watcher error:', err.message);
-        if (onError) onError(err);
+        if (this.onErrorCallback) {
+          this.onErrorCallback(err);
+        }
       },
       {
         enableHighAccuracy: this.config.enableHighAccuracy,
