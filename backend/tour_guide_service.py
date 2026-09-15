@@ -187,11 +187,13 @@ def _fetch_nominatim_location(lat: float, lng: float) -> List[Dict[str, Any]]:
     return []
 
 
-def search_nearby_pois(lat: float, lng: float, radius_m: int = 5000) -> List[Dict[str, Any]]:
+def search_nearby_pois(lat: float, lng: float, radius_m: int = 5000, radius: int = None) -> List[Dict[str, Any]]:
     """
     Search for real nearby POIs using Overpass API (OpenStreetMap).
     Uses Redis Cache-Aside Pattern with 24-Hour TTL and Spatial Clustered Keys.
     """
+    if radius is not None:
+        radius_m = radius
     radius_m = min(radius_m, 5000)
 
     # 1. Spatial Coordinate Bucketing to ~1.1 km grid
