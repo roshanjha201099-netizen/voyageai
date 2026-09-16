@@ -46,8 +46,8 @@ export const PlaceDetailSheet: React.FC<PlaceDetailSheetProps> = ({ item, onClos
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-[#1F2522]/40 backdrop-blur-xs animate-fadeIn">
-      <div className="w-full max-w-lg bg-white border border-[#D9DEDA] rounded-t-3xl sm:rounded-3xl p-6 space-y-5 shadow-xl animate-slideUp text-[#1F2522]">
+    <div className="fixed inset-0 z-[99999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-[#1F2522]/40 backdrop-blur-xs animate-fadeIn">
+      <div className="w-full max-w-lg max-h-[85vh] sm:max-h-[90vh] overflow-y-auto bg-white border border-[#D9DEDA] rounded-t-3xl sm:rounded-3xl p-6 pb-20 sm:pb-6 mb-16 sm:mb-0 space-y-5 shadow-2xl animate-slideUp text-[#1F2522]">
         
         {/* Header */}
         <div className="flex items-start justify-between gap-4 border-b border-[#D9DEDA] pb-4">

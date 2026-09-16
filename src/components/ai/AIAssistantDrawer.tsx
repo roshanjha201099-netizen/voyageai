@@ -330,39 +330,73 @@ export const AIAssistantSheet: React.FC = () => {
                     {/* Structured Activity Swap Recommendation Cards */}
                     {msg.role === 'ai' && msg.recommendations && msg.recommendations.length > 0 && (
                       <div className="space-y-2.5 pt-1">
-                        {msg.recommendations.map(rec => (
-                          <div
-                            key={rec.id}
-                            className="p-3.5 rounded-2xl bg-[#F0F2EF] border border-[#D9DEDA] space-y-2 text-[#1F2522]"
-                          >
-                            <div className="flex items-center justify-between">
-                              <h5 className="font-extrabold text-sm text-[#1F2522]">{rec.name}</h5>
-                              <span className="px-2 py-0.5 rounded-md bg-[#E8F0EE] text-[#355F58] text-[10px] font-extrabold border border-[#D9DEDA]">
-                                {rec.reason}
-                              </span>
-                            </div>
-
-                            <p className="text-[11px] text-[#5F6863] font-medium">{rec.description}</p>
-
-                            <div className="flex items-center justify-between text-[11px] text-[#1F2522] pt-1 border-t border-[#D9DEDA]">
-                              <span className="font-mono text-[#355F58] font-bold">
-                                {rec?.startTime ?? '10:00 AM'} • {rec?.durationMinutes ?? 60} mins
-                              </span>
-                              <span className="font-extrabold text-[#1F2522]">
-                                {rec.estimatedCost ? `₹${rec.estimatedCost}` : 'Free'}
-                              </span>
-                            </div>
-
-                            <button
-                              type="button"
-                              onClick={() => setPendingSwap({ recommendation: rec, messageContext: msg })}
-                              className="w-full py-2.5 bg-[#355F58] hover:bg-[#2C504A] text-white font-extrabold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 mt-1"
+                        {msg.recommendations.map(rec => {
+                          const isSelected = pendingSwap?.recommendation.id === rec.id;
+                          return (
+                            <div
+                              key={rec.id}
+                              className={`p-3.5 rounded-2xl border transition-all space-y-2 text-[#1F2522] ${
+                                isSelected
+                                  ? 'bg-[#E8F0EE] border-[#355F58] ring-2 ring-[#355F58]/20'
+                                  : 'bg-[#F0F2EF] border-[#D9DEDA]'
+                              }`}
                             >
-                              <Sparkles className="w-3.5 h-3.5 text-white" />
-                              <span>Select Recommendation</span>
-                            </button>
-                          </div>
-                        ))}
+                              <div className="flex items-center justify-between">
+                                <h5 className="font-extrabold text-sm text-[#1F2522]">{rec.name}</h5>
+                                <span className="px-2 py-0.5 rounded-md bg-[#E8F0EE] text-[#355F58] text-[10px] font-extrabold border border-[#D9DEDA]">
+                                  {rec.reason}
+                                </span>
+                              </div>
+
+                              <p className="text-[11px] text-[#5F6863] font-medium">{rec.description}</p>
+
+                              <div className="flex items-center justify-between text-[11px] text-[#1F2522] pt-1 border-t border-[#D9DEDA]">
+                                <span className="font-mono text-[#355F58] font-bold">
+                                  {rec?.startTime ?? '10:00 AM'} • {rec?.durationMinutes ?? 60} mins
+                                </span>
+                                <span className="font-extrabold text-[#1F2522]">
+                                  {rec.estimatedCost ? `₹${rec.estimatedCost}` : 'Free'}
+                                </span>
+                              </div>
+
+                              {isSelected ? (
+                                <div className="p-3 mt-2 rounded-xl bg-white border border-[#355F58]/30 space-y-2.5 animate-fadeIn shadow-xs">
+                                  <div className="flex items-center gap-1.5 text-xs font-bold text-[#355F58]">
+                                    <AlertCircle className="w-4 h-4 text-[#355F58] shrink-0" />
+                                    <span>Swap with "{msg.currentActivityName || 'Current Activity'}"?</span>
+                                  </div>
+                                  <div className="flex items-center gap-2 pt-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => setPendingSwap(null)}
+                                      disabled={isSubmitting}
+                                      className="flex-1 py-2 rounded-xl bg-[#F0F2EF] hover:bg-[#E4E8E4] text-[#1F2522] font-bold text-xs border border-[#D9DEDA] transition-all"
+                                    >
+                                      Cancel
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={handleConfirmSwap}
+                                      disabled={isSubmitting}
+                                      className="flex-1 py-2 rounded-xl bg-[#355F58] hover:bg-[#2C504A] text-white font-extrabold text-xs transition-all shadow-xs"
+                                    >
+                                      {isSubmitting ? 'Updating...' : 'Confirm Swap'}
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setPendingSwap({ recommendation: rec, messageContext: msg })}
+                                  className="w-full py-2.5 bg-[#355F58] hover:bg-[#2C504A] text-white font-extrabold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 mt-1"
+                                >
+                                  <Sparkles className="w-3.5 h-3.5 text-white" />
+                                  <span>Select Recommendation</span>
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
 
@@ -430,8 +464,8 @@ export const AIAssistantSheet: React.FC = () => {
 
       {/* Confirmation Dialog Modal for Activity Swap */}
       {pendingSwap && (
-        <div className="fixed inset-0 z-[2000] bg-[#1F2522]/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border border-[#D9DEDA] rounded-3xl p-6 max-w-md w-full space-y-4 shadow-xl animate-scaleIn text-[#1F2522]">
+        <div className="fixed inset-0 z-[100000] bg-[#1F2522]/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-[#D9DEDA] rounded-3xl p-6 max-w-md w-full space-y-4 shadow-2xl animate-scaleIn text-[#1F2522]">
             <div className="flex items-center gap-2 text-[#355F58] font-extrabold text-sm uppercase tracking-wider">
               <AlertCircle className="w-4 h-4 text-[#355F58]" />
               <span>Replace Activity?</span>
