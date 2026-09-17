@@ -2,13 +2,14 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useApp } from '../../context/AppContext';
 import { useTrip } from '../../features/trip/TripContext';
 import {
-  Car, Compass, Search, X, RefreshCw, ArrowLeft, ExternalLink, Volume2, VolumeX, Loader2
+  Car, Compass, Search, X, RefreshCw, ArrowLeft, ExternalLink, Volume2, VolumeX, Loader2, Crosshair
 } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useNavigate } from 'react-router-dom';
 import { getApiBaseUrl, DEFAULT_HEADERS } from '../../config/apiConfig';
 import { useAudioGuide } from '../../hooks/useAudioGuide';
+import { createUserLocationIcon, createCrazyPoiIcon } from './mapIcons';
 
 export interface PlaceItem {
   id: string;
@@ -279,85 +280,24 @@ export const MapView: React.FC = () => {
     const markersGroup = markersLayerRef.current;
     markersGroup.clearLayers();
 
-    // User Position Pulse Dot
+    // User Position Pulsing Radar Pin
     const userPos = userLocation || defaultCoords;
     if (userMarkerRef.current) {
       mapInstanceRef.current.removeLayer(userMarkerRef.current);
     }
     userMarkerRef.current = L.marker(userPos, {
-      icon: L.divIcon({
-        className: '',
-        html: `<div style="position:relative; width:24px; height:24px;">
-                <div style="position:absolute; width:24px; height:24px; background:rgba(16,185,129,0.35); border-radius:50%; animation:ping 2.5s infinite;"></div>
-                <div style="position:absolute; top:4px; left:4px; width:16px; height:16px; background:#10B981; border:3px solid #0F172A; border-radius:50%; box-shadow:0 0 12px rgba(16,185,129,0.8);"></div>
-               </div>`,
-        iconSize: [24, 24],
-        iconAnchor: [12, 12]
-      })
+      icon: createUserLocationIcon()
     }).addTo(mapInstanceRef.current);
 
-    // Render Micro-Badges
+    // Render Custom Glow-Drop POI Markers
     places.forEach((p) => {
       if (!p.latitude || !p.longitude) return;
 
       const isSelected = selectedPlace?.id === p.id;
-      const badgeIcon = p.category === 'hotels' ? '🏨' : p.category === 'food' ? '🍽️' : '🎯';
-      const label = p.name.length > 14 ? `${p.name.substring(0, 12)}..` : p.name;
-
-      const markerHtml = isSelected ? `
-        <div style="
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          background: #0F172A;
-          color: #FFFFFF;
-          padding: 6px 12px;
-          border-radius: 9999px;
-          font-size: 11px;
-          font-weight: 800;
-          box-shadow: 0 0 25px rgba(16, 185, 129, 0.5), 0 8px 20px rgba(0,0,0,0.6);
-          border: 2px solid #10B981;
-          transform: scale(1.12);
-          transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-          cursor: pointer;
-          white-space: nowrap;
-          pointer-events: auto;
-        ">
-          <span style="font-size: 12px;">${badgeIcon}</span>
-          <span style="color: #F8FAFC;">${label}</span>
-          ${p.rating ? `<span style="color: #F59E0B; font-size: 10px; font-weight: 800;">★${p.rating}</span>` : ''}
-        </div>
-      ` : `
-        <div style="
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-          background: rgba(15, 23, 42, 0.85);
-          backdrop-filter: blur(8px);
-          color: #E2E8F0;
-          padding: 4px 8px;
-          border-radius: 9999px;
-          font-size: 10px;
-          font-weight: 700;
-          box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-          border: 1px solid rgba(255, 255, 255, 0.12);
-          transition: all 0.2s ease;
-          cursor: pointer;
-          white-space: nowrap;
-          pointer-events: auto;
-        ">
-          <span style="font-size: 11px;">${badgeIcon}</span>
-          <span style="opacity: 0.9;">${label}</span>
-        </div>
-      `;
+      const markerIcon = createCrazyPoiIcon(p.category, isSelected);
 
       const marker = L.marker([p.latitude, p.longitude], {
-        icon: L.divIcon({
-          className: '',
-          html: markerHtml,
-          iconSize: [110, 28],
-          iconAnchor: [55, 14]
-        })
+        icon: markerIcon
       }).addTo(markersGroup);
 
       marker.on('click', (e: L.LeafletMouseEvent) => {
@@ -377,11 +317,43 @@ export const MapView: React.FC = () => {
 
   return (
     <div className="relative w-full h-[calc(100dvh-125px)] min-h-[500px] rounded-3xl overflow-hidden border border-white/10 bg-slate-950 shadow-2xl">
-      {/* MAP CANVAS */}
+      {/* MAP CANVAS WITH DARK-MATTER TILES */}
       <div
         ref={mapContainerRef}
-        className="absolute inset-0 w-full h-full z-0 cursor-grab active:cursor-grabbing"
+        className="absolute inset-0 w-full h-full z-0 crazy-dark-tiles cursor-grab active:cursor-grabbing"
       />
+
+      {/* TOP FLOATING TELEMETRY BAR */}
+      <div className="absolute top-3 left-3 right-3 z-[1001] flex items-center justify-between pointer-events-none">
+        <div className="pointer-events-auto px-3.5 py-1.5 rounded-full bg-slate-950/80 backdrop-blur-xl border border-white/10 flex items-center gap-2 text-xs font-semibold text-slate-200 shadow-2xl">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+          </span>
+          <span className="font-bold text-emerald-400">Live Geofence</span>
+          <span className="text-[10px] text-slate-400 font-mono bg-slate-900/80 px-2 py-0.5 rounded border border-white/10">150m Rad</span>
+        </div>
+
+        <div className="flex items-center gap-2 pointer-events-auto">
+          {userLocation && (
+            <button
+              type="button"
+              onClick={() => {
+                if (mapInstanceRef.current && userLocation) {
+                  mapInstanceRef.current.setView(userLocation, 15, { animate: true });
+                  setMapCenter(userLocation);
+                  toggleFollowMode();
+                  fetchPlaces(userLocation[0], userLocation[1], activeCategory);
+                }
+              }}
+              className="p-2.5 rounded-2xl bg-slate-900/85 backdrop-blur-xl border border-white/10 text-emerald-400 hover:text-white hover:border-emerald-500/40 transition-all shadow-2xl active:scale-95 flex items-center justify-center"
+              title="Recenter Location"
+            >
+              <Crosshair className="w-4 h-4 text-emerald-400" />
+            </button>
+          )}
+        </div>
+      </div>
 
       {/* GEOFENCE PROXIMITY TOAST BANNER */}
       {activeGeofenceBanner && (
@@ -401,7 +373,7 @@ export const MapView: React.FC = () => {
       )}
 
       {/* TOP FLOATING SEARCH & CATEGORY STRIP */}
-      <div className="absolute top-4 left-3 right-3 z-[1000] flex flex-col gap-2.5 max-w-xl mx-auto">
+      <div className="absolute top-14 left-3 right-3 z-[1000] flex flex-col gap-2.5 max-w-xl mx-auto">
         <div className="flex items-center gap-2">
           <button
             type="button"
