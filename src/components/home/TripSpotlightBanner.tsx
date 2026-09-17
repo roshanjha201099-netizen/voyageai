@@ -34,7 +34,9 @@ export const TripSpotlightBanner: React.FC<{
     const targetDest = destination || 'Goa';
     const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
-    fetch(`${baseUrl}/api/trips/${encodeURIComponent(targetDest)}/highlights`)
+    fetch(`${baseUrl}/api/trips/${encodeURIComponent(targetDest)}/highlights`, {
+      headers: { 'ngrok-skip-browser-warning': 'true' }
+    })
       .then((res) => res.json())
       .then((json) => {
         if (isMounted) setData(json);
@@ -66,7 +68,10 @@ export const TripSpotlightBanner: React.FC<{
 
       const res = await fetch(`${baseUrl}/api/trips/itinerary/add`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        },
         body: JSON.stringify(payload),
       });
 

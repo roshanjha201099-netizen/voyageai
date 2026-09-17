@@ -46,7 +46,8 @@ export const useAudioGuide = () => {
       const res = await fetch(`${baseUrl}/api/tts/synthesize`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
         },
         body: JSON.stringify({
           text: text.slice(0, 480),
