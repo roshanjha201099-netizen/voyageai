@@ -2,14 +2,15 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useApp } from '../../context/AppContext';
 import { useTrip } from '../../features/trip/TripContext';
 import {
-  Car, Compass, Search, X, RefreshCw, ArrowLeft, ExternalLink, Volume2, VolumeX, Loader2, Crosshair
+  Car, Compass, Search, X, RefreshCw, ArrowLeft, ExternalLink, Volume2, VolumeX, Loader2, Crosshair, Plus, Check, AlertTriangle
 } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useNavigate } from 'react-router-dom';
 import { getApiBaseUrl, DEFAULT_HEADERS } from '../../config/apiConfig';
 import { useAudioGuide } from '../../hooks/useAudioGuide';
-import { createUserLocationIcon, createCrazyPoiIcon } from './mapIcons';
+import { createUserLocationIcon, createCrazyPoiIcon, createClusterIcon } from './mapIcons';
+import { MAP_CATEGORY_CONFIG, getCategoryConfig, getPlaceImage } from './mapCategoryConfig';
 
 export interface PlaceItem {
   id: string;
@@ -22,22 +23,6 @@ export interface PlaceItem {
   rating?: number;
   price_approx?: string;
 }
-
-const getPlaceImage = (category: string, name: string) => {
-  const cat = (category || '').toLowerCase();
-  const n = (name || '').toLowerCase();
-
-  if (cat.includes('hotel') || cat.includes('stay') || cat.includes('lodging') || n.includes('resort') || n.includes('hotel')) {
-    return 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=400&q=80';
-  }
-  if (cat.includes('food') || cat.includes('restaurant') || cat.includes('cafe') || cat.includes('dhaba') || n.includes('food') || n.includes('cafe')) {
-    return 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=400&q=80';
-  }
-  if (cat.includes('fort') || cat.includes('temple') || cat.includes('historic') || cat.includes('monument') || cat.includes('activity')) {
-    return 'https://images.unsplash.com/photo-1564507592333-c60657eea523?auto=format&fit=crop&w=400&q=80';
-  }
-  return 'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?auto=format&fit=crop&w=400&q=80';
-};
 
 export const MapView: React.FC = () => {
   const navigate = useNavigate();
@@ -53,9 +38,10 @@ export const MapView: React.FC = () => {
 
   const [places, setPlaces] = useState<PlaceItem[]>([]);
   const [selectedPlace, setSelectedPlace] = useState<PlaceItem | null>(null);
-  const [activeCategory, setActiveCategory] = useState<'hotels' | 'food' | 'activities' | 'all'>('food');
+  const [activeCategory, setActiveCategory] = useState<'hotels' | 'food' | 'sights' | 'experiences' | 'all'>('food');
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [showSearchAreaBtn, setShowSearchAreaBtn] = useState(false);
   const [mapCenter, setMapCenter] = useState<[number, number]>(defaultCoords);
 
@@ -65,10 +51,35 @@ export const MapView: React.FC = () => {
   const [activeGeofenceBanner, setActiveGeofenceBanner] = useState<{ placeName: string; distMeters: number } | null>(null);
   const narratedPlaceIdsRef = useRef<Set<string>>(new Set());
 
+  // Itinerary addition state
+  const [addedPlaceIds, setAddedPlaceIds] = useState<Set<string>>(new Set());
+  const [addingPlaceId, setAddingPlaceId] = useState<string | null>(null);
+
+  // ── REFS TO PREVENT STALE CLOSURES IN LEAFLET HANDLERS (Fix #1) ──
+  const activeCategoryRef = useRef(activeCategory);
+  const searchQueryRef = useRef(searchQuery);
+  const isFollowModeRef = useRef(isFollowMode);
+  const hasUserPannedRef = useRef(false);
+  const hasPannedToUserRef = useRef(false);
+  const isProgrammaticMoveRef = useRef(false);
+
+  useEffect(() => { activeCategoryRef.current = activeCategory; }, [activeCategory]);
+  useEffect(() => { searchQueryRef.current = searchQuery; }, [searchQuery]);
+  useEffect(() => { isFollowModeRef.current = isFollowMode; }, [isFollowMode]);
+
+  // Leaflet map & layer refs
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<L.Map | null>(null);
+  const markersLayerRef = useRef<L.LayerGroup | null>(null);
+  const userMarkerRef = useRef<L.Marker | null>(null);
+  const markersMapRef = useRef<Map<string, L.Marker>>(new Map());
+  const prevSelectedPlaceIdRef = useRef<string | null>(null);
+  const cardRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
+
+  // Audio guide narration handler
   const handlePlayNarration = useCallback(async (place: PlaceItem, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
 
-    // If already playing this place, stop/pause audio
     if (playingPlaceId === place.id) {
       stopAudio();
       setPlayingPlaceId(null);
@@ -105,7 +116,39 @@ export const MapView: React.FC = () => {
     }
   }, [playingPlaceId, playBase64Audio, stopAudio]);
 
-  // Proximity Geofence Auto-Trigger (<= 150m)
+  // Add place to itinerary handler (Improvement #6)
+  const handleAddToItinerary = useCallback(async (place: PlaceItem, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setAddingPlaceId(place.id);
+    try {
+      const baseUrl = getApiBaseUrl();
+      const payload = {
+        destination: currentTrip?.destination?.name || 'Trip',
+        item_id: place.id,
+        item_type: 'activity',
+        title: place.name,
+        location: place.address || 'Local Spot',
+        tag: place.category,
+        price: place.price_approx || 'Free',
+      };
+
+      const res = await fetch(`${baseUrl}/api/trips/itinerary/add`, {
+        method: 'POST',
+        headers: DEFAULT_HEADERS,
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        setAddedPlaceIds(prev => new Set(prev).add(place.id));
+      }
+    } catch (err) {
+      console.error('Failed to add place to itinerary:', err);
+    } finally {
+      setAddingPlaceId(null);
+    }
+  }, [currentTrip]);
+
+  // Geofence proximity auto-trigger (<= 150m)
   useEffect(() => {
     if (!userLocation || places.length === 0) return;
     const [uLat, uLng] = userLocation;
@@ -113,7 +156,6 @@ export const MapView: React.FC = () => {
     for (const place of places) {
       if (narratedPlaceIdsRef.current.has(place.id)) continue;
 
-      // Distance calculation in meters
       let distMeters = place.distanceMeters;
       if (distMeters === undefined) {
         const R = 6371000;
@@ -126,11 +168,8 @@ export const MapView: React.FC = () => {
       }
 
       if (distMeters <= 150) {
-        console.log(`[GEOFENCE AUTO-TRIGGER] User within ${distMeters}m of landmark: ${place.name}`);
         narratedPlaceIdsRef.current.add(place.id);
         setActiveGeofenceBanner({ placeName: place.name, distMeters });
-        
-        // Auto-play speech narration for landmark
         handlePlayNarration(place);
 
         const bannerTimer = setTimeout(() => {
@@ -141,16 +180,12 @@ export const MapView: React.FC = () => {
     }
   }, [userLocation, places, handlePlayNarration]);
 
-  const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<L.Map | null>(null);
-  const markersLayerRef = useRef<L.LayerGroup | null>(null);
-  const userMarkerRef = useRef<L.Marker | null>(null);
-  const cardRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
-
-  // 1. Fetch places from unified backend endpoint
+  // ── Unified Fetch Nearby Places (Improvement #7 fitBounds & #8 Error State) ──
   const fetchPlaces = useCallback(async (lat: number, lng: number, cat: string, query?: string) => {
     setIsLoading(true);
+    setFetchError(null);
     setShowSearchAreaBtn(false);
+
     try {
       const baseUrl = getApiBaseUrl();
       const params = new URLSearchParams({
@@ -166,37 +201,51 @@ export const MapView: React.FC = () => {
       const res = await fetch(`${baseUrl}/api/places/nearby?${params.toString()}`, {
         headers: DEFAULT_HEADERS
       });
-      if (res.ok) {
-        const data = await res.json();
-        const cleanList: PlaceItem[] = (Array.isArray(data) ? data : []).map((p: any, idx: number) => ({
-          id: p.id || `place_${idx}`,
-          name: p.name || 'Local Landmark',
-          category: p.category || cat,
-          latitude: p.latitude || p.lat,
-          longitude: p.longitude || p.lng || p.lon,
-          distanceMeters: p.distanceMeters || Math.round((p.distanceKm || p.distance_km || 1) * 1000),
-          address: p.address || p.location || 'Local Vicinity',
-          rating: p.rating || Number((4.2 + (idx % 6) * 0.1).toFixed(1)),
-          price_approx: p.price_approx || (cat === 'hotels' ? '₹2,200/night' : cat === 'food' ? '₹400 for two' : 'Free Entry')
-        }));
-        setPlaces(cleanList);
-        if (cleanList.length > 0) {
-          setSelectedPlace(cleanList[0]);
+
+      if (!res.ok) {
+        throw new Error(`Failed to load places (${res.status})`);
+      }
+
+      const data = await res.json();
+      const cleanList: PlaceItem[] = (Array.isArray(data) ? data : []).map((p: any, idx: number) => ({
+        id: p.id || `place_${idx}`,
+        name: p.name || 'Local Landmark',
+        category: p.category || cat,
+        latitude: p.latitude || p.lat,
+        longitude: p.longitude || p.lng || p.lon,
+        distanceMeters: p.distanceMeters || Math.round((p.distanceKm || p.distance_km || 1) * 1000),
+        address: p.address || p.location || 'Local Vicinity',
+        rating: p.rating || Number((4.2 + (idx % 6) * 0.1).toFixed(1)),
+        price_approx: p.price_approx || (cat === 'hotels' ? '₹2,200/night' : cat === 'food' ? '₹400 for two' : 'Free Entry')
+      }));
+
+      setPlaces(cleanList);
+      if (cleanList.length > 0) {
+        setSelectedPlace(cleanList[0]);
+
+        // Fit Bounds around new markers + user position (Improvement #7)
+        if (mapInstanceRef.current) {
+          const points: [number, number][] = cleanList.map(p => [p.latitude, p.longitude]);
+          if (userLocation) points.push(userLocation);
+          const bounds = L.latLngBounds(points);
+          if (bounds.isValid()) {
+            isProgrammaticMoveRef.current = true;
+            mapInstanceRef.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 16, animate: true });
+          }
         }
       }
-    } catch (err) {
-      console.error('Failed to fetch places:', err);
+    } catch (err: any) {
+      console.error('Fetch places error:', err);
+      setFetchError(err?.message || 'Unable to fetch nearby places. Please check your connection.');
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [userLocation]);
 
-  // Initial load or category switch
-  useEffect(() => {
-    fetchPlaces(mapCenter[0], mapCenter[1], activeCategory, searchQuery);
-  }, [activeCategory]);
+  const fetchPlacesRef = useRef(fetchPlaces);
+  useEffect(() => { fetchPlacesRef.current = fetchPlaces; }, [fetchPlaces]);
 
-  // Synchronize bottom card scrolling when selectedPlace changes
+  // Scroll active card into view
   useEffect(() => {
     if (selectedPlace?.id && cardRefs.current[selectedPlace.id]) {
       cardRefs.current[selectedPlace.id]?.scrollIntoView({
@@ -207,7 +256,7 @@ export const MapView: React.FC = () => {
     }
   }, [selectedPlace]);
 
-  // 2. Leaflet Map Initialization (CartoDB Dark Theme)
+  // ── Leaflet Map Initialization & Event Listeners (Fix #1 Stale Closure & #2 Cleanup) ──
   useEffect(() => {
     if (!mapContainerRef.current || mapInstanceRef.current) return;
 
@@ -217,18 +266,13 @@ export const MapView: React.FC = () => {
       markerZoomAnimation: true
     }).setView(defaultCoords, 14);
 
-    // CARTO Raster Voyager basemap surface with runtime API key configuration
     const cartoKey = import.meta.env.VITE_CARTO_BASEMAP_KEY;
-    if (!cartoKey && import.meta.env.DEV) {
-      console.warn('[MapView] VITE_CARTO_BASEMAP_KEY is missing. CARTO raster tiles may display a watermark.');
-    }
-
     const tileUrl = cartoKey
       ? `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=${encodeURIComponent(cartoKey)}`
       : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
 
     L.tileLayer(tileUrl, {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
       subdomains: 'abcd',
       maxZoom: 19
     }).addTo(map);
@@ -237,77 +281,188 @@ export const MapView: React.FC = () => {
     markersLayerRef.current = markersGroup;
     mapInstanceRef.current = map;
 
-    // Forces Leaflet container layout recalculation
     const invalidate = () => map.invalidateSize();
     const t1 = setTimeout(invalidate, 100);
     const t2 = setTimeout(invalidate, 400);
 
-    const resizeObserver = new ResizeObserver(() => {
-      map.invalidateSize();
-    });
+    const resizeObserver = new ResizeObserver(() => map.invalidateSize());
     resizeObserver.observe(mapContainerRef.current);
 
-    // Detect user dragging camera -> show "Search this area"
-    map.on('moveend', () => {
+    // Event listener handlers reading from REFS to fix stale closure
+    const handleMoveEnd = () => {
+      if (!isProgrammaticMoveRef.current) {
+        hasUserPannedRef.current = true;
+      }
+      isProgrammaticMoveRef.current = false;
+
       const center = map.getCenter();
       setMapCenter([center.lat, center.lng]);
       setShowSearchAreaBtn(true);
-      if (isFollowMode) {
+      if (isFollowModeRef.current) {
         setIsFollowMode(false);
       }
-    });
+    };
 
-    // Detect user tapping map canvas directly -> discover POIs around click
-    map.on('click', (e: L.LeafletMouseEvent) => {
+    const handleMapClick = (e: L.LeafletMouseEvent) => {
       const clickedLat = e.latlng.lat;
       const clickedLng = e.latlng.lng;
       setMapCenter([clickedLat, clickedLng]);
       setShowSearchAreaBtn(true);
-      fetchPlaces(clickedLat, clickedLng, activeCategory, searchQuery);
-    });
+      if (fetchPlacesRef.current) {
+        fetchPlacesRef.current(clickedLat, clickedLng, activeCategoryRef.current, searchQueryRef.current);
+      }
+    };
 
+    map.on('moveend', handleMoveEnd);
+    map.on('click', handleMapClick);
+
+    // Initial fetch on load
+    fetchPlacesRef.current(defaultCoords[0], defaultCoords[1], activeCategoryRef.current);
+
+    // Complete cleanup function (Fix #2)
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
       resizeObserver.disconnect();
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.off('moveend', handleMoveEnd);
+        mapInstanceRef.current.off('click', handleMapClick);
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+      }
+      markersLayerRef.current = null;
+      userMarkerRef.current = null;
+      markersMapRef.current.clear();
     };
-  }, [defaultCoords, isFollowMode, setIsFollowMode, activeCategory, searchQuery, fetchPlaces]);
+  }, [defaultCoords, setIsFollowMode]);
 
-  // 3. Render Custom Leaflet Markers
+  // ── Initial User Location Async FlyTo (Fix #5) ──
+  useEffect(() => {
+    if (userLocation && !hasUserPannedRef.current && !hasPannedToUserRef.current && mapInstanceRef.current) {
+      isProgrammaticMoveRef.current = true;
+      mapInstanceRef.current.flyTo(userLocation, 15, { animate: true, duration: 1.2 });
+      hasPannedToUserRef.current = true;
+    }
+  }, [userLocation]);
+
+  // ── Marker Diffing & Rendering (Fix #4 Marker Diffing & #9 Clustering) ──
   useEffect(() => {
     if (!mapInstanceRef.current || !markersLayerRef.current) return;
 
     const markersGroup = markersLayerRef.current;
-    markersGroup.clearLayers();
+    const markersMap = markersMapRef.current;
+    const currentSelectedId = selectedPlace?.id || null;
+    const prevSelectedId = prevSelectedPlaceIdRef.current;
 
-    // User Position Pulsing Radar Pin
+    // User Location Radar Marker
     const userPos = userLocation || defaultCoords;
     if (userMarkerRef.current) {
-      mapInstanceRef.current.removeLayer(userMarkerRef.current);
+      userMarkerRef.current.setLatLng(userPos);
+    } else {
+      userMarkerRef.current = L.marker(userPos, {
+        icon: createUserLocationIcon()
+      }).addTo(mapInstanceRef.current);
     }
-    userMarkerRef.current = L.marker(userPos, {
-      icon: createUserLocationIcon()
-    }).addTo(mapInstanceRef.current);
 
-    // Render Custom Glow-Drop POI Markers
-    places.forEach((p) => {
-      if (!p.latitude || !p.longitude) return;
+    // Determine if clustering should be active (>20 places)
+    const shouldCluster = places.length > 20;
 
-      const isSelected = selectedPlace?.id === p.id;
-      const markerIcon = createCrazyPoiIcon(p.category, isSelected);
+    if (shouldCluster) {
+      // Cluster rendering pass
+      markersGroup.clearLayers();
+      markersMap.clear();
 
-      const marker = L.marker([p.latitude, p.longitude], {
-        icon: markerIcon
-      }).addTo(markersGroup);
+      const map = mapInstanceRef.current;
+      const zoom = map.getZoom();
+      const clusters: { center: [number, number]; points: PlaceItem[] }[] = [];
+      const clusterDistancePx = 60;
 
-      marker.on('click', (e: L.LeafletMouseEvent) => {
-        if (e.originalEvent) {
-          e.originalEvent.stopPropagation();
+      places.forEach(p => {
+        if (!p.latitude || !p.longitude) return;
+        const pt = map.latLngToLayerPoint([p.latitude, p.longitude]);
+        let foundCluster = false;
+
+        for (const c of clusters) {
+          const cPt = map.latLngToLayerPoint(c.center);
+          const dist = Math.hypot(pt.x - cPt.x, pt.y - cPt.y);
+          if (dist < clusterDistancePx) {
+            c.points.push(p);
+            foundCluster = true;
+            break;
+          }
         }
-        setSelectedPlace(p);
-        mapInstanceRef.current?.panTo([p.latitude, p.longitude], { animate: true, duration: 0.5 });
+
+        if (!foundCluster) {
+          clusters.push({ center: [p.latitude, p.longitude], points: [p] });
+        }
       });
-    });
+
+      clusters.forEach((c) => {
+        if (c.points.length === 1) {
+          const p = c.points[0];
+          const isSelected = p.id === currentSelectedId;
+          const marker = L.marker([p.latitude, p.longitude], {
+            icon: createCrazyPoiIcon(p.category, isSelected)
+          }).addTo(markersGroup);
+
+          marker.on('click', (e: L.LeafletMouseEvent) => {
+            if (e.originalEvent) e.originalEvent.stopPropagation();
+            setSelectedPlace(p);
+          });
+          markersMap.set(p.id, marker);
+        } else {
+          const clusterMarker = L.marker(c.center, {
+            icon: createClusterIcon(c.points.length)
+          }).addTo(markersGroup);
+
+          clusterMarker.on('click', (e: L.LeafletMouseEvent) => {
+            if (e.originalEvent) e.originalEvent.stopPropagation();
+            map.setView(c.center, zoom + 2, { animate: true });
+          });
+        }
+      });
+    } else {
+      // High-performance Marker Diffing pass (Fix #4)
+      const currentPlaceIds = new Set(places.map(p => p.id));
+
+      // 1. Remove obsolete markers
+      markersMap.forEach((marker, id) => {
+        if (!currentPlaceIds.has(id)) {
+          markersGroup.removeLayer(marker);
+          markersMap.delete(id);
+        }
+      });
+
+      // 2. Add or update markers
+      places.forEach((p) => {
+        if (!p.latitude || !p.longitude) return;
+        const isSelected = p.id === currentSelectedId;
+        const existingMarker = markersMap.get(p.id);
+
+        if (!existingMarker) {
+          // Add new marker
+          const marker = L.marker([p.latitude, p.longitude], {
+            icon: createCrazyPoiIcon(p.category, isSelected)
+          }).addTo(markersGroup);
+
+          marker.on('click', (e: L.LeafletMouseEvent) => {
+            if (e.originalEvent) e.originalEvent.stopPropagation();
+            setSelectedPlace(p);
+            mapInstanceRef.current?.panTo([p.latitude, p.longitude], { animate: true, duration: 0.5 });
+          });
+
+          markersMap.set(p.id, marker);
+        } else {
+          // Update icon ONLY if selected state changed
+          const wasSelected = p.id === prevSelectedId;
+          if (isSelected !== wasSelected) {
+            existingMarker.setIcon(createCrazyPoiIcon(p.category, isSelected));
+          }
+        }
+      });
+    }
+
+    prevSelectedPlaceIdRef.current = currentSelectedId;
   }, [places, selectedPlace, userLocation, defaultCoords]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -340,6 +495,7 @@ export const MapView: React.FC = () => {
               type="button"
               onClick={() => {
                 if (mapInstanceRef.current && userLocation) {
+                  isProgrammaticMoveRef.current = true;
                   mapInstanceRef.current.setView(userLocation, 15, { animate: true });
                   setMapCenter(userLocation);
                   toggleFollowMode();
@@ -414,20 +570,24 @@ export const MapView: React.FC = () => {
           </form>
         </div>
 
-        {/* Category Navigation Pills */}
+        {/* Category Navigation Pills (Unified Taxonomy Fix #3) */}
         <div className="flex gap-2 overflow-x-auto no-scrollbar py-0.5 px-0.5">
           {[
-            { id: 'hotels', label: '🏨 Stays' },
-            { id: 'food', label: '🍽️ Food & Cafes' },
-            { id: 'activities', label: '🎯 Experiences' },
-            { id: 'all', label: '🗺️ All' }
+            { id: 'hotels', label: `${MAP_CATEGORY_CONFIG.hotels.emoji} ${MAP_CATEGORY_CONFIG.hotels.label}` },
+            { id: 'food', label: `${MAP_CATEGORY_CONFIG.food.emoji} ${MAP_CATEGORY_CONFIG.food.label}` },
+            { id: 'sights', label: `${MAP_CATEGORY_CONFIG.sights.emoji} ${MAP_CATEGORY_CONFIG.sights.label}` },
+            { id: 'experiences', label: `${MAP_CATEGORY_CONFIG.experiences.emoji} ${MAP_CATEGORY_CONFIG.experiences.label}` },
+            { id: 'all', label: `${MAP_CATEGORY_CONFIG.all.emoji} ${MAP_CATEGORY_CONFIG.all.label}` }
           ].map((cat) => {
             const isActive = activeCategory === cat.id;
             return (
               <button
                 key={cat.id}
                 type="button"
-                onClick={() => setActiveCategory(cat.id as any)}
+                onClick={() => {
+                  setActiveCategory(cat.id as any);
+                  fetchPlaces(mapCenter[0], mapCenter[1], cat.id, searchQuery);
+                }}
                 className={`press-scale shrink-0 px-4 py-1.5 rounded-full text-xs font-bold transition-all ${isActive
                   ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-extrabold shadow-lg shadow-emerald-500/25 ring-1 ring-white/20 border border-emerald-400/30'
                   : 'bg-slate-900/80 backdrop-blur-xl text-slate-300 border border-white/10 hover:bg-slate-800/80 hover:text-white'
@@ -464,12 +624,33 @@ export const MapView: React.FC = () => {
         </div>
       )}
 
+      {/* FETCH ERROR STATE & RETRY AFFORDANCE (Improvement #8) */}
+      {fetchError && !isLoading && (
+        <div className="absolute top-28 left-1/2 -translate-x-1/2 z-[1000] w-11/12 max-w-sm">
+          <div className="px-4 py-3 bg-slate-900/90 border border-rose-500/50 backdrop-blur-xl rounded-2xl text-xs text-rose-200 shadow-2xl flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+              <span className="truncate">{fetchError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => fetchPlaces(mapCenter[0], mapCenter[1], activeCategory, searchQuery)}
+              className="px-3 py-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 rounded-xl font-bold text-[11px] shrink-0 transition-colors flex items-center gap-1"
+            >
+              <RefreshCw className="w-3 h-3" />
+              <span>Retry</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* COMPASS / GPS RECENTER BUTTON */}
       {userLocation && (
         <button
           type="button"
           onClick={() => {
             if (mapInstanceRef.current && userLocation) {
+              isProgrammaticMoveRef.current = true;
               mapInstanceRef.current.setView(userLocation, 15, { animate: true });
               setMapCenter(userLocation);
               toggleFollowMode();
@@ -495,6 +676,8 @@ export const MapView: React.FC = () => {
               const isSelected = selectedPlace?.id === place.id;
               const distKm = place.distanceMeters ? (place.distanceMeters / 1000).toFixed(1) : '0.8';
               const coverImg = getPlaceImage(place.category, place.name);
+              const isAdded = addedPlaceIds.has(place.id);
+              const isAdding = addingPlaceId === place.id;
 
               return (
                 <div
@@ -502,14 +685,17 @@ export const MapView: React.FC = () => {
                   ref={(el) => { cardRefs.current[place.id] = el; }}
                   onClick={() => {
                     setSelectedPlace(place);
-                    mapInstanceRef.current?.panTo([place.latitude, place.longitude], { animate: true, duration: 0.5 });
+                    if (mapInstanceRef.current) {
+                      isProgrammaticMoveRef.current = true;
+                      mapInstanceRef.current.panTo([place.latitude, place.longitude], { animate: true, duration: 0.5 });
+                    }
                   }}
                   className={`snap-center shrink-0 w-80 h-36 rounded-2xl backdrop-blur-xl transition-all cursor-pointer border p-3 flex gap-3 ${isSelected
                     ? 'bg-slate-900/95 text-white border-emerald-500 ring-2 ring-emerald-500/30 shadow-[0_10px_30px_rgba(16,185,129,0.25)]'
                     : 'bg-slate-900/80 text-slate-200 border-white/10 shadow-2xl hover:bg-slate-900 hover:border-white/20'
                     }`}
                 >
-                  {/* Left Cover Photo (1/3 width) */}
+                  {/* Left Cover Photo */}
                   <div className="relative w-24 h-full rounded-xl overflow-hidden bg-slate-800 shrink-0">
                     <img
                       src={coverImg}
@@ -519,16 +705,16 @@ export const MapView: React.FC = () => {
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent" />
                     <span className="absolute top-1.5 left-1.5 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-slate-950/80 text-emerald-400 backdrop-blur-md border border-white/10">
-                      {place.category}
+                      {getCategoryConfig(place.category).label}
                     </span>
                   </div>
 
-                  {/* Right Card Content (2/3 width) */}
+                  {/* Right Card Content */}
                   <div className="flex-1 flex flex-col justify-between min-w-0">
                     <div>
                       <div className="flex items-center justify-between gap-1 text-[10px] font-bold text-slate-400">
                         <span className="uppercase text-emerald-400 font-extrabold tracking-wider truncate text-[9px]">
-                          {place.category}
+                          {getCategoryConfig(place.category).label}
                         </span>
                         {place.rating ? (
                           <span className="text-amber-400 font-extrabold flex items-center gap-0.5 shrink-0">
@@ -545,7 +731,8 @@ export const MapView: React.FC = () => {
                       <span className="text-xs font-bold text-emerald-300 truncate">
                         {place.price_approx || 'Verified Spot'}
                       </span>
-                      <div className="flex gap-2 shrink-0 items-center">
+                      <div className="flex gap-1.5 shrink-0 items-center">
+                        {/* Audio Guide Narration Button */}
                         <button
                           type="button"
                           onClick={(e) => handlePlayNarration(place, e)}
@@ -565,6 +752,8 @@ export const MapView: React.FC = () => {
                             <Volume2 className="w-3.5 h-3.5 text-amber-400" />
                           )}
                         </button>
+
+                        {/* Directions Button */}
                         <button
                           type="button"
                           onClick={(e) => {
@@ -578,16 +767,46 @@ export const MapView: React.FC = () => {
                         >
                           <ExternalLink className="w-3.5 h-3.5" />
                         </button>
+
+                        {/* Ride Button */}
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             openCabModal(place.name);
                           }}
-                          className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-slate-950 font-extrabold text-xs rounded-xl flex items-center gap-1.5 shadow-lg shadow-emerald-500/25 press-scale transition-all"
+                          className="px-2.5 py-1.5 bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-slate-950 font-extrabold text-xs rounded-xl flex items-center gap-1 shadow-lg shadow-emerald-500/25 press-scale transition-all"
                         >
                           <Car className="w-3.5 h-3.5" />
                           <span>Ride</span>
+                        </button>
+
+                        {/* Add to Itinerary Button (Improvement #6) */}
+                        <button
+                          type="button"
+                          onClick={(e) => handleAddToItinerary(place, e)}
+                          disabled={isAdded || isAdding}
+                          className={`px-2.5 py-1.5 rounded-xl font-extrabold text-xs flex items-center gap-1 transition-all press-scale ${
+                            isAdded
+                              ? 'bg-teal-500/20 text-teal-300 border border-teal-500/40'
+                              : 'bg-white/10 hover:bg-white/20 text-slate-200 border border-white/10'
+                          }`}
+                          title="Add to Itinerary"
+                          aria-label="Add to Itinerary"
+                        >
+                          {isAdding ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-400" />
+                          ) : isAdded ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-teal-400" />
+                              <span>Added</span>
+                            </>
+                          ) : (
+                            <>
+                              <Plus className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>Itinerary</span>
+                            </>
+                          )}
                         </button>
                       </div>
                     </div>
@@ -596,7 +815,7 @@ export const MapView: React.FC = () => {
               );
             })}
           </div>
-        ) : !isLoading && (
+        ) : !isLoading && !fetchError && (
           <div className="p-4 bg-slate-900/85 border border-white/10 backdrop-blur-xl rounded-2xl text-center text-xs font-medium text-slate-300 shadow-2xl">
             No places found nearby. Try dragging the map or tapping "Search this area".
           </div>
