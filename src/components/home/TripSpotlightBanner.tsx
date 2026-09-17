@@ -22,7 +22,7 @@ export const TripSpotlightBanner: React.FC<{
   destination: string;
   dates?: string;
   isLocalMode: boolean;
-}> = ({ destination, dates = "Upcoming", isLocalMode }) => {
+}> = ({ destination = "Goa", dates = "Upcoming", isLocalMode }) => {
   const [data, setData] = useState<{ destination: string; famous_activities: Activity[]; upcoming_events: UpcomingEvent[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [addingId, setAddingId] = useState<string | null>(null);
@@ -31,9 +31,10 @@ export const TripSpotlightBanner: React.FC<{
   useEffect(() => {
     let isMounted = true;
     setLoading(true);
+    const targetDest = destination || 'Goa';
     const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
-    fetch(`${baseUrl}/api/trips/${encodeURIComponent(destination)}/highlights`)
+    fetch(`${baseUrl}/api/trips/${encodeURIComponent(targetDest)}/highlights`)
       .then((res) => res.json())
       .then((json) => {
         if (isMounted) setData(json);
