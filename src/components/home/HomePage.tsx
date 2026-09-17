@@ -97,8 +97,8 @@ export const HomePage: React.FC = () => {
 
       {/* 2.5. Dedicated Trip Spotlight Banner (Must-Do Activities & Events) */}
       <TripSpotlightBanner
-        tripDestination={currentTrip?.destination?.name || currentTrip?.title || 'Goa'}
-        tripDates={currentTrip ? `${currentTrip.startDate || 'Oct 12'} - ${currentTrip.endDate || 'Oct 16'}` : 'Oct 12 - Oct 16'}
+        destination={currentTrip?.destination?.name || currentTrip?.title || 'Goa'}
+        dates={currentTrip ? `${currentTrip.startDate || 'Oct 12'} - ${currentTrip.endDate || 'Oct 16'}` : 'Oct 12 - Oct 16'}
         isLocalMode={true}
       />
 

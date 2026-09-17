@@ -1825,12 +1825,35 @@ async def ai_concierge_endpoint(req: ConciergeRequest):
         "source": "http_fallback"
     }
 
-# ── TRIP HIGHLIGHTS ENDPOINT ──
+# ── TRIP HIGHLIGHTS & ITINERARY ADD ENDPOINTS ──
 
 @app.get("/api/trips/{destination}/highlights")
 def get_trip_highlights_endpoint(destination: str):
-    from places import get_destination_highlights
-    return get_destination_highlights(destination)
+    from trips_service import get_destination_spotlight
+    from redis_client import redis_conn
+    return get_destination_spotlight(destination, redis_conn)
+
+class AddItineraryItemRequest(BaseModel):
+    trip_id: Optional[str] = "active_trip"
+    destination: str
+    item_id: str
+    title: str
+    location: str
+    tag: str
+    price: str
+
+@app.post("/api/trips/itinerary/add")
+def add_to_itinerary(req: AddItineraryItemRequest):
+    from redis_client import redis_conn
+    itinerary_key = f"trip:itinerary:{req.trip_id}"
+    item_payload = json.dumps(req.dict())
+    
+    try:
+        redis_conn.rpush(itinerary_key, item_payload)
+    except Exception as e:
+        print(f"⚠️ [REDIS ITINERARY WARN] {e}", flush=True)
+        
+    return {"status": "success", "message": f"Added '{req.title}' to itinerary!"}
 
 # ── TRIP DOMAIN ENDPOINTS ──
 
