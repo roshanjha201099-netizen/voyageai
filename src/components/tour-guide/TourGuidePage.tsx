@@ -99,7 +99,10 @@ export const TourGuidePage: React.FC = () => {
       if (res.proactive_alert) {
         setProactiveAlert(res.proactive_alert);
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.message?.includes('Superceded') || err?.message?.includes('superceded')) {
+        return;
+      }
       console.warn('[TOUR GUIDE] Nearby fetch error:', err);
     } finally {
       setIsLoadingNearby(false);

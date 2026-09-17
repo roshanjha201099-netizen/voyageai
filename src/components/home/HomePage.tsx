@@ -63,7 +63,10 @@ export const HomePage: React.FC = () => {
           setIsLoadingNearby(false);
           return;
         }
-      } catch (err) {
+      } catch (err: any) {
+        if (err?.message?.includes('Superceded') || err?.message?.includes('superceded')) {
+          return;
+        }
         console.warn('Failed to fetch dynamic nearby places:', err);
       }
 
