@@ -38,10 +38,10 @@ export const getWsBaseUrl = (endpointPath: string = '/ws/app'): string => {
   let baseWs = '';
 
   if (envWsUrl && envWsUrl.trim().length > 0) {
-    baseWs = envWsUrl.replace(/\/$/, '');
+    baseWs = envWsUrl.trim().replace(/\/ws\/?$/, '').replace(/\/$/, '');
   } else {
     const apiBase = getApiBaseUrl();
-    baseWs = apiBase.replace(/^http/, 'ws');
+    baseWs = apiBase.replace(/^http/, 'ws').replace(/\/ws\/?$/, '').replace(/\/$/, '');
   }
 
   const cleanPath = endpointPath.startsWith('/') ? endpointPath : `/${endpointPath}`;
