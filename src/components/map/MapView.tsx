@@ -164,7 +164,11 @@ export const MapView: React.FC = () => {
         params.append('q', query.trim());
       }
 
-      const res = await fetch(`${baseUrl}/api/places/nearby?${params.toString()}`);
+      const res = await fetch(`${baseUrl}/api/places/nearby?${params.toString()}`, {
+        headers: {
+          'ngrok-skip-browser-warning': 'true'
+        }
+      });
       if (res.ok) {
         const data = await res.json();
         const cleanList: PlaceItem[] = (Array.isArray(data) ? data : []).map((p: any, idx: number) => ({
