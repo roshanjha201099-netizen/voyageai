@@ -1,37 +1,45 @@
-import { useRef, useCallback, useState } from 'react';
+import { useState, useRef, useCallback } from 'react';
+import { getApiBaseUrl, DEFAULT_HEADERS } from '../config/apiConfig';
 
 export const useAudioGuide = () => {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const playBase64Audio = useCallback((base64String: string) => {
+  const stopAudio = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      audioRef.current = null;
+    }
+    setIsPlaying(false);
+  }, []);
+
+  const playBase64Audio = useCallback((base64Data: string) => {
+    stopAudio();
     try {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
-
-      const audioSrc = `data:audio/wav;base64,${base64String}`;
-      const audio = new Audio(audioSrc);
+      const audioUrl = base64Data.startsWith('data:audio') ? base64Data : `data:audio/mp3;base64,${base64Data}`;
+      const audio = new Audio(audioUrl);
       audioRef.current = audio;
 
-      audio.onplay = () => setIsPlaying(true);
-      audio.onended = () => setIsPlaying(false);
-      audio.onerror = (e) => {
-        console.error('Audio playback error event:', e);
+      audio.onended = () => {
         setIsPlaying(false);
+        audioRef.current = null;
       };
 
-      audio.play().catch((err) => {
-        console.warn('Audio auto-play blocked by browser policy:', err);
+      audio.onerror = (e) => {
+        console.error('Audio playback error:', e);
         setIsPlaying(false);
-      });
+        audioRef.current = null;
+      };
+
+      audio.play();
+      setIsPlaying(true);
     } catch (err) {
-      console.error('Audio playback error:', err);
+      console.error('Failed to play base64 audio:', err);
       setIsPlaying(false);
     }
-  }, []);
+  }, [stopAudio]);
 
   const synthesizeAndPlay = useCallback(async (
     text: string,
@@ -42,13 +50,10 @@ export const useAudioGuide = () => {
     if (!text || !text.trim()) return;
     setIsLoading(true);
     try {
-      const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const res = await fetch(`${baseUrl}/api/tts/synthesize`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true'
-        },
+        headers: DEFAULT_HEADERS,
         body: JSON.stringify({
           text: text.slice(0, 480),
           target_language_code: targetLanguageCode,
@@ -71,14 +76,6 @@ export const useAudioGuide = () => {
       setIsLoading(false);
     }
   }, [playBase64Audio]);
-
-  const stopAudio = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
-    }
-    setIsPlaying(false);
-  }, []);
 
   return { playBase64Audio, synthesizeAndPlay, stopAudio, isPlaying, isLoading };
 };

@@ -1,25 +1,8 @@
 import type { SessionData, LoginPayload, OnboardingUpdatePayload } from './types';
 import { wsClient } from '../services/wsClient';
+import { getApiBaseUrl, DEFAULT_HEADERS, getAuthHeaders } from '../config/apiConfig';
 
 const SESSION_CACHE_KEY = 'voyageai_session_data';
-
-const getApiBaseUrl = (): string => {
-  const envApiUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL;
-  if (envApiUrl) {
-    return envApiUrl;
-  }
-  const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-  if (isLocalhost) {
-    const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
-    return `${protocol}//${window.location.hostname}`;
-  }
-  return 'https://4cde-2401-4900-8927-d7dc-592f-ffed-ca7b-155f.ngrok-free.app';
-};
-
-const DEFAULT_HEADERS = {
-  'Content-Type': 'application/json',
-  'ngrok-skip-browser-warning': 'true'
-};
 
 export const authService = {
   clearSessionCache() {
@@ -40,12 +23,7 @@ export const authService = {
   },
 
   getAuthHeaders(): Record<string, string> {
-    const cached = this.getCachedSession();
-    const headers: Record<string, string> = { ...DEFAULT_HEADERS };
-    if (cached?.token) {
-      headers['Authorization'] = `Bearer ${cached.token}`;
-    }
-    return headers;
+    return getAuthHeaders();
   },
 
   async login(payload: LoginPayload): Promise<SessionData> {

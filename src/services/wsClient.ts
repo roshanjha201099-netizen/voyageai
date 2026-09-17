@@ -38,6 +38,8 @@ interface PendingRequest {
 
 const DEFAULT_TIMEOUT_MS = 20000;
 
+import { getWsBaseUrl } from '../config/apiConfig';
+
 class WebSocketClient {
   private ws: WebSocket | null = null;
   private url: string;
@@ -55,29 +57,7 @@ class WebSocketClient {
   private resolveReady: (() => void) | null = null;
 
   constructor() {
-    const envWsUrl = import.meta.env.VITE_WS_BASE_URL || import.meta.env.VITE_WS_URL;
-    const envApiUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL;
-
-    if (envWsUrl) {
-      this.url = envWsUrl.endsWith('/ws') || envWsUrl.endsWith('/ws/app') ? envWsUrl : `${envWsUrl.replace(/\/$/, '')}/ws/app`;
-    } else if (envApiUrl) {
-      const cleanApi = envApiUrl.replace(/^http/, 'ws').replace(/\/$/, '');
-      this.url = `${cleanApi}/ws/app`;
-    } else {
-      const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-      if (isLocalhost) {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        this.url = `${protocol}//${window.location.hostname}/ws/app`;
-      } else {
-        this.url = 'wss://4cde-2401-4900-8927-d7dc-592f-ffed-ca7b-155f.ngrok-free.app/ws/app';
-      }
-    }
-
-    if (this.url.includes('ngrok') && !this.url.includes('ngrok-skip-browser-warning')) {
-      const sep = this.url.includes('?') ? '&' : '?';
-      this.url = `${this.url}${sep}ngrok-skip-browser-warning=true`;
-    }
-
+    this.url = getWsBaseUrl('/ws/app');
     this.connect();
   }
 

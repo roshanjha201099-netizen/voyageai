@@ -75,7 +75,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://tour-guide-v1.netlify.app",
-        "https://4cde-2401-4900-8927-d7dc-592f-ffed-ca7b-155f.ngrok-free.app",
+        "https://3e2c-2401-4900-8927-d7dc-55d7-788c-2c5f-c63d.ngrok-free.app",
         "http://localhost",
         "http://127.0.0.1",
         "http://localhost:5173",

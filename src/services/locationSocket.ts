@@ -4,6 +4,8 @@
  * Handles automatic reconnection with exponential backoff and trip subscription broadcasting.
  */
 
+import { getWsBaseUrl } from '../config/apiConfig';
+
 export interface LocationSocketPayload {
   type: 'location_update';
   latitude: number;
@@ -65,33 +67,12 @@ class LocationSocketClient {
     }
 
     this.isConnecting = true;
-    const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-    const envWsUrl = import.meta.env.VITE_WS_BASE_URL || import.meta.env.VITE_WS_URL;
-    const envApiUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL;
+    let url = getWsBaseUrl('/ws/location');
 
-    let baseUrl = '';
-    if (isLocalhost) {
-      baseUrl = 'ws://localhost/ws/location';
-    } else if (envWsUrl) {
-      const cleanUrl = envWsUrl.replace(/\/ws.*$/, '');
-      baseUrl = `${cleanUrl}/ws/location`;
-    } else if (envApiUrl) {
-      const cleanApi = envApiUrl.replace(/^http/, 'ws').replace(/\/$/, '');
-      baseUrl = `${cleanApi}/ws/location`;
-    } else {
-      baseUrl = 'wss://4cde-2401-4900-8927-d7dc-592f-ffed-ca7b-155f.ngrok-free.app/ws/location';
-    }
-
-    const params = new URLSearchParams();
     if (this.currentTripId) {
-      params.append('trip_id', this.currentTripId);
+      const sep = url.includes('?') ? '&' : '?';
+      url = `${url}${sep}trip_id=${encodeURIComponent(this.currentTripId)}`;
     }
-    if (baseUrl.includes('ngrok')) {
-      params.append('ngrok-skip-browser-warning', 'true');
-    }
-
-    const paramStr = params.toString();
-    const url = paramStr ? `${baseUrl}?${paramStr}` : baseUrl;
 
     console.log(`[LOCATION SOCKET] Connecting to ${url}...`);
 

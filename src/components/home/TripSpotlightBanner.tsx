@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Compass, Calendar, Sparkles, MapPin, Plus, Check, Loader2 } from 'lucide-react';
+import { Sparkles, Calendar, MapPin, Plus, Check, Compass, Loader2 } from 'lucide-react';
+import { getApiBaseUrl, DEFAULT_HEADERS } from '../../config/apiConfig';
 
 interface Activity {
   id: string;
@@ -32,10 +33,10 @@ export const TripSpotlightBanner: React.FC<{
     let isMounted = true;
     setLoading(true);
     const targetDest = destination || 'Goa';
-    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    const baseUrl = getApiBaseUrl();
 
     fetch(`${baseUrl}/api/trips/${encodeURIComponent(targetDest)}/highlights`, {
-      headers: { 'ngrok-skip-browser-warning': 'true' }
+      headers: DEFAULT_HEADERS
     })
       .then((res) => res.json())
       .then((json) => {
@@ -53,7 +54,7 @@ export const TripSpotlightBanner: React.FC<{
 
   const handleAddToItinerary = async (item: Activity | UpcomingEvent, itemType: 'activity' | 'event') => {
     setAddingId(item.id);
-    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    const baseUrl = getApiBaseUrl();
 
     try {
       const payload = {
@@ -68,10 +69,7 @@ export const TripSpotlightBanner: React.FC<{
 
       const res = await fetch(`${baseUrl}/api/trips/itinerary/add`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true'
-        },
+        headers: DEFAULT_HEADERS,
         body: JSON.stringify(payload),
       });
 

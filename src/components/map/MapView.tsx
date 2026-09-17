@@ -7,6 +7,7 @@ import {
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useNavigate } from 'react-router-dom';
+import { getApiBaseUrl, DEFAULT_HEADERS } from '../../config/apiConfig';
 import { useAudioGuide } from '../../hooks/useAudioGuide';
 
 export interface PlaceItem {
@@ -75,13 +76,10 @@ export const MapView: React.FC = () => {
 
     setAudioLoadingId(place.id);
     try {
-      const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const res = await fetch(`${baseUrl}/api/tts/speak`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true' 
-        },
+        headers: DEFAULT_HEADERS,
         body: JSON.stringify({
           place_name: place.name,
           category: place.category,
@@ -153,7 +151,7 @@ export const MapView: React.FC = () => {
     setIsLoading(true);
     setShowSearchAreaBtn(false);
     try {
-      const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const baseUrl = getApiBaseUrl();
       const params = new URLSearchParams({
         lat: lat.toString(),
         lng: lng.toString(),
@@ -165,9 +163,7 @@ export const MapView: React.FC = () => {
       }
 
       const res = await fetch(`${baseUrl}/api/places/nearby?${params.toString()}`, {
-        headers: {
-          'ngrok-skip-browser-warning': 'true'
-        }
+        headers: DEFAULT_HEADERS
       });
       if (res.ok) {
         const data = await res.json();
