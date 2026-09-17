@@ -350,6 +350,7 @@ def login(req: LoginRequest, response: Response, db: Session = Depends(get_db)):
             path="/"
         )
         return {
+            "token": token,
             "authUser": auth_user,
             "userProfile": user_profile,
             "userPreferences": user_prefs
@@ -369,6 +370,7 @@ def get_session(
         user_tuple = auth.get_session_user(db, token)
         auth_user, user_profile, user_prefs = user_tuple
         return {
+            "token": token,
             "authUser": auth_user,
             "userProfile": user_profile,
             "userPreferences": user_prefs

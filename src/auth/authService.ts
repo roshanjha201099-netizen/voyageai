@@ -39,6 +39,15 @@ export const authService = {
     }
   },
 
+  getAuthHeaders(): Record<string, string> {
+    const cached = this.getCachedSession();
+    const headers: Record<string, string> = { ...DEFAULT_HEADERS };
+    if (cached?.token) {
+      headers['Authorization'] = `Bearer ${cached.token}`;
+    }
+    return headers;
+  },
+
   async login(payload: LoginPayload): Promise<SessionData> {
     const url = `${getApiBaseUrl()}/api/auth/login`;
     try {
@@ -73,11 +82,12 @@ export const authService = {
   },
 
   async restoreSession(): Promise<SessionData | null> {
+    const cached = this.getCachedSession();
     const url = `${getApiBaseUrl()}/api/auth/session`;
     try {
       const response = await fetch(url, {
         method: 'GET',
-        headers: DEFAULT_HEADERS,
+        headers: this.getAuthHeaders(),
         credentials: 'include',
       });
 
@@ -94,7 +104,7 @@ export const authService = {
     } catch (err) {
       console.warn('REST session restore error, trying WS fallback', err);
       try {
-        const wsData: SessionData = await wsClient.sendRequest('auth:session', {});
+        const wsData: SessionData = await wsClient.sendRequest('auth:session', { token: cached?.token });
         if (wsData && wsData.authUser) {
           this.saveCachedSession(wsData);
           return wsData;
@@ -113,7 +123,7 @@ export const authService = {
     try {
       await fetch(url, {
         method: 'POST',
-        headers: DEFAULT_HEADERS,
+        headers: this.getAuthHeaders(),
         credentials: 'include',
       });
     } catch (e) {
@@ -135,7 +145,7 @@ export const authService = {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: DEFAULT_HEADERS,
+        headers: this.getAuthHeaders(),
         body: JSON.stringify(payload),
         credentials: 'include',
       });
