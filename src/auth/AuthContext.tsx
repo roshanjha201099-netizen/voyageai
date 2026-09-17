@@ -14,7 +14,19 @@ interface AuthContextType {
   restoreSession: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const defaultAuthContext: AuthContextType = {
+  authUser: null,
+  userProfile: null,
+  userPreferences: null,
+  isAuthenticated: false,
+  isLoading: false,
+  signIn: async () => {},
+  signOut: async () => {},
+  updateOnboarding: async () => {},
+  restoreSession: async () => {},
+};
+
+const AuthContext = createContext<AuthContextType>(defaultAuthContext);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
@@ -98,6 +110,5 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) throw new Error('useAuth must be used within AuthProvider');
-  return context;
+  return context || defaultAuthContext;
 };
