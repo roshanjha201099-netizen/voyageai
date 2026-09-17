@@ -40,12 +40,36 @@ export interface AppNavigation {
   openInAppNavigation: (target: NavigationTarget, navigateFn?: (path: string) => void) => void;
 }
 
+export interface MapFocusTarget {
+  id: string;
+  name: string;
+  category?: string;
+  coordinates: [number, number]; // [lat, lng]
+  zoom?: number;
+  highlight?: boolean;
+  address?: string;
+}
+
+export interface EventItem {
+  id: string;
+  title: string;
+  date: string;
+  time: string;
+  location: string;
+  coordinates: [number, number];
+  category: string;
+  image: string;
+  price: number;
+  description: string;
+  tag?: string;
+}
+
 export interface ActivityItem {
   id: string;
   time: string;
   duration: string;
   title: string;
-  category: 'flight' | 'cab' | 'hotel' | 'food' | 'beach' | 'culture' | 'nightlife' | 'activity';
+  category: 'flight' | 'cab' | 'hotel' | 'food' | 'beach' | 'culture' | 'nightlife' | 'activity' | 'Adventure' | 'Heritage' | 'Culinary' | 'Sights' | string;
   location: string;
   coordinates: [number, number];
   cost: number;
@@ -54,6 +78,8 @@ export interface ActivityItem {
   bookingRef?: string;
   isBooked?: boolean;
   isCompleted?: boolean;
+  tag?: string;
+  rating?: number;
 }
 
 export interface ItineraryDay {

@@ -4,6 +4,8 @@ import { AppProvider, useApp } from './context/AppContext';
 import { AuthProvider } from './auth/AuthContext';
 import { AuthGuard } from './auth/AuthGuard';
 import { TripProvider } from './features/trip/TripContext';
+import { NavigationProvider } from './context/NavigationContext';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 
 import { LoginScreen } from './onboarding/LoginScreen';
 import { OnboardingContainer } from './onboarding/OnboardingContainer';
@@ -144,52 +146,52 @@ const AppShell: React.FC = () => {
   );
 };
 
-import { ErrorBoundary } from './components/common/ErrorBoundary';
-
 export default function App() {
   return (
     <ErrorBoundary>
       <BrowserRouter>
-        <AuthProvider>
-          <TripProvider>
-            <AppProvider>
-              <Routes>
-                {/* Public Auth Route */}
-                <Route path="/login" element={<LoginScreen />} />
+        <NavigationProvider>
+          <AuthProvider>
+            <TripProvider>
+              <AppProvider>
+                <Routes>
+                  {/* Public Auth Route */}
+                  <Route path="/login" element={<LoginScreen />} />
 
-                {/* Protected Onboarding Flow */}
-                <Route
-                  path="/onboarding"
-                  element={
-                    <AuthGuard>
-                      <OnboardingContainer />
-                    </AuthGuard>
-                  }
-                />
+                  {/* Protected Onboarding Flow */}
+                  <Route
+                    path="/onboarding"
+                    element={
+                      <AuthGuard>
+                        <OnboardingContainer />
+                      </AuthGuard>
+                    }
+                  />
 
-                {/* Protected Trip Creation Wizard Route */}
-                <Route
-                  path="/trips/new"
-                  element={
-                    <AuthGuard>
-                      <TripCreationWizard />
-                    </AuthGuard>
-                  }
-                />
+                  {/* Protected Trip Creation Wizard Route */}
+                  <Route
+                    path="/trips/new"
+                    element={
+                      <AuthGuard>
+                        <TripCreationWizard />
+                      </AuthGuard>
+                    }
+                  />
 
-                {/* Protected Main App Shell */}
-                <Route
-                  path="/*"
-                  element={
-                    <AuthGuard>
-                      <AppShell />
-                    </AuthGuard>
-                  }
-                />
-              </Routes>
-            </AppProvider>
-          </TripProvider>
-        </AuthProvider>
+                  {/* Protected Main App Shell */}
+                  <Route
+                    path="/*"
+                    element={
+                      <AuthGuard>
+                        <AppShell />
+                      </AuthGuard>
+                    }
+                  />
+                </Routes>
+              </AppProvider>
+            </TripProvider>
+          </AuthProvider>
+        </NavigationProvider>
       </BrowserRouter>
     </ErrorBoundary>
   );
