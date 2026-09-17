@@ -1825,6 +1825,13 @@ async def ai_concierge_endpoint(req: ConciergeRequest):
         "source": "http_fallback"
     }
 
+# ── TRIP HIGHLIGHTS ENDPOINT ──
+
+@app.get("/api/trips/{destination}/highlights")
+def get_trip_highlights_endpoint(destination: str):
+    from places import get_destination_highlights
+    return get_destination_highlights(destination)
+
 # ── TRIP DOMAIN ENDPOINTS ──
 
 @app.get("/api/trips", dependencies=[Depends(general_limiter)])

@@ -288,3 +288,132 @@ def search_local_amenities(query: str, lat: float, lon: float, radius_km: float 
         print(f"⚠️ [LOCAL SEARCH ERROR]: {e}", flush=True)
 
     return results
+
+DESTINATION_HIGHLIGHTS_DB = {
+    "goa": {
+        "destination": "Goa",
+        "famous_activities": [
+            {
+                "id": "goa_act_1",
+                "title": "Baga Beach Scuba & Water Sports",
+                "category": "Water Sports",
+                "tag": "Must Try",
+                "price": "₹1,800/person",
+                "location": "Baga, North Goa"
+            },
+            {
+                "id": "goa_act_2",
+                "title": "Mandovi River Sunset Luxury Cruise",
+                "category": "Cruises",
+                "tag": "Top Rated",
+                "price": "₹950/person",
+                "location": "Panaji Jetty, Goa"
+            },
+            {
+                "id": "goa_act_3",
+                "title": "Fontainhas Latin Quarter Heritage Walk",
+                "category": "Heritage",
+                "tag": "Cultural",
+                "price": "₹499/person",
+                "location": "Old Goa, Panaji"
+            },
+            {
+                "id": "goa_act_4",
+                "title": "Dudhsagar Waterfalls & Spice Tour",
+                "category": "Nature",
+                "tag": "Adventure",
+                "price": "₹1,450/person",
+                "location": "Mollem National Park"
+            }
+        ],
+        "upcoming_events": [
+            {
+                "id": "goa_evt_1",
+                "title": "Sunburn EDM Music Festival Live",
+                "date": "Oct 14 - Oct 16",
+                "venue": "Vagator Beach Arena, Goa"
+            }
+        ]
+    },
+    "darbhanga": {
+        "destination": "Darbhanga",
+        "famous_activities": [
+            {
+                "id": "dar_act_1",
+                "title": "Darbhanga Fort & Raj Parisar Walk",
+                "category": "Heritage",
+                "tag": "Historical",
+                "price": "Free Entry",
+                "location": "Raj Parisar, Darbhanga"
+            },
+            {
+                "id": "dar_act_2",
+                "title": "Madhubani Art & Craft Workshop",
+                "category": "Culture",
+                "tag": "Authentic",
+                "price": "₹350/person",
+                "location": "Ranti Village, Madhubani"
+            },
+            {
+                "id": "dar_act_3",
+                "title": "Shyama Kali Temple Evening Aarti",
+                "category": "Spiritual",
+                "tag": "Devotional",
+                "price": "Free Entry",
+                "location": "Kameshwar Nagar"
+            }
+        ],
+        "upcoming_events": [
+            {
+                "id": "dar_evt_1",
+                "title": "Mithila Cultural & Folk Festival",
+                "date": "Oct 20 - Oct 22",
+                "venue": "Town Hall, Darbhanga"
+            }
+        ]
+    }
+}
+
+def get_destination_highlights(destination: str) -> Dict[str, Any]:
+    dest_key = (destination or "Goa").lower().strip()
+    if dest_key in DESTINATION_HIGHLIGHTS_DB:
+        return DESTINATION_HIGHLIGHTS_DB[dest_key]
+    
+    dest_title = destination.strip().title() if destination else "Upcoming Destination"
+    return {
+        "destination": dest_title,
+        "famous_activities": [
+            {
+                "id": f"{dest_key}_act_1",
+                "title": f"Top Landmarks & Heritage Walk in {dest_title}",
+                "category": "Sightseeing",
+                "tag": "Must See",
+                "price": "₹450/person",
+                "location": f"Central {dest_title}"
+            },
+            {
+                "id": f"{dest_key}_act_2",
+                "title": f"Authentic Local Food & Market Tour",
+                "category": "Food & Dining",
+                "tag": "Top Rated",
+                "price": "₹650/person",
+                "location": f"Main Market, {dest_title}"
+            },
+            {
+                "id": f"{dest_key}_act_3",
+                "title": f"Cultural Performance & Evening Show",
+                "category": "Culture",
+                "tag": "Trending",
+                "price": "₹800/person",
+                "location": f"Cultural Centre, {dest_title}"
+            }
+        ],
+        "upcoming_events": [
+            {
+                "id": f"{dest_key}_evt_1",
+                "title": f"Live Evening Fest & Food Mela in {dest_title}",
+                "date": "Upcoming Weekend",
+                "venue": f"City Centre, {dest_title}"
+            }
+        ]
+    }

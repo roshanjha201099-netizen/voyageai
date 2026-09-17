@@ -3,6 +3,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { useTrip } from '../../features/trip/TripContext';
 import { useApp } from '../../context/AppContext';
 import { ContextSwitcher } from '../common/ContextSwitcher';
+import { TripSpotlightBanner } from './TripSpotlightBanner';
 import { AskVoyageAICard } from '../ai/AskVoyageAICard';
 import { PlaceDetailSheet, type PlaceDetailItem } from '../common/PlaceDetailSheet';
 import { MapPin, Navigation, Sparkles, Calendar, ArrowRight, Star, RefreshCw } from 'lucide-react';
@@ -93,6 +94,13 @@ export const HomePage: React.FC = () => {
 
       {/* 2. One-Tap Context Switcher (Near You vs Active Trip) */}
       <ContextSwitcher />
+
+      {/* 2.5. Dedicated Trip Spotlight Banner (Must-Do Activities & Events) */}
+      <TripSpotlightBanner
+        tripDestination={currentTrip?.destination?.name || currentTrip?.title || 'Goa'}
+        tripDates={currentTrip ? `${currentTrip.startDate || 'Oct 12'} - ${currentTrip.endDate || 'Oct 16'}` : 'Oct 12 - Oct 16'}
+        isLocalMode={true}
+      />
 
       {/* 3. Prominent Ask VoyageAI Interactive Assistant */}
       <AskVoyageAICard />
