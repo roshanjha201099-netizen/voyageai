@@ -44,22 +44,45 @@ def start_worker():
 
             # item is a tuple: (queue_name, popped_value_string)
             _, raw_payload = item
-            job = json.loads(raw_payload)
-            trip_id = job.get("trip_id")
-
-            if not trip_id:
-                logger.warning(f"Malformed job payload received: {raw_payload}")
+            try:
+                job = json.loads(raw_payload) if isinstance(raw_payload, str) else raw_payload
+            except Exception as e:
+                logger.warning(f"Malformed JSON payload: {raw_payload} | Error: {e}")
                 continue
 
-            logger.info(f"Picked up job for trip_id: {trip_id}")
-            print(f"\n[WORKER RUNNING] Processing AI Itinerary for trip: {trip_id}", flush=True)
+            if not isinstance(job, dict):
+                logger.warning(f"Malformed job payload (not a dict): {raw_payload}")
+                continue
 
-            # Execute the cache lookup / AI generation / PostgreSQL copy pipeline
-            process_async_itinerary_generation(trip_id, SessionLocal)
+            action = job.get("action")
 
-            # Publish completion event
-            publish_trip_event(trip_id=trip_id, status="READY", event_type="ITINERARY_READY")
-            print(f"[WORKER COMPLETED] Trip {trip_id} generated and published.\n", flush=True)
+            # 1. Background POI Discovery Task
+            if action == "FETCH_POIS":
+                lat = job.get("lat")
+                lng = job.get("lng")
+                radius_m = job.get("radius_m", 5000)
+                category = job.get("category", "all")
+
+                if lat is not None and lng is not None:
+                    logger.info(f"Picked up POI fetch job for ({lat}, {lng}) category={category}")
+                    print(f"\n[WORKER RUNNING] Fetching background POIs for ({lat}, {lng}) [{category}]", flush=True)
+                    from tour_guide_service import fetch_and_cache_pois_task
+                    fetch_and_cache_pois_task(float(lat), float(lng), int(radius_m), str(category))
+                    print(f"[WORKER COMPLETED] POI fetch for ({lat}, {lng}) completed.\n", flush=True)
+                else:
+                    logger.warning(f"Malformed FETCH_POIS job (missing coords): {job}")
+
+            # 2. Trip Itinerary Generation Tasks
+            elif (action in ["GENERATE_ITINERARY", None]) and job.get("trip_id"):
+                trip_id = job.get("trip_id")
+                logger.info(f"Picked up job for trip_id: {trip_id}")
+                print(f"\n[WORKER RUNNING] Processing AI Itinerary for trip: {trip_id}", flush=True)
+                process_async_itinerary_generation(trip_id, SessionLocal)
+                publish_trip_event(trip_id=trip_id, status="READY", event_type="ITINERARY_READY")
+                print(f"[WORKER COMPLETED] Trip {trip_id} generated and published.\n", flush=True)
+
+            else:
+                logger.warning(f"Malformed job payload received: {raw_payload}")
 
         except Exception as e:
             logger.error(f"[WORKER ERROR] Job failed: {e}")

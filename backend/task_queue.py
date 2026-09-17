@@ -34,3 +34,22 @@ def publish_trip_event(trip_id: str, status: str, event_type: str = "ITINERARY_R
     except Exception as e:
         logger.warning(f"[EVENT PUBLISH WARN] Failed to publish event: {e}")
         print(f"[EVENT PUBLISH WARN] Failed to publish event: {e}", flush=True)
+
+def enqueue_poi_fetch(lat: float, lng: float, radius_m: int = 5000, category: str = "all") -> bool:
+    """Pushes a POI discovery job onto the Redis queue for worker execution."""
+    try:
+        payload = json.dumps({
+            "action": "FETCH_POIS",
+            "lat": lat,
+            "lng": lng,
+            "radius_m": radius_m,
+            "category": category
+        })
+        redis_conn.lpush(TASK_QUEUE_KEY, payload)
+        logger.info(f"[TASK ENQUEUED] POI Fetch ({lat}, {lng}) category={category}")
+        print(f">>> [TASK QUEUE] Enqueued POI fetch for ({lat}, {lng}) cat={category}", flush=True)
+        return True
+    except Exception as e:
+        logger.error(f"[TASK QUEUE ERROR] Failed to enqueue POI task: {e}")
+        print(f"[TASK QUEUE ERROR] Failed to enqueue POI task: {e}", flush=True)
+        return False

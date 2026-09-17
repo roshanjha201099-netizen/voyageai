@@ -1,5 +1,5 @@
-import React from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { AppProvider, useApp } from './context/AppContext';
 import { AuthProvider } from './auth/AuthContext';
 import { AuthGuard } from './auth/AuthGuard';
@@ -34,7 +34,15 @@ import { ItineraryView } from './components/itinerary/ItineraryView';
 import { RefreshCw, AlertTriangle } from 'lucide-react';
 
 const MainContent: React.FC = () => {
-  const { appUIState, setAppUIState, navigationTarget, tripView } = useApp();
+  const { appUIState, setAppUIState, navigationTarget, setNavigationTarget, tripView, setTripView } = useApp();
+  const location = useLocation();
+
+  useEffect(() => {
+    if (location.pathname !== '/map' && location.pathname !== '/trip/map') {
+      if (navigationTarget) setNavigationTarget(null);
+      if (tripView === 'map') setTripView('home');
+    }
+  }, [location.pathname, navigationTarget, tripView, setNavigationTarget, setTripView]);
 
   if (appUIState === 'loading') {
     return (
@@ -61,7 +69,7 @@ const MainContent: React.FC = () => {
     );
   }
 
-  if (navigationTarget || tripView === 'map') {
+  if ((navigationTarget || tripView === 'map') && (location.pathname === '/map' || location.pathname === '/trip/map' || location.pathname === '/')) {
     return <MapView />;
   }
 

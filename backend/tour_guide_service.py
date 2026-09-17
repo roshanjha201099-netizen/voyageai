@@ -81,9 +81,10 @@ _overpass_cache: Dict[str, tuple] = {}
 CACHE_TTL_SECONDS = 300  # 5 minutes
 
 
-def _cache_key(lat: float, lng: float, radius: int) -> str:
+def _cache_key(lat: float, lng: float, radius: int, category: str = "all") -> str:
     """Grid-based cache key (~100m cells)."""
-    return f"{round(lat, 3)}_{round(lng, 3)}_{radius}"
+    cat_norm = normalize_category(category)
+    return f"{round(lat, 3)}_{round(lng, 3)}_{radius}_{cat_norm}"
 
 
 def _classify_category(tags: Dict[str, str]) -> str:
@@ -186,132 +187,305 @@ def _fetch_nominatim_location(lat: float, lng: float) -> List[Dict[str, Any]]:
         pass
     return []
 
+def normalize_category(category: Optional[str]) -> str:
+    cat = (category or "").lower().strip()
+    if cat in ["food", "restaurant", "restaurants", "dining", "eatery", "cafe"]:
+        return "food"
+    elif cat in ["activities", "activity", "attraction", "attractions", "sightseeing", "landmark"]:
+        return "activity"
+    elif cat in ["hotels", "hotel", "stays", "stay", "lodging"]:
+        return "hotel"
+    return "all"
 
-def search_nearby_pois(lat: float, lng: float, radius_m: int = 5000, radius: int = None) -> List[Dict[str, Any]]:
+def _cache_key(lat: float, lng: float, radius: int, category: str = "all") -> str:
+    """Grid-based in-memory cache key (~100m cells) with category support."""
+    cat_norm = normalize_category(category)
+    return f"{round(lat, 3)}_{round(lng, 3)}_{radius}_{cat_norm}"
+
+
+def _fetch_overpass_category(lat: float, lng: float, radius: int, cat_norm: str) -> List[Dict[str, Any]]:
+    """Fetches POIs directly from Overpass API matching category tags."""
+    if cat_norm == "hotel":
+        tag_filter = """
+          nwr["tourism"~"hotel|guest_house|resort|motel|lodge|homestay|hostel"](around:{radius},{lat},{lng});
+          nwr["building"="hotel"](around:{radius},{lat},{lng});
+        """
+    elif cat_norm == "food":
+        tag_filter = """
+          nwr["amenity"~"restaurant|cafe|fast_food|food_court|ice_cream|dhaba|bar"](around:{radius},{lat},{lng});
+          nwr["shop"~"confectionery|bakery"](around:{radius},{lat},{lng});
+        """
+    elif cat_norm == "activity":
+        tag_filter = """
+          nwr["tourism"~"attraction|museum|viewpoint|gallery|theme_park"](around:{radius},{lat},{lng});
+          nwr["historic"~"monument|memorial|archaeological_site|fort|castle|ruins"](around:{radius},{lat},{lng});
+          nwr["amenity"~"place_of_worship|arts_centre"](around:{radius},{lat},{lng});
+          nwr["leisure"~"park|garden|sports_centre"](around:{radius},{lat},{lng});
+        """
+    else:  # all
+        tag_filter = """
+          nwr["tourism"~"hotel|guest_house|attraction|museum"](around:{radius},{lat},{lng});
+          nwr["amenity"~"restaurant|cafe|dhaba|place_of_worship"](around:{radius},{lat},{lng});
+          nwr["historic"~"monument|memorial|fort"](around:{radius},{lat},{lng});
+        """
+
+    query = f"""[out:json][timeout:5];
+(
+{tag_filter.format(radius=radius, lat=lat, lng=lng)}
+);
+out center 30;"""
+
+    endpoints = [
+        "https://overpass-api.de/api/interpreter",
+        "https://overpass.kumi.systems/api/interpreter"
+    ]
+
+    places = []
+    seen = set()
+
+    for base_url in endpoints:
+        try:
+            req = urllib.request.Request(
+                f"{base_url}?data={urllib.parse.quote(query)}",
+                headers={"User-Agent": "VoyageAI-TourGuide/1.0 (contact@voyageai.local)"}
+            )
+            with urllib.request.urlopen(req, timeout=5.0) as resp:
+                if resp.status == 200:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    for el in data.get("elements", []):
+                        tags = el.get("tags") or {}
+                        name = _extract_name(tags)
+                        if not name or len(name.strip()) < 2:
+                            continue
+
+                        k = name.strip().lower()
+                        if k in seen:
+                            continue
+                        seen.add(k)
+
+                        el_lat = float(el.get("lat") or ((el.get("center") or {}).get("lat") or 0))
+                        el_lng = float(el.get("lon") or ((el.get("center") or {}).get("lon") or 0))
+                        if not el_lat or not el_lng:
+                            continue
+
+                        dist = haversine_meters(lat, lng, el_lat, el_lng)
+                        if dist > 35000:
+                            continue
+
+                        places.append({
+                            "id": f"osm_{el.get('id')}",
+                            "name": name.strip(),
+                            "category": cat_norm,
+                            "latitude": el_lat,
+                            "longitude": el_lng,
+                            "distanceMeters": round(dist),
+                            "address": tags.get("addr:city") or tags.get("addr:street") or f"{round(dist/1000, 1)} km away",
+                            "source": "osm",
+                            "dataReliability": "VERIFIED"
+                        })
+                    if len(places) >= 3:
+                        break
+        except Exception:
+            continue
+
+    return places
+
+
+def _fetch_nominatim_category(lat: float, lng: float, cat_norm: str) -> List[Dict[str, Any]]:
+    """Fallback geocoder using Nominatim when Overpass has no coverage."""
+    search_q = "hotel" if cat_norm == "hotel" else ("restaurant" if cat_norm == "food" else "tourist attraction")
+    
+    params = {
+        "q": search_q,
+        "format": "json",
+        "countrycodes": "in",
+        "viewbox": f"{lng-0.35},{lat+0.35},{lng+0.35},{lat-0.35}",
+        "bounded": 1,
+        "limit": 25
+    }
+    url = f"https://nominatim.openstreetmap.org/search?{urllib.parse.urlencode(params)}"
+    places = []
+    seen = set()
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "VoyageAI-App/1.0 (contact@voyageai.local)"})
+        with urllib.request.urlopen(req, timeout=5.0) as resp:
+            if resp.status == 200:
+                data = json.loads(resp.read().decode("utf-8"))
+                for item in data:
+                    raw_display = item.get("display_name", "")
+                    parts = [p.strip() for p in raw_display.split(",") if p.strip()]
+                    name = parts[0] if parts else search_q.capitalize()
+                    if not name or len(name) < 2:
+                        continue
+                    k = name.lower()
+                    if k in seen:
+                        continue
+                    seen.add(k)
+
+                    plat = float(item["lat"])
+                    plng = float(item["lon"])
+                    dist = haversine_meters(lat, lng, plat, plng)
+
+                    clean_addr = ", ".join(parts[1:3]) if len(parts) > 2 else raw_display
+
+                    places.append({
+                        "id": f"nom_{item.get('place_id', 0)}",
+                        "name": name,
+                        "category": cat_norm,
+                        "latitude": plat,
+                        "longitude": plng,
+                        "distanceMeters": round(dist),
+                        "address": clean_addr,
+                        "source": "nominatim_real",
+                        "dataReliability": "VERIFIED"
+                    })
+    except Exception as e:
+        print(f"⚠️ [NOMINATIM WARN]: {e}", flush=True)
+    return places
+
+def fetch_and_cache_pois_task(
+    lat: float, 
+    lng: float, 
+    radius_m: int = 5000, 
+    category: str = "all"
+) -> List[Dict[str, Any]]:
     """
-    Search for real nearby POIs using Overpass API (OpenStreetMap).
-    Uses Redis Cache-Aside Pattern with 24-Hour TTL and Spatial Clustered Keys.
+    Background worker task: executes Overpass / Nominatim network queries,
+    saves resolved places to Redis with a 24-hour TTL, and publishes a completion event.
+    """
+    cat_norm = normalize_category(category)
+    grid_lat = round(lat, 2)
+    grid_lon = round(lng, 2)
+    cache_key = f"osm:poi:{cat_norm}:{grid_lat}:{grid_lon}:{radius_m}"
+
+    print(f">>> [WORKER POI TASK] Fetching fresh {cat_norm} POIs for ({lat}, {lng}) radius={radius_m}...", flush=True)
+
+    places = _fetch_overpass_category(lat, lng, radius_m, cat_norm)
+    if len(places) < 3 and radius_m < 15000:
+        places = _fetch_overpass_category(lat, lng, 15000, cat_norm)
+
+    if not places:
+        print(f"⚠️ [WORKER OVERPASS EMPTY] Trying Nominatim fallback for {cat_norm}...", flush=True)
+        places = _fetch_nominatim_category(lat, lng, cat_norm)
+
+    places.sort(key=lambda p: p.get("distanceMeters", 0))
+    filtered_places = [p for p in places if p.get("distanceMeters", 0) <= radius_m]
+    if filtered_places:
+        places = filtered_places
+
+    if places:
+        try:
+            redis_conn.setex(cache_key, 86400, json.dumps(places))
+            print(f">>> [WORKER POI CACHED] Saved {len(places)} items to {cache_key}", flush=True)
+        except Exception as e:
+            print(f"⚠️ [WORKER REDIS WARNING] Failed to write cache: {e}", flush=True)
+
+        ck = _cache_key(lat, lng, radius_m, cat_norm)
+        _overpass_cache[ck] = (time.time(), places)
+
+    # Publish Redis PubSub event so active clients know POI discovery completed
+    try:
+        payload = json.dumps({
+            "event": "POI_READY",
+            "category": cat_norm,
+            "latitude": lat,
+            "longitude": lng,
+            "radius_m": radius_m,
+            "count": len(places)
+        })
+        redis_conn.publish("voyageai:events:poi", payload)
+        print(f">>> [WORKER PUB/SUB] Published POI_READY for {cat_norm} at ({lat}, {lng})", flush=True)
+    except Exception as e:
+        print(f"⚠️ [WORKER PUB/SUB WARN] Failed to publish POI event: {e}", flush=True)
+
+    return places
+
+
+def search_nearby_pois(
+    lat: float, 
+    lng: float, 
+    radius_m: int = 5000, 
+    radius: Optional[int] = None, 
+    category: Optional[str] = "all"
+) -> List[Dict[str, Any]]:
+    """
+    Search for real nearby POIs with instant sub-3ms Redis Cache-Aside lookup.
+    On cache MISS, enqueues an asynchronous background fetch task to worker.py
+    and returns immediate fallback data with dataReliability='PENDING'.
     """
     if radius is not None:
         radius_m = radius
-    radius_m = min(radius_m, 5000)
 
-    # 1. Spatial Coordinate Bucketing to ~1.1 km grid
+    cat_norm = normalize_category(category)
     grid_lat = round(lat, 2)
     grid_lon = round(lng, 2)
-    cache_key = f"osm:poi:{grid_lat}:{grid_lon}:{radius_m}"
+    cache_key = f"osm:poi:{cat_norm}:{grid_lat}:{grid_lon}:{radius_m}"
 
-    # 2. Check Redis Cache
+    # 1. Read Redis Cache (< 3ms)
     try:
         cached_result = redis_conn.get(cache_key)
         if cached_result:
-            print(f">>> [REDIS CACHE HIT] Key: {cache_key} (~2ms)")
+            print(f">>> [REDIS CACHE HIT] Key: {cache_key}", flush=True)
             cached_places = json.loads(cached_result)
             for p in cached_places:
-                p["distanceMeters"] = round(haversine_meters(lat, lng, p["latitude"], p["longitude"]))
-            return cached_places
+                plat = p.get("latitude") or p.get("lat", lat)
+                plng = p.get("longitude") or p.get("lng", lng)
+                p["distanceMeters"] = round(haversine_meters(lat, lng, plat, plng))
+            # Discard items outside the user's explicit radius before returning
+            filtered_places = [p for p in cached_places if p.get("distanceMeters", 0) <= radius_m]
+            return filtered_places if filtered_places else cached_places
     except Exception as e:
-        print(f"⚠️ [REDIS WARNING] Failed to read cache: {e}")
+        print(f"⚠️ [REDIS WARNING] Failed to read cache: {e}", flush=True)
 
-    # Fallback to local in-memory cache if Redis is down
-    ck = _cache_key(lat, lng, radius_m)
+    # 2. Check in-memory fallback cache
+    ck = _cache_key(lat, lng, radius_m, cat_norm)
     if ck in _overpass_cache:
         cached_time, cached_results = _overpass_cache[ck]
         if time.time() - cached_time < CACHE_TTL_SECONDS:
             for p in cached_results:
-                p["distanceMeters"] = round(haversine_meters(lat, lng, p["latitude"], p["longitude"]))
-            return cached_results
+                plat = p.get("latitude") or p.get("lat", lat)
+                plng = p.get("longitude") or p.get("lng", lng)
+                p["distanceMeters"] = round(haversine_meters(lat, lng, plat, plng))
+            # Discard items outside the user's explicit radius before returning
+            filtered_places = [p for p in cached_results if p.get("distanceMeters", 0) <= radius_m]
+            return filtered_places if filtered_places else cached_results
 
-    # 3. Cache Miss: Execute Overpass HTTP API call
-    print(f">>> [REDIS CACHE MISS] Fetching fresh data from Overpass API for {cache_key}...")
-    query = OVERPASS_QUERY_TEMPLATE.format(lat=lat, lng=lng, radius=radius_m)
-    endpoints = [
-        "https://overpass-api.de/api/interpreter",
-        "https://overpass.kumi.systems/api/interpreter",
-        "https://overpass.private.coffee/api/interpreter",
-        "https://overpass.nchc.org.tw/api/interpreter"
-    ]
+    print(f">>> [CACHE MISS] Enqueuing background POI discovery for {cat_norm} at ({lat}, {lng})...", flush=True)
 
-    raw = None
-    for url in endpoints:
-        try:
-            data = urllib.parse.urlencode({"data": query}).encode("utf-8")
-            req = urllib.request.Request(
-                url,
-                data=data,
-                headers={"User-Agent": "VoyageAI-TourGuide/1.0 (contact@voyageai.local)"},
-                method="POST"
-            )
-            with urllib.request.urlopen(req, timeout=4) as response:
-                if response.status == 200:
-                    raw = json.loads(response.read().decode("utf-8"))
-                    break
-        except Exception:
-            pass
-
-    if not raw:
-        fallback_places = _fetch_nominatim_location(lat, lng)
-        if fallback_places:
-            _overpass_cache[ck] = (time.time(), fallback_places)
-        return fallback_places
-
-    elements = raw.get("elements", [])
-    places = []
-    seen_names = set()
-
-    for el in elements:
-        tags = el.get("tags") or {}
-        name = _extract_name(tags)
-        if not name or len(name.strip()) < 3:
-            continue
-
-        name_key = name.strip().lower()
-        if name_key in seen_names:
-            continue
-        seen_names.add(name_key)
-
-        el_lat = el.get("lat") or ((el.get("center") or {}).get("lat"))
-        el_lng = el.get("lon") or ((el.get("center") or {}).get("lon"))
-        if el_lat is None or el_lng is None:
-            continue
-
-        el_lat = float(el_lat)
-        el_lng = float(el_lng)
-
-        dist = haversine_meters(lat, lng, el_lat, el_lng)
-        if dist > radius_m:
-            continue
-
-        category = _classify_category(tags)
-        place_id = f"tg_{el.get('id', 0)}_{el.get('type', 'node')}"
-
-        place = {
-            "id": place_id,
-            "name": name.strip(),
-            "category": category,
-            "latitude": el_lat,
-            "longitude": el_lng,
-            "distanceMeters": round(dist),
-            "address": tags.get("addr:full") or tags.get("addr:street") or tags.get("addr:city") or None,
-            "openingHours": tags.get("opening_hours") or None,
-            "description": tags.get("description") or tags.get("description:en") or None,
-            "wikipedia": tags.get("wikipedia") or tags.get("wikidata") or None,
-            "source": "osm",
-            "dataReliability": "VERIFIED"
-        }
-        places.append(place)
-
-    # 4. Save to Redis with 24-Hour Expiration (and local backup)
+    # 3. Cache MISS: Enqueue background worker task to populate Redis cache asynchronously
     try:
-        redis_conn.setex(cache_key, OSM_CACHE_TTL, json.dumps(places))
+        from task_queue import enqueue_poi_fetch
+        enqueue_poi_fetch(lat, lng, radius_m, cat_norm)
     except Exception as e:
-        print(f"⚠️ [REDIS WARNING] Failed to write cache: {e}")
+        print(f"⚠️ [QUEUE WARN] Failed to enqueue POI fetch: {e}", flush=True)
 
-    _overpass_cache[ck] = (time.time(), places)
-    return places
-
-
-
+    # 4. Return instant non-blocking fallback data with PENDING reliability
+    fallback_title = "Nearby Discovery Area" if cat_norm == "all" else f"Local {cat_norm.capitalize()} Zone"
+    pending_places = [
+        {
+            "id": f"pending_{cat_norm}_1",
+            "name": f"{fallback_title}",
+            "category": cat_norm,
+            "latitude": lat + 0.001,
+            "longitude": lng + 0.001,
+            "distanceMeters": 150,
+            "address": "Background discovery in progress...",
+            "source": "background_worker",
+            "dataReliability": "PENDING"
+        },
+        {
+            "id": f"pending_{cat_norm}_2",
+            "name": f"Regional Highlights",
+            "category": cat_norm,
+            "latitude": lat - 0.002,
+            "longitude": lng - 0.001,
+            "distanceMeters": 320,
+            "address": "Fetching verified POIs...",
+            "source": "background_worker",
+            "dataReliability": "PENDING"
+        }
+    ]
+    return pending_places
 # ── Place Ranking ──
 
 def rank_places(
@@ -485,6 +659,77 @@ def _clean_reply_text(raw_text: Any) -> str:
             
     return text
 
+
+def generate_poi_story(place_name: str, category: str = "attraction", address: str = "") -> str:
+    """
+    Generates a 2-sentence authentic historical trivia/cultural narrative for a POI using Gemini.
+    Cached in Redis for 7 days to ensure instant 0ms retrieval on repeated calls.
+    """
+    import os
+    import hashlib
+    clean_name = (place_name or "Local Landmark").strip()
+    cache_key = f"story:poi:{hashlib.md5((clean_name + category).encode('utf-8')).hexdigest()[:12]}"
+
+    # 1. Read Redis Cache (< 3ms)
+    try:
+        cached_story = redis_conn.get(cache_key)
+        if cached_story:
+            if isinstance(cached_story, bytes):
+                cached_story = cached_story.decode("utf-8")
+            print(f">>> [REDIS STORY HIT] Key: {cache_key} (0ms latency)", flush=True)
+            return cached_story
+    except Exception as e:
+        print(f"[REDIS STORY WARN] Redis read error: {e}", flush=True)
+
+    # 2. Call Gemini API for dynamic 2-line story
+    api_key = os.getenv("GEMINI_API_KEY")
+    model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+
+    if api_key and api_key.strip():
+        prompt = f"""You are a warm, engaging Indian tour guide.
+Generate a captivating 2-sentence (~30-35 words) tour guide narrative in Hinglish (Hindi language written using Roman/English script) about:
+Place Name: {clean_name}
+Category: {category}
+Address/Region: {address or 'India'}
+
+Requirements:
+- Share authentic historical trivia, cultural context, or famous local highlight.
+- Keep it warm, natural, and strictly 2 short sentences (~35 words max).
+- Return ONLY the 2-sentence story text with no quotes, formatting, or bullet points."""
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": 0.5,
+                "maxOutputTokens": 150
+            }
+        }
+        try:
+            import requests
+            res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=5.0)
+            if res.status_code == 200:
+                data = res.json()
+                try:
+                    text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                    if text:
+                        # Clean quotes if returned
+                        text = text.replace('"', '').replace("'", "")
+                        # Save to Redis with 7-day TTL
+                        try:
+                            redis_conn.setex(cache_key, 604800, text)
+                            print(f">>> [GEMINI STORY CACHED] Key: {cache_key}", flush=True)
+                        except Exception as ce:
+                            print(f"[REDIS STORY WARN] Redis write error: {ce}", flush=True)
+                        return text
+                except (KeyError, IndexError):
+                    pass
+        except Exception as err:
+            print(f"[GEMINI STORY WARN] API call failed: {err}", flush=True)
+
+    # 3. Smart Fallback if Gemini unavailable
+    fallback_story = f"Namaste! Aapka {clean_name} me swagat hai. Yeh {address or 'is kshetra'} ka ek behad khas {category} spot hai, jo apni sanskritik virasat aur anokhi ruchi ke liye jaana jata hai."
+    return fallback_story
 
 def generate_tour_guide_response(
     messages: List[Dict[str, str]],

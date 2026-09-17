@@ -20,16 +20,20 @@ const tabs: TabItem[] = [
 ];
 
 export const MobileBottomNav: React.FC = () => {
-  const { setActiveTab, setTripView } = useApp();
+  const { setActiveTab, setTripView, setNavigationTarget } = useApp();
   const navigate = useNavigate();
   const location = useLocation();
 
   const handleTabClick = (tab: TabItem) => {
-    if (tab.id === 'home' || tab.id === 'trips' || tab.id === 'explore') {
-      setActiveTab(tab.id as NavTab);
-    } else if (tab.id === 'map') {
+    if (tab.id === 'map') {
       setActiveTab('trips');
       setTripView('map');
+    } else {
+      setTripView('home');
+      setNavigationTarget(null);
+      if (tab.id === 'home' || tab.id === 'trips' || tab.id === 'explore') {
+        setActiveTab(tab.id as NavTab);
+      }
     }
     navigate(tab.path);
   };

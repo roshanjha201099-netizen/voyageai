@@ -1,597 +1,632 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useTrip } from '../../features/trip/TripContext';
-import { BottomSheet } from '../common/BottomSheet';
-import { getDestinationInfo } from '../../utils/destinationData';
-import { Star, Sparkles, Car, MapPin, Navigation, ArrowLeft, ExternalLink, Compass, Map as MapIcon, Route } from 'lucide-react';
+import {
+  Car, Compass, Search, X, RefreshCw, ArrowLeft, ExternalLink, Volume2, VolumeX, Loader2
+} from 'lucide-react';
 import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { useNavigate } from 'react-router-dom';
-import type { NavigationTarget } from '../../types';
+import { useAudioGuide } from '../../hooks/useAudioGuide';
 
-export interface MapSpot {
-  type: 'Hotel' | 'Restaurant' | 'Activity';
-  title: string;
-  location: string;
-  rating: number;
-  price: string;
-  image: string;
-  distanceKm: string;
-  coordinates: [number, number];
+export interface PlaceItem {
+  id: string;
+  name: string;
+  category: string;
+  latitude: number;
+  longitude: number;
+  distanceMeters?: number;
+  address?: string;
+  rating?: number;
+  price_approx?: string;
 }
 
-// Haversine distance calculator in km
-function calculateHaversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371; // Earth's radius in km
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
+const getPlaceImage = (category: string, name: string) => {
+  const cat = (category || '').toLowerCase();
+  const n = (name || '').toLowerCase();
+
+  if (cat.includes('hotel') || cat.includes('stay') || cat.includes('lodging') || n.includes('resort') || n.includes('hotel')) {
+    return 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=400&q=80';
+  }
+  if (cat.includes('food') || cat.includes('restaurant') || cat.includes('cafe') || cat.includes('dhaba') || n.includes('food') || n.includes('cafe')) {
+    return 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=400&q=80';
+  }
+  if (cat.includes('fort') || cat.includes('temple') || cat.includes('historic') || cat.includes('monument') || cat.includes('activity')) {
+    return 'https://images.unsplash.com/photo-1564507592333-c60657eea523?auto=format&fit=crop&w=400&q=80';
+  }
+  return 'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?auto=format&fit=crop&w=400&q=80';
+};
 
 export const MapView: React.FC = () => {
   const navigate = useNavigate();
   const {
-    openCabModal, openAiAssistant, navigationTarget, setNavigationTarget, setTripView, setActiveTab,
-    userLocation, userLocationAccuracy, isLiveTracking, isFollowMode, setIsFollowMode, toggleFollowMode
+    openCabModal, userLocation, isFollowMode, setIsFollowMode, toggleFollowMode, setNavigationTarget, setTripView
   } = useApp();
-  const { currentTrip, currentItinerary } = useTrip();
+  const { currentTrip } = useTrip();
 
-  const activeDestName = currentTrip?.destination?.name || 'Bihar';
-  const activeDestCoords: [number, number] = useMemo(() => [
-    currentTrip?.destination?.latitude || 25.5941,
-    currentTrip?.destination?.longitude || 85.1376
-  ], [currentTrip]);
+  const defaultCoords: [number, number] = useMemo(() => [
+    userLocation?.[0] || currentTrip?.destination?.latitude || 26.2376,
+    userLocation?.[1] || currentTrip?.destination?.longitude || 86.2021
+  ], [userLocation, currentTrip]);
 
-  const destInfo = useMemo(() => getDestinationInfo(activeDestName, activeDestCoords), [activeDestName, activeDestCoords]);
+  const [places, setPlaces] = useState<PlaceItem[]>([]);
+  const [selectedPlace, setSelectedPlace] = useState<PlaceItem | null>(null);
+  const [activeCategory, setActiveCategory] = useState<'hotels' | 'food' | 'activities' | 'all'>('food');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [showSearchAreaBtn, setShowSearchAreaBtn] = useState(false);
+  const [mapCenter, setMapCenter] = useState<[number, number]>(defaultCoords);
 
-  // Extract all itinerary activities as potential navigation targets
-  const tripNavigationTargets = useMemo<NavigationTarget[]>(() => {
-    const targets: NavigationTarget[] = [];
-    if (currentItinerary?.days) {
-      let idx = 0;
-      currentItinerary.days.forEach(day => {
-        (day.activities || []).forEach(act => {
-          idx++;
-          const lat = act.latitude || (activeDestCoords[0] + (idx * 0.004) - 0.008);
-          const lng = act.longitude || (activeDestCoords[1] + (idx * 0.004) - 0.008);
-          targets.push({
-            activityId: act.id,
-            title: act.title,
-            locationName: act.locationName || activeDestName,
-            coordinates: [lat, lng],
-            dayNumber: day.dayNumber,
-            tripTitle: currentTrip?.title || activeDestName
-          });
-        });
-      });
+  const { playBase64Audio, stopAudio } = useAudioGuide();
+  const [playingPlaceId, setPlayingPlaceId] = useState<string | null>(null);
+  const [audioLoadingId, setAudioLoadingId] = useState<string | null>(null);
+  const [activeGeofenceBanner, setActiveGeofenceBanner] = useState<{ placeName: string; distMeters: number } | null>(null);
+  const narratedPlaceIdsRef = useRef<Set<string>>(new Set());
+
+  const handlePlayNarration = useCallback(async (place: PlaceItem, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+
+    // If already playing this place, stop/pause audio
+    if (playingPlaceId === place.id) {
+      stopAudio();
+      setPlayingPlaceId(null);
+      return;
     }
 
-    if (targets.length === 0) {
-      targets.push({
-        activityId: 'default-patna',
-        title: 'Takht Sri Patna Sahib Sacred Heritage Visit',
-        locationName: 'Harmandir Gali, Patna Sahib, Patna',
-        coordinates: activeDestCoords,
-        dayNumber: 1,
-        tripTitle: activeDestName
+    setAudioLoadingId(place.id);
+    try {
+      const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const res = await fetch(`${baseUrl}/api/tts/speak`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          place_name: place.name,
+          category: place.category,
+          address: place.address || '',
+          place_id: place.id,
+          language: 'hi-IN',
+          speaker: 'ritu'
+        })
       });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.audio_base64) {
+          playBase64Audio(data.audio_base64);
+          setPlayingPlaceId(place.id);
+        }
+      }
+    } catch (err) {
+      console.error('Audio play error:', err);
+    } finally {
+      setAudioLoadingId(null);
     }
+  }, [playingPlaceId, playBase64Audio, stopAudio]);
 
-    return targets;
-  }, [currentItinerary, activeDestCoords, activeDestName, currentTrip?.title]);
+  // Proximity Geofence Auto-Trigger (<= 150m)
+  useEffect(() => {
+    if (!userLocation || places.length === 0) return;
+    const [uLat, uLng] = userLocation;
 
-  const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
-  const [mapMode, setMapMode] = useState<'route' | 'explore'>('route');
-  const [filterCategory, setFilterCategory] = useState<string>('All');
-  const [selectedSpot, setSelectedSpot] = useState<MapSpot | null>(null);
-  const [currentGPSLocation, setCurrentGPSLocation] = useState<[number, number] | null>(userLocation);
-  const [locationError, setLocationError] = useState<string | null>(null);
-  const [originMode, setOriginMode] = useState<'stay' | 'live'>('stay');
+    for (const place of places) {
+      if (narratedPlaceIdsRef.current.has(place.id)) continue;
+
+      // Distance calculation in meters
+      let distMeters = place.distanceMeters;
+      if (distMeters === undefined) {
+        const R = 6371000;
+        const dLat = (place.latitude - uLat) * Math.PI / 180;
+        const dLon = (place.longitude - uLng) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                  Math.cos(uLat * Math.PI / 180) * Math.cos(place.latitude * Math.PI / 180) *
+                  Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        distMeters = Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+      }
+
+      if (distMeters <= 150) {
+        console.log(`[GEOFENCE AUTO-TRIGGER] User within ${distMeters}m of landmark: ${place.name}`);
+        narratedPlaceIdsRef.current.add(place.id);
+        setActiveGeofenceBanner({ placeName: place.name, distMeters });
+        
+        // Auto-play speech narration for landmark
+        handlePlayNarration(place);
+
+        const bannerTimer = setTimeout(() => {
+          setActiveGeofenceBanner(null);
+        }, 6000);
+        return () => clearTimeout(bannerTimer);
+      }
+    }
+  }, [userLocation, places, handlePlayNarration]);
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
+  const markersLayerRef = useRef<L.LayerGroup | null>(null);
   const userMarkerRef = useRef<L.Marker | null>(null);
-  const accuracyCircleRef = useRef<L.Circle | null>(null);
+  const cardRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
 
-  const defaultUserLocation: [number, number] = userLocation || activeDestCoords;
-  const categories = ['All', 'Hotels', 'Food', 'Activities'];
+  // 1. Fetch places from unified backend endpoint
+  const fetchPlaces = useCallback(async (lat: number, lng: number, cat: string, query?: string) => {
+    setIsLoading(true);
+    setShowSearchAreaBtn(false);
+    try {
+      const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const params = new URLSearchParams({
+        lat: lat.toString(),
+        lng: lng.toString(),
+        category: cat,
+        radius: '10000'
+      });
+      if (query && query.trim().length >= 2) {
+        params.append('q', query.trim());
+      }
 
-  // Sync live location from AppContext
-  useEffect(() => {
-    if (userLocation) {
-      setCurrentGPSLocation(userLocation);
-      setLocationError(null);
+      const res = await fetch(`${baseUrl}/api/places/nearby?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        const cleanList: PlaceItem[] = (Array.isArray(data) ? data : []).map((p: any, idx: number) => ({
+          id: p.id || `place_${idx}`,
+          name: p.name || 'Local Landmark',
+          category: p.category || cat,
+          latitude: p.latitude || p.lat,
+          longitude: p.longitude || p.lng || p.lon,
+          distanceMeters: p.distanceMeters || Math.round((p.distanceKm || p.distance_km || 1) * 1000),
+          address: p.address || p.location || 'Local Vicinity',
+          rating: p.rating || Number((4.2 + (idx % 6) * 0.1).toFixed(1)),
+          price_approx: p.price_approx || (cat === 'hotels' ? '₹2,200/night' : cat === 'food' ? '₹400 for two' : 'Free Entry')
+        }));
+        setPlaces(cleanList);
+        if (cleanList.length > 0) {
+          setSelectedPlace(cleanList[0]);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch places:', err);
+    } finally {
+      setIsLoading(false);
     }
-  }, [userLocation]);
+  }, []);
 
-  // Turn OFF camera follow mode if user manually drags/pans the map
+  // Initial load or category switch
   useEffect(() => {
-    const map = mapInstanceRef.current;
-    if (!map) return;
-    const handleDrag = () => {
+    fetchPlaces(mapCenter[0], mapCenter[1], activeCategory, searchQuery);
+  }, [activeCategory]);
+
+  // Synchronize bottom card scrolling when selectedPlace changes
+  useEffect(() => {
+    if (selectedPlace?.id && cardRefs.current[selectedPlace.id]) {
+      cardRefs.current[selectedPlace.id]?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'center'
+      });
+    }
+  }, [selectedPlace]);
+
+  // 2. Leaflet Map Initialization (CartoDB Dark Theme)
+  useEffect(() => {
+    if (!mapContainerRef.current || mapInstanceRef.current) return;
+
+    const map = L.map(mapContainerRef.current, {
+      zoomControl: false,
+      fadeAnimation: true,
+      markerZoomAnimation: true
+    }).setView(defaultCoords, 14);
+
+    // CARTO Raster Voyager basemap surface with runtime API key configuration
+    const cartoKey = import.meta.env.VITE_CARTO_BASEMAP_KEY;
+    if (!cartoKey && import.meta.env.DEV) {
+      console.warn('[MapView] VITE_CARTO_BASEMAP_KEY is missing. CARTO raster tiles may display a watermark.');
+    }
+
+    const tileUrl = cartoKey
+      ? `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=${encodeURIComponent(cartoKey)}`
+      : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+
+    L.tileLayer(tileUrl, {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      subdomains: 'abcd',
+      maxZoom: 19
+    }).addTo(map);
+
+    const markersGroup = L.layerGroup().addTo(map);
+    markersLayerRef.current = markersGroup;
+    mapInstanceRef.current = map;
+
+    // Forces Leaflet container layout recalculation
+    const invalidate = () => map.invalidateSize();
+    const t1 = setTimeout(invalidate, 100);
+    const t2 = setTimeout(invalidate, 400);
+
+    const resizeObserver = new ResizeObserver(() => {
+      map.invalidateSize();
+    });
+    resizeObserver.observe(mapContainerRef.current);
+
+    // Detect user dragging camera -> show "Search this area"
+    map.on('moveend', () => {
+      const center = map.getCenter();
+      setMapCenter([center.lat, center.lng]);
+      setShowSearchAreaBtn(true);
       if (isFollowMode) {
         setIsFollowMode(false);
       }
-    };
-    map.on('dragstart', handleDrag);
-    return () => {
-      map.off('dragstart', handleDrag);
-    };
-  }, [isFollowMode, setIsFollowMode]);
-
-  // Dynamic user marker & camera update without wiping map layers
-  useEffect(() => {
-    if (!currentGPSLocation || !mapInstanceRef.current) return;
-    const map = mapInstanceRef.current;
-
-    if (userMarkerRef.current) {
-      userMarkerRef.current.setLatLng(currentGPSLocation);
-    }
-    if (accuracyCircleRef.current) {
-      accuracyCircleRef.current.setLatLng(currentGPSLocation);
-      if (userLocationAccuracy && userLocationAccuracy < 5000) {
-        accuracyCircleRef.current.setRadius(userLocationAccuracy);
-      }
-    }
-
-    if (isFollowMode) {
-      map.panTo(currentGPSLocation, { animate: true, duration: 0.8 });
-    }
-  }, [currentGPSLocation, userLocationAccuracy, isFollowMode]);
-
-  // Determine currently active target (explicit navigationTarget > user selected target > 1st trip target)
-  const activeTarget: NavigationTarget = useMemo(() => {
-    if (navigationTarget) return navigationTarget;
-    if (selectedActivityId) {
-      const found = tripNavigationTargets.find(t => t.activityId === selectedActivityId);
-      if (found) return found;
-    }
-    return tripNavigationTargets[0];
-  }, [navigationTarget, selectedActivityId, tripNavigationTargets]);
-
-  // Leaflet map initialization for 'explore' mode
-  useEffect(() => {
-    if (mapMode !== 'explore' || !mapContainerRef.current) return;
-
-    const liveUserPos = currentGPSLocation || defaultUserLocation;
-
-    if (!mapInstanceRef.current) {
-      const map = L.map(mapContainerRef.current, { zoomControl: false }).setView(liveUserPos, 14);
-
-      L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
-        attribution: '© Esri', maxZoom: 16
-      }).addTo(map);
-
-      L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
-        attribution: '© Esri', maxZoom: 16
-      }).addTo(map);
-
-      mapInstanceRef.current = map;
-    }
-
-    const map = mapInstanceRef.current;
-
-    // Clear existing markers & polylines
-    map.eachLayer(layer => {
-      if (layer instanceof L.Marker || layer instanceof L.Polyline) {
-        map.removeLayer(layer);
-      }
     });
 
-    // Pulsing Live User Location Marker + Accuracy Circle
+    // Detect user tapping map canvas directly -> discover POIs around click
+    map.on('click', (e: L.LeafletMouseEvent) => {
+      const clickedLat = e.latlng.lat;
+      const clickedLng = e.latlng.lng;
+      setMapCenter([clickedLat, clickedLng]);
+      setShowSearchAreaBtn(true);
+      fetchPlaces(clickedLat, clickedLng, activeCategory, searchQuery);
+    });
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      resizeObserver.disconnect();
+    };
+  }, [defaultCoords, isFollowMode, setIsFollowMode, activeCategory, searchQuery, fetchPlaces]);
+
+  // 3. Render Custom Leaflet Markers
+  useEffect(() => {
+    if (!mapInstanceRef.current || !markersLayerRef.current) return;
+
+    const markersGroup = markersLayerRef.current;
+    markersGroup.clearLayers();
+
+    // User Position Pulse Dot
+    const userPos = userLocation || defaultCoords;
     if (userMarkerRef.current) {
-      map.removeLayer(userMarkerRef.current);
+      mapInstanceRef.current.removeLayer(userMarkerRef.current);
     }
-    if (accuracyCircleRef.current) {
-      map.removeLayer(accuracyCircleRef.current);
-    }
-
-    const pulseHtml = isLiveTracking
-      ? `<div style="position:relative; width:22px; height:22px;">
-           <div style="position:absolute; top:0; left:0; width:22px; height:22px; background:rgba(53,95,88,0.25); border-radius:50%; animation:livePulse 2s ease-out infinite;"></div>
-           <div style="position:absolute; top:4px; left:4px; width:14px; height:14px; background:#355F58; border-radius:50%; border:3px solid #fff; box-shadow:0 0 10px rgba(53,95,88,0.5);"></div>
-         </div>`
-      : `<div style="background:#355F58; width:18px; height:18px; border-radius:50%; border:3px solid #fff; box-shadow:0 0 10px rgba(53,95,88,0.5);"></div>`;
-
-    userMarkerRef.current = L.marker(liveUserPos, {
+    userMarkerRef.current = L.marker(userPos, {
       icon: L.divIcon({
         className: '',
-        html: pulseHtml,
-        iconSize: [22, 22],
-        iconAnchor: [11, 11]
+        html: `<div style="position:relative; width:24px; height:24px;">
+                <div style="position:absolute; width:24px; height:24px; background:rgba(16,185,129,0.35); border-radius:50%; animation:ping 2.5s infinite;"></div>
+                <div style="position:absolute; top:4px; left:4px; width:16px; height:16px; background:#10B981; border:3px solid #0F172A; border-radius:50%; box-shadow:0 0 12px rgba(16,185,129,0.8);"></div>
+               </div>`,
+        iconSize: [24, 24],
+        iconAnchor: [12, 12]
       })
-    }).addTo(map);
+    }).addTo(mapInstanceRef.current);
 
-    // Accuracy circle (semi-transparent ring)
-    const accuracyM = userLocationAccuracy || 50;
-    if (accuracyM < 5000) {
-      accuracyCircleRef.current = L.circle(liveUserPos, {
-        radius: accuracyM,
-        color: isLiveTracking ? '#355F58' : '#487C74',
-        fillColor: isLiveTracking ? '#355F58' : '#487C74',
-        fillOpacity: 0.08,
-        weight: 1,
-        opacity: 0.3
-      }).addTo(map);
-    }
+    // Render Micro-Badges
+    places.forEach((p) => {
+      if (!p.latitude || !p.longitude) return;
 
-    const addMarker = (spot: MapSpot, color: string) => {
-      const marker = L.marker(spot.coordinates, {
+      const isSelected = selectedPlace?.id === p.id;
+      const badgeIcon = p.category === 'hotels' ? '🏨' : p.category === 'food' ? '🍽️' : '🎯';
+      const label = p.name.length > 14 ? `${p.name.substring(0, 12)}..` : p.name;
+
+      const markerHtml = isSelected ? `
+        <div style="
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          background: #0F172A;
+          color: #FFFFFF;
+          padding: 6px 12px;
+          border-radius: 9999px;
+          font-size: 11px;
+          font-weight: 800;
+          box-shadow: 0 0 25px rgba(16, 185, 129, 0.5), 0 8px 20px rgba(0,0,0,0.6);
+          border: 2px solid #10B981;
+          transform: scale(1.12);
+          transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+          cursor: pointer;
+          white-space: nowrap;
+          pointer-events: auto;
+        ">
+          <span style="font-size: 12px;">${badgeIcon}</span>
+          <span style="color: #F8FAFC;">${label}</span>
+          ${p.rating ? `<span style="color: #F59E0B; font-size: 10px; font-weight: 800;">★${p.rating}</span>` : ''}
+        </div>
+      ` : `
+        <div style="
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          background: rgba(15, 23, 42, 0.85);
+          backdrop-filter: blur(8px);
+          color: #E2E8F0;
+          padding: 4px 8px;
+          border-radius: 9999px;
+          font-size: 10px;
+          font-weight: 700;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          transition: all 0.2s ease;
+          cursor: pointer;
+          white-space: nowrap;
+          pointer-events: auto;
+        ">
+          <span style="font-size: 11px;">${badgeIcon}</span>
+          <span style="opacity: 0.9;">${label}</span>
+        </div>
+      `;
+
+      const marker = L.marker([p.latitude, p.longitude], {
         icon: L.divIcon({
           className: '',
-          html: `<div style="background:${color}; color:#fff; padding:4px 10px; border-radius:20px; font-weight:700; font-size:11px; white-space:nowrap; box-shadow:0 3px 10px rgba(0,0,0,0.15); border:1px solid rgba(255,255,255,0.6);">${spot.title.split(' ')[0]}</div>`,
-          iconSize: [80, 24],
-          iconAnchor: [40, 12]
+          html: markerHtml,
+          iconSize: [110, 28],
+          iconAnchor: [55, 14]
         })
-      }).addTo(map);
+      }).addTo(markersGroup);
 
-      marker.on('click', () => {
-        setSelectedSpot(spot);
-      });
-    };
-
-    if (filterCategory === 'All' || filterCategory === 'Hotels') {
-      destInfo.hotels.forEach(h => addMarker({
-        type: 'Hotel', title: h.name, location: h.location, rating: h.rating,
-        price: `₹${h.pricePerNight.toLocaleString()}/night`, image: h.photos[0],
-        distanceKm: '1.2 km', coordinates: h.coordinates
-      }, '#355F58'));
-    }
-
-    if (filterCategory === 'All' || filterCategory === 'Food') {
-      destInfo.restaurants.forEach(r => addMarker({
-        type: 'Restaurant', title: r.name, location: r.location, rating: r.rating,
-        price: r.priceRange, image: r.photos[0], distanceKm: `${r.distanceKm} km`,
-        coordinates: r.coordinates
-      }, '#D97706'));
-    }
-
-    if (filterCategory === 'All' || filterCategory === 'Activities') {
-      tripNavigationTargets.forEach((t, i) => {
-        addMarker({
-          type: 'Activity',
-          title: `Day ${t.dayNumber}: ${t.title}`,
-          location: t.locationName,
-          rating: 4.8,
-          price: 'Included in Trip',
-          image: 'https://images.unsplash.com/photo-1542296332-2e4473faf563?auto=format&fit=crop&w=800&q=80',
-          distanceKm: `${(1 + i * 0.8).toFixed(1)} km`,
-          coordinates: t.coordinates
-        }, '#2563EB');
-      });
-    }
-  }, [mapMode, filterCategory, destInfo, currentGPSLocation, defaultUserLocation, tripNavigationTargets, isLiveTracking, userLocationAccuracy]);
-
-  // Smoothly pan map to user location when live tracking updates position
-  useEffect(() => {
-    if (mapMode === 'explore' && mapInstanceRef.current && currentGPSLocation && isLiveTracking) {
-      // Update marker position smoothly
-      if (userMarkerRef.current) {
-        userMarkerRef.current.setLatLng(currentGPSLocation);
-      }
-      if (accuracyCircleRef.current) {
-        accuracyCircleRef.current.setLatLng(currentGPSLocation);
-        if (userLocationAccuracy) {
-          accuracyCircleRef.current.setRadius(userLocationAccuracy);
+      marker.on('click', (e: L.LeafletMouseEvent) => {
+        if (e.originalEvent) {
+          e.originalEvent.stopPropagation();
         }
-      }
-    }
-  }, [currentGPSLocation, mapMode, isLiveTracking, userLocationAccuracy]);
+        setSelectedPlace(p);
+        mapInstanceRef.current?.panTo([p.latitude, p.longitude], { animate: true, duration: 0.5 });
+      });
+    });
+  }, [places, selectedPlace, userLocation, defaultCoords]);
 
-  // Calculate Google Maps embed direction parameters for activeTarget
-  const liveUserPos = currentGPSLocation || defaultUserLocation;
-  const targetCoords = activeTarget.coordinates;
-
-  const isFar = calculateHaversineDistance(
-    liveUserPos[0],
-    liveUserPos[1],
-    targetCoords[0],
-    targetCoords[1]
-  ) > 50;
-
-  const hotelOrigin = destInfo.hotels.length > 0
-    ? encodeURIComponent(destInfo.hotels[0].name || destInfo.hotels[0].location)
-    : `${targetCoords[0] - 0.015},${targetCoords[1] - 0.015}`;
-
-  const gmapsOrigin = (originMode === 'live' && currentGPSLocation)
-    ? `${currentGPSLocation[0]},${currentGPSLocation[1]}`
-    : hotelOrigin;
-
-  const gmapsDest = `${targetCoords[0]},${targetCoords[1]}`;
-  const googleMapsEmbedUrl = `https://maps.google.com/maps?saddr=${gmapsOrigin}&daddr=${gmapsDest}&output=embed&hl=en`;
-
-  // Calculated distance & ETA stats
-  const activeOriginPos: [number, number] = (isFar && originMode === 'stay')
-    ? (destInfo.hotels[0]?.coordinates || [targetCoords[0] - 0.015, targetCoords[1] - 0.015])
-    : liveUserPos;
-
-  const distKm = calculateHaversineDistance(activeOriginPos[0], activeOriginPos[1], targetCoords[0], targetCoords[1]);
-  const etaMinutes = Math.max(3, Math.round((distKm / 30) * 60));
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    fetchPlaces(mapCenter[0], mapCenter[1], activeCategory, searchQuery);
+  };
 
   return (
-    <div
-      className="relative -mx-4 lg:mx-0 rounded-3xl overflow-hidden border border-[#D9DEDA]"
-      style={{ height: 'calc(100dvh - 170px)' }}
-    >
-      {/* Map Canvas: Render Embedded Google Maps Route Frame in 'route' mode, or Leaflet in 'explore' mode */}
-      {mapMode === 'route' ? (
-        <div className="w-full h-full relative bg-[#F0F2EF] rounded-3xl overflow-hidden">
-          <iframe
-            title="Google Maps Interactive Route"
-            width="100%"
-            height="100%"
-            style={{ border: 0 }}
-            loading="lazy"
-            allowFullScreen
-            referrerPolicy="no-referrer-when-downgrade"
-            src={googleMapsEmbedUrl}
-            className="w-full h-full"
-          />
+    <div className="relative w-full h-[calc(100dvh-125px)] min-h-[500px] rounded-3xl overflow-hidden border border-white/10 bg-slate-950 shadow-2xl">
+      {/* MAP CANVAS */}
+      <div
+        ref={mapContainerRef}
+        className="absolute inset-0 w-full h-full z-0 cursor-grab active:cursor-grabbing"
+      />
+
+      {/* GEOFENCE PROXIMITY TOAST BANNER */}
+      {activeGeofenceBanner && (
+        <div className="absolute top-2 left-4 right-4 z-[1001] max-w-md mx-auto px-4 py-2 bg-amber-500/90 border border-amber-400/50 text-slate-950 font-black text-xs rounded-2xl backdrop-blur-xl shadow-2xl flex items-center justify-between gap-2 animate-bounce">
+          <div className="flex items-center gap-2 truncate">
+            <Volume2 className="w-4 h-4 text-slate-950 shrink-0" />
+            <span className="truncate">🎧 Geofence ({activeGeofenceBanner.distMeters}m): Auto-playing guide for {activeGeofenceBanner.placeName}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveGeofenceBanner(null)}
+            className="p-1 hover:bg-slate-950/20 rounded-lg transition-colors text-slate-950 shrink-0"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
-      ) : (
-        <div ref={mapContainerRef} className="w-full h-full" />
       )}
 
-      {/* TOP FLOATING HEADER WITH TRIP BACK BUTTON & ACTIVITY QUICK SELECTOR */}
-      <div className="absolute top-3 left-3 right-3 z-[1000] space-y-2">
-        {/* Main Bar */}
-        <div className="flex items-center justify-between p-2.5 rounded-2xl bg-white/95 border border-[#D9DEDA] backdrop-blur-md shadow-xs gap-2">
+      {/* TOP FLOATING SEARCH & CATEGORY STRIP */}
+      <div className="absolute top-4 left-3 right-3 z-[1000] flex flex-col gap-2.5 max-w-xl mx-auto">
+        <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={() => {
               setNavigationTarget(null);
               setTripView('home');
-              setActiveTab('trips');
               navigate('/');
             }}
-            className="px-3 py-1.5 rounded-xl bg-[#355F58] hover:bg-[#2C504A] text-white text-xs font-black flex items-center gap-1.5 shadow-xs transition-all press-scale shrink-0"
+            className="p-3 rounded-2xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-2xl text-slate-200 hover:text-white hover:bg-slate-800/80 transition-all shrink-0 press-scale"
+            aria-label="Back to home"
           >
-            <ArrowLeft className="w-4 h-4 text-white" />
-            <span>Back to Active Trip</span>
+            <ArrowLeft className="w-4 h-4" />
           </button>
 
-          {/* Map Mode Switcher */}
-          <div className="flex bg-[#F0F2EF] p-1 rounded-xl border border-[#D9DEDA] shrink-0">
-            <button
-              type="button"
-              onClick={() => setMapMode('route')}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold flex items-center gap-1 transition-all ${
-                mapMode === 'route'
-                  ? 'bg-[#355F58] text-white shadow-xs'
-                  : 'text-[#5F6863] hover:text-[#1F2522]'
-              }`}
-            >
-              <Route className="w-3.5 h-3.5" />
-              <span>Route</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setMapMode('explore')}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold flex items-center gap-1 transition-all ${
-                mapMode === 'explore'
-                  ? 'bg-[#355F58] text-white shadow-xs'
-                  : 'text-[#5F6863] hover:text-[#1F2522]'
-              }`}
-            >
-              <MapIcon className="w-3.5 h-3.5" />
-              <span>Explore</span>
-            </button>
-          </div>
+          {/* Floating Search Island */}
+          <form onSubmit={handleSearchSubmit} className="flex-1 relative">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search places, food, hotels..."
+              className="w-full pl-10 pr-9 py-2.5 bg-slate-900/80 border border-white/10 backdrop-blur-xl rounded-2xl text-xs font-semibold text-white shadow-2xl outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/50 placeholder:text-slate-400 transition-all"
+            />
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  fetchPlaces(mapCenter[0], mapCenter[1], activeCategory);
+                }}
+                className="absolute right-3 top-2.5 text-slate-400 hover:text-white p-0.5 transition-colors"
+                aria-label="Clear search"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </form>
         </div>
 
-        {/* Activity Quick Selector Pills for Route Mode */}
-        {mapMode === 'route' && tripNavigationTargets.length > 0 && (
-          <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
-            {tripNavigationTargets.map((target) => {
-              const isSelected = activeTarget.activityId === target.activityId || activeTarget.title === target.title;
-              return (
-                <button
-                  key={target.activityId || target.title}
-                  onClick={() => {
-                    setSelectedActivityId(target.activityId || null);
-                    setNavigationTarget(target);
-                  }}
-                  className={`press-scale shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold shadow-xs backdrop-blur-md transition-all border flex items-center gap-1.5 ${
-                    isSelected
-                      ? 'bg-[#355F58] text-white font-black border-[#355F58]'
-                      : 'bg-white/90 text-[#1F2522] border-[#D9DEDA] hover:border-[#355F58]/50'
+        {/* Category Navigation Pills */}
+        <div className="flex gap-2 overflow-x-auto no-scrollbar py-0.5 px-0.5">
+          {[
+            { id: 'hotels', label: '🏨 Stays' },
+            { id: 'food', label: '🍽️ Food & Cafes' },
+            { id: 'activities', label: '🎯 Experiences' },
+            { id: 'all', label: '🗺️ All' }
+          ].map((cat) => {
+            const isActive = activeCategory === cat.id;
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setActiveCategory(cat.id as any)}
+                className={`press-scale shrink-0 px-4 py-1.5 rounded-full text-xs font-bold transition-all ${isActive
+                  ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-extrabold shadow-lg shadow-emerald-500/25 ring-1 ring-white/20 border border-emerald-400/30'
+                  : 'bg-slate-900/80 backdrop-blur-xl text-slate-300 border border-white/10 hover:bg-slate-800/80 hover:text-white'
                   }`}
-                >
-                  <MapPin className={`w-3.5 h-3.5 ${isSelected ? 'text-white' : 'text-[#355F58]'}`} />
-                  <span>Day {target.dayNumber}: {target.title}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Category Filters for Explore Mode */}
-        {mapMode === 'explore' && (
-          <div className="flex gap-2 overflow-x-auto no-scrollbar">
-            {categories.map(cat => (
-              <button
-                key={cat}
-                onClick={() => setFilterCategory(cat)}
-                className={`press-scale shrink-0 px-3.5 py-1.5 rounded-full text-xs font-bold shadow-xs backdrop-blur-md transition-all ${
-                  filterCategory === cat
-                    ? 'bg-[#355F58] text-white font-extrabold'
-                    : 'bg-white/90 text-[#1F2522] border border-[#D9DEDA]'
-                }`}
               >
-                {cat}
+                {cat.label}
               </button>
-            ))}
-          </div>
-        )}
-
-        {/* Smart Origin Switcher when user GPS is far away */}
-        {mapMode === 'route' && isFar && (
-          <div className="p-2 rounded-xl bg-white/95 border border-[#D9DEDA] backdrop-blur-md flex items-center justify-between gap-2 shadow-xs">
-            <span className="text-[10px] text-[#5F6863] font-bold uppercase tracking-wider">Start point:</span>
-            <div className="flex gap-1.5">
-              <button
-                type="button"
-                onClick={() => setOriginMode('stay')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                  originMode === 'stay'
-                    ? 'bg-[#355F58] text-white font-black shadow-xs'
-                    : 'bg-[#F0F2EF] text-[#1F2522] border border-[#D9DEDA]'
-                }`}
-              >
-                Trip Base / Stay
-              </button>
-              <button
-                type="button"
-                onClick={() => setOriginMode('live')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                  originMode === 'live'
-                    ? 'bg-[#355F58] text-white font-black shadow-xs'
-                    : 'bg-[#F0F2EF] text-[#1F2522] border border-[#D9DEDA]'
-                }`}
-              >
-                Live GPS ({distKm.toFixed(0)} km)
-              </button>
-            </div>
-          </div>
-        )}
+            );
+          })}
+        </div>
       </div>
 
-      {/* Non-blocking Location Error Notice */}
-      {locationError && (
-        <div className="absolute top-28 left-3 right-3 z-[1000] p-2.5 rounded-xl bg-white/90 border border-amber-500/30 text-amber-800 text-[11px] font-semibold backdrop-blur-md shadow-xs flex items-center gap-2">
-          <Compass className="w-4 h-4 text-amber-600 shrink-0" />
-          <span className="truncate">{locationError}</span>
+      {/* FLOATING "SEARCH THIS AREA" PILL */}
+      {showSearchAreaBtn && (
+        <div className="absolute top-28 left-1/2 -translate-x-1/2 z-[1000] animate-fadeIn">
+          <button
+            type="button"
+            onClick={() => fetchPlaces(mapCenter[0], mapCenter[1], activeCategory, searchQuery)}
+            className="px-4 py-2 bg-slate-900/85 border border-emerald-500/40 backdrop-blur-xl rounded-full text-xs font-bold text-emerald-400 shadow-2xl hover:bg-slate-800/90 flex items-center gap-2 transition-all press-scale"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+            <span>Search this area</span>
+          </button>
         </div>
       )}
 
-      {/* Recenter GPS & Follow Camera Button (Explore mode) */}
-      {mapMode === 'explore' && currentGPSLocation && (
+      {/* MAP LOADING OVERLAY */}
+      {isLoading && !showSearchAreaBtn && (
+        <div className="absolute top-28 left-1/2 -translate-x-1/2 z-[1000]">
+          <div className="px-4 py-2 bg-slate-900/80 border border-white/10 backdrop-blur-xl rounded-full text-xs font-semibold text-slate-300 shadow-xl flex items-center gap-2">
+            <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-400" />
+            <span>Finding places nearby...</span>
+          </div>
+        </div>
+      )}
+
+      {/* COMPASS / GPS RECENTER BUTTON */}
+      {userLocation && (
         <button
           type="button"
           onClick={() => {
-            if (mapInstanceRef.current && currentGPSLocation) {
-              mapInstanceRef.current.setView(currentGPSLocation, 15, { animate: true });
+            if (mapInstanceRef.current && userLocation) {
+              mapInstanceRef.current.setView(userLocation, 15, { animate: true });
+              setMapCenter(userLocation);
               toggleFollowMode();
+              fetchPlaces(userLocation[0], userLocation[1], activeCategory);
             }
           }}
-          className={`absolute bottom-24 right-4 z-[1000] px-3.5 py-2 rounded-full border backdrop-blur-md shadow-md flex items-center gap-1.5 text-xs font-extrabold transition-all press-scale ${
-            isFollowMode
-              ? 'bg-[#355F58] text-white border-[#355F58]'
-              : 'bg-white/95 text-[#355F58] border-[#D9DEDA] hover:bg-[#E8F0EE]'
-          }`}
-          title={isFollowMode ? "Camera following active location (click to unlock)" : "Center map & follow location"}
+          className={`absolute bottom-44 right-4 z-[1000] p-3 rounded-2xl border backdrop-blur-xl shadow-2xl transition-all press-scale ${isFollowMode
+            ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-bold shadow-emerald-500/30'
+            : 'bg-slate-900/85 text-emerald-400 border-white/10 hover:text-emerald-300 hover:bg-slate-800'
+            }`}
+          title="Recenter Map"
+          aria-label="Recenter Map"
         >
-          <Compass className={`w-4 h-4 ${isFollowMode ? 'animate-spin' : ''}`} />
-          <span>{isFollowMode ? 'Following' : 'Locate Me'}</span>
+          <Compass className="w-5 h-5" />
         </button>
       )}
 
-      {/* ROUTE GUIDANCE BOTTOM PANEL SHEET */}
-      {mapMode === 'route' && activeTarget && (
-        <div className="absolute bottom-4 left-3 right-3 z-[1000] p-4 rounded-3xl bg-white border border-[#D9DEDA] backdrop-blur-md shadow-lg space-y-3 animate-slideUp">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-xs font-bold text-[#1F2522] min-w-0">
-              <Navigation className="w-4 h-4 text-[#355F58] shrink-0" />
-              <div className="truncate">
-                <div className="font-extrabold truncate text-[#1F2522]">{activeTarget.title}</div>
-                <div className="text-[11px] text-[#5F6863] truncate font-medium">{activeTarget.locationName}</div>
-              </div>
-            </div>
+      {/* BOTTOM HORIZONTAL PLACE CARD CAROUSEL */}
+      <div className="absolute bottom-4 left-3 right-3 z-[1000]">
+        {places.length > 0 ? (
+          <div className="flex gap-3 overflow-x-auto snap-x snap-mandatory no-scrollbar p-1">
+            {places.map((place) => {
+              const isSelected = selectedPlace?.id === place.id;
+              const distKm = place.distanceMeters ? (place.distanceMeters / 1000).toFixed(1) : '0.8';
+              const coverImg = getPlaceImage(place.category, place.name);
 
-            <div className="flex items-center gap-1.5 text-xs font-bold text-[#355F58] font-mono shrink-0 ml-2">
-              <span>{distKm.toFixed(1)} km</span>
-              <span>•</span>
-              <span>~{etaMinutes} min</span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 pt-1">
-            <button
-              type="button"
-              onClick={() => {
-                const query = encodeURIComponent(activeTarget.locationName || activeTarget.title);
-                window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
-              }}
-              className="flex-1 py-3.5 bg-[#355F58] hover:bg-[#2C504A] text-white font-extrabold text-xs rounded-2xl shadow-xs transition-all flex items-center justify-center gap-1.5 press-scale min-h-[48px]"
-            >
-              <ExternalLink className="w-4 h-4 text-white" />
-              <span>Open in Maps App</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => openCabModal(activeTarget.title)}
-              className="py-3.5 px-4 bg-[#F0F2EF] border border-[#D9DEDA] hover:border-[#355F58]/40 text-[#355F58] font-bold text-xs rounded-2xl transition-all flex items-center justify-center gap-1.5 min-h-[48px]"
-            >
-              <Car className="w-4 h-4 text-[#355F58]" />
-              <span>Book Ride</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Selected Spot Detail Bottom Sheet for Explore Mode */}
-      {mapMode === 'explore' && (
-        <BottomSheet isOpen={!!selectedSpot} onClose={() => setSelectedSpot(null)} height="peek">
-          {selectedSpot && (
-            <div className="p-4 space-y-3">
-              <div className="flex gap-3">
-                <img
-                  src={selectedSpot.image}
-                  alt={selectedSpot.title}
-                  className="w-16 h-16 rounded-xl object-cover shrink-0"
-                  loading="lazy"
-                />
-                <div className="flex-1 min-w-0">
-                  <span className="text-[10px] uppercase font-bold text-teal-400 tracking-wider">
-                    {selectedSpot.type}
-                  </span>
-                  <h3 className="font-bold text-sm text-white truncate mt-0.5">{selectedSpot.title}</h3>
-                  <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
-                    <MapPin className="w-3 h-3 text-slate-500" />
-                    {selectedSpot.location} · <span className="font-mono text-teal-300 font-bold">{selectedSpot.distanceKm}</span>
-                  </p>
-                  <div className="flex items-center gap-2 mt-1 text-xs">
-                    <span className="font-bold text-amber-400 flex items-center gap-0.5">
-                      <Star className="w-3 h-3 fill-amber-400" /> {selectedSpot.rating}
+              return (
+                <div
+                  key={place.id}
+                  ref={(el) => { cardRefs.current[place.id] = el; }}
+                  onClick={() => {
+                    setSelectedPlace(place);
+                    mapInstanceRef.current?.panTo([place.latitude, place.longitude], { animate: true, duration: 0.5 });
+                  }}
+                  className={`snap-center shrink-0 w-80 h-36 rounded-2xl backdrop-blur-xl transition-all cursor-pointer border p-3 flex gap-3 ${isSelected
+                    ? 'bg-slate-900/95 text-white border-emerald-500 ring-2 ring-emerald-500/30 shadow-[0_10px_30px_rgba(16,185,129,0.25)]'
+                    : 'bg-slate-900/80 text-slate-200 border-white/10 shadow-2xl hover:bg-slate-900 hover:border-white/20'
+                    }`}
+                >
+                  {/* Left Cover Photo (1/3 width) */}
+                  <div className="relative w-24 h-full rounded-xl overflow-hidden bg-slate-800 shrink-0">
+                    <img
+                      src={coverImg}
+                      alt={place.name}
+                      className="w-full h-full object-cover"
+                      loading="lazy"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent" />
+                    <span className="absolute top-1.5 left-1.5 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-slate-950/80 text-emerald-400 backdrop-blur-md border border-white/10">
+                      {place.category}
                     </span>
-                    <span className="font-mono text-teal-400 font-bold">{selectedSpot.price}</span>
+                  </div>
+
+                  {/* Right Card Content (2/3 width) */}
+                  <div className="flex-1 flex flex-col justify-between min-w-0">
+                    <div>
+                      <div className="flex items-center justify-between gap-1 text-[10px] font-bold text-slate-400">
+                        <span className="uppercase text-emerald-400 font-extrabold tracking-wider truncate text-[9px]">
+                          {place.category}
+                        </span>
+                        {place.rating ? (
+                          <span className="text-amber-400 font-extrabold flex items-center gap-0.5 shrink-0">
+                            ★ {place.rating}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <h4 className="font-extrabold text-sm truncate mt-0.5 text-white">{place.name}</h4>
+                      <p className="text-[11px] text-slate-400 truncate mt-0.5">{place.address} • {distKm} km away</p>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-white/10">
+                      <span className="text-xs font-bold text-emerald-300 truncate">
+                        {place.price_approx || 'Verified Spot'}
+                      </span>
+                      <div className="flex gap-2 shrink-0 items-center">
+                        <button
+                          type="button"
+                          onClick={(e) => handlePlayNarration(place, e)}
+                          className={`p-2 rounded-xl transition-all flex items-center justify-center text-xs font-semibold press-scale ${
+                            playingPlaceId === place.id 
+                              ? 'bg-amber-500 text-slate-950 font-bold shadow-lg shadow-amber-500/30 animate-pulse' 
+                              : 'bg-white/10 hover:bg-white/20 text-slate-200'
+                          }`}
+                          title="Listen AI Guide"
+                          aria-label="Listen AI Guide"
+                        >
+                          {audioLoadingId === place.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-400" />
+                          ) : playingPlaceId === place.id ? (
+                            <VolumeX className="w-3.5 h-3.5" />
+                          ) : (
+                            <Volume2 className="w-3.5 h-3.5 text-amber-400" />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const q = encodeURIComponent(`${place.name}, ${place.address}`);
+                            window.open(`https://www.google.com/maps/search/?api=1&query=${q}`, '_blank');
+                          }}
+                          className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all press-scale"
+                          title="Open Directions in Google Maps"
+                          aria-label="Open Directions in Google Maps"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openCabModal(place.name);
+                          }}
+                          className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-slate-950 font-extrabold text-xs rounded-xl flex items-center gap-1.5 shadow-lg shadow-emerald-500/25 press-scale transition-all"
+                        >
+                          <Car className="w-3.5 h-3.5" />
+                          <span>Ride</span>
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-
-              {/* Actions */}
-              <div className="flex gap-2 pt-1">
-                <button
-                  onClick={() => {
-                    openCabModal(selectedSpot.title);
-                    setSelectedSpot(null);
-                  }}
-                  className="cta-primary flex-1 text-xs py-2.5"
-                >
-                  <Car className="w-4 h-4" /> Book Ride
-                </button>
-                <button
-                  onClick={() => {
-                    openAiAssistant(`Tell me more about ${selectedSpot.title}`);
-                    setSelectedSpot(null);
-                  }}
-                  className="cta-secondary flex-1 text-xs py-2.5"
-                >
-                  <Sparkles className="w-4 h-4 text-teal-400" /> Ask AI
-                </button>
-              </div>
-            </div>
-          )}
-        </BottomSheet>
-      )}
+              );
+            })}
+          </div>
+        ) : !isLoading && (
+          <div className="p-4 bg-slate-900/85 border border-white/10 backdrop-blur-xl rounded-2xl text-center text-xs font-medium text-slate-300 shadow-2xl">
+            No places found nearby. Try dragging the map or tapping "Search this area".
+          </div>
+        )}
+      </div>
     </div>
   );
 };
-

@@ -27,6 +27,7 @@ from itinerary_service import (
 )
 
 import asyncio
+from starlette.concurrency import run_in_threadpool
 from contextlib import asynccontextmanager
 from events_listener import start_redis_events_listener
 from websocket_manager import ws_manager
@@ -287,7 +288,8 @@ class ConciergeMessageItem(BaseModel):
 
 class ConciergeRequest(BaseModel):
     class Config:
-        extra = "ignore"
+        extra = "allow"
+        populate_by_name = True
     message: str
     intent: Optional[str] = "CHAT"
     tripId: Optional[str] = None
@@ -295,7 +297,8 @@ class ConciergeRequest(BaseModel):
     dayId: Optional[str] = None
     activityId: Optional[str] = None
     messages: Optional[List[Any]] = None
-    tripContext: Optional[dict] = None
+    tripContext: Optional[Dict[str, Any]] = None
+    trip_context: Optional[Dict[str, Any]] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
 
@@ -772,13 +775,13 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
 
     elif reqname in ["location:search", "places:search"]:
         q = data.get("query") or data.get("q") or ""
-        return search_places(q)
+        return await run_in_threadpool(search_places, q)
 
     elif reqname == "places:nearby":
         q = data.get("query") or data.get("q") or ""
         lat = data.get("lat") or data.get("latitude")
         lon = data.get("lon") or data.get("lng") or data.get("longitude")
-        return search_nearby_restaurants(q, lat, lon)
+        return await run_in_threadpool(search_nearby_restaurants, q, lat, lon)
 
     # 3. Tour Guide Actions
     elif reqname == "tour_guide:get_nearby":
@@ -805,7 +808,13 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
             except Exception:
                 pass
 
-        raw_places = search_nearby_pois(lat, lng, radius)
+        raw_places = await run_in_threadpool(
+            search_nearby_pois, 
+            lat, 
+            lng, 
+            radius_m=radius, 
+            category="all"
+        )
         ranked = rank_places(raw_places, user_prefs, limit=10)
 
         session = get_or_create_session(user_id)
@@ -825,7 +834,7 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
             "proactive_alert": alert_place
         }
 
-    elif reqname == "tour_guide:chat":
+    elif reqname in ("tour_guide:chat", "ai:concierge", "concierge:chat"):
         from tour_guide_service import (
             search_nearby_pois, rank_places, get_or_create_session, should_refresh_nearby,
             resolve_active_place, add_message_to_session, generate_tour_guide_response, haversine_meters
@@ -847,8 +856,8 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
                 pass
 
         target_mode = data.get("mode") or "local"
-        target_trip_id = data.get("trip_id")
-        user_msg = data.get("message") or data.get("user_message") or ""
+        target_trip_id = data.get("trip_id") or data.get("tripId")
+        user_msg = data.get("message") or data.get("user_message") or data.get("query") or ""
         place_id = data.get("place_id")
         lat = data.get("latitude") or data.get("lat")
         lng = data.get("longitude") or data.get("lng")
@@ -889,7 +898,7 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
         if lat is not None and lng is not None:
             user_location = {"latitude": lat, "longitude": lng}
             if should_refresh_nearby(session, lat, lng) or not session.get("nearby_places"):
-                raw = search_nearby_pois(lat, lng, 5000)
+                raw = await run_in_threadpool(search_nearby_pois, lat, lng, radius_m=5000, category="all")
                 ranked = rank_places(raw, user_prefs, limit=10)
                 session["nearby_places"] = ranked
                 session["last_nearby_lat"] = lat
@@ -906,7 +915,8 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
 
         add_message_to_session(session, "user", user_msg, active_place_id)
 
-        result = generate_tour_guide_response(
+        result = await run_in_threadpool(
+            generate_tour_guide_response,
             messages=session["messages"],
             place_context=place_context,
             nearby_places=session.get("nearby_places", []),
@@ -946,6 +956,25 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
         return {
             "status": "success",
             "current_place_id": place_id
+        }
+
+    elif reqname == "tts:synthesize":
+        from tts_service import synthesize_speech_sarvam
+        text = data.get("text", "")
+        lang = data.get("target_language_code", "hi-IN")
+        speaker = data.get("speaker", "meera")
+        poi_id = data.get("poi_id")
+        audio_b64 = await run_in_threadpool(
+            synthesize_speech_sarvam,
+            text=text,
+            target_language_code=lang,
+            speaker=speaker,
+            poi_id=poi_id
+        )
+        return {
+            "audio_base64": audio_b64,
+            "speaker": speaker,
+            "language": lang
         }
 
     # 4. Trip Domain Actions
@@ -1253,7 +1282,7 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
         concierge_req = ConciergeRequest(**data)
 
         # Build context if tripId is present
-        trip_context = concierge_req.tripContext or {}
+        trip_context = getattr(concierge_req, "tripContext", None) or getattr(concierge_req, "trip_context", None) or {}
         itinerary_summary = []
         if concierge_req.tripId:
             trip = db.query(TripModel).filter(TripModel.id == concierge_req.tripId).first()
@@ -1293,7 +1322,7 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
         if lat is not None and lng is not None:
             try:
                 from tour_guide_service import search_nearby_pois
-                nearby = search_nearby_pois(float(lat), float(lng), 5000)
+                nearby = await run_in_threadpool(search_nearby_pois, float(lat), float(lng), 5000)
                 if nearby:
                     trip_context["nearbyPlaces"] = [
                         f"{p['name']} ({p['category']}, {p['distanceMeters']}m away)"
@@ -1622,11 +1651,179 @@ def search_destinations(q: str = ""):
 @app.get("/api/places/nearby", dependencies=[Depends(osm_limiter)])
 def get_nearby_places(
     q: Optional[str] = None,
+    category: Optional[str] = "all",
     lat: Optional[float] = None,
-    lon: Optional[float] = None
+    lon: Optional[float] = None,
+    lng: Optional[float] = None,
+    radius: Optional[int] = 5000
 ):
-    log_event(f"🔍 GET /api/places/nearby?q={q}&lat={lat}&lon={lon}")
-    return search_nearby_restaurants(q or "", lat, lon)
+    """
+    TripAdvisor-style unified map discovery endpoint:
+    - Category filtering: 'hotels', 'food', 'activities', 'all'
+    - Local free-text search bounded strictly to current map viewport
+    """
+    resolved_lng = lng if lng is not None else lon
+    if lat is None or resolved_lng is None:
+        raise HTTPException(status_code=400, detail="Latitude and Longitude are required.")
+
+    log_event(f"🗺️ GET /api/places/nearby | Cat: {category} | Query: {q} | Coords: ({lat:.4f}, {resolved_lng:.4f})")
+
+    from tour_guide_service import search_nearby_pois
+
+    # 1. Free-text Search inside map area (e.g. "chai", "pizza", "mandir")
+    if q and len(q.strip()) >= 2:
+        clean_q = q.strip().lower()
+        search_radius = max(radius or 5000, 10000)
+        
+        # Check cached/local Overpass POIs first
+        all_nearby = search_nearby_pois(lat, resolved_lng, radius_m=search_radius, category="all")
+        matched = [
+            p for p in all_nearby 
+            if clean_q in p.get("name", "").lower() 
+            or clean_q in p.get("category", "").lower() 
+            or clean_q in (p.get("address") or "").lower()
+        ]
+        
+        # Local Viewport Fallback: Strictly bounded to local coordinates (Not whole India!)
+        if not matched:
+            from places import search_local_amenities
+            local_results = search_local_amenities(clean_q, lat, resolved_lng, radius_km=(search_radius / 1000.0))
+            return local_results if local_results else all_nearby[:10]
+            
+        return matched
+
+    # 2. Category discovery (Pills: Hotels, Food, Activities)
+    req_radius = radius or 5000
+    places = search_nearby_pois(lat, resolved_lng, radius_m=req_radius, category=category)
+    # Discard items outside the user's explicit radius before returning
+    filtered_places = [p for p in places if p.get("distanceMeters", 0) <= req_radius]
+    return filtered_places if filtered_places else places
+
+# ── SARVAM AI TTS SYNTHESIS ENDPOINT ──
+
+class TTSRequest(BaseModel):
+    text: str
+    target_language_code: Optional[str] = "hi-IN"
+    speaker: Optional[str] = "meera"
+    poi_id: Optional[str] = None
+
+@app.post("/api/tts/synthesize")
+async def tts_synthesize(req: TTSRequest):
+    from tts_service import synthesize_speech_sarvam
+    base64_audio = await run_in_threadpool(
+        synthesize_speech_sarvam,
+        text=req.text,
+        target_language_code=req.target_language_code or "hi-IN",
+        speaker=req.speaker or "meera",
+        poi_id=req.poi_id
+    )
+    if not base64_audio:
+        raise HTTPException(status_code=500, detail="Failed to synthesize speech via Sarvam AI")
+    return {
+        "audio_base64": base64_audio,
+        "format": "audio/wav",
+        "speaker": req.speaker,
+        "language": req.target_language_code
+    }
+
+class SpeakRequest(BaseModel):
+    text: Optional[str] = None
+    language: Optional[str] = "hi-IN"
+    speaker: Optional[str] = "ritu"
+    place_id: Optional[str] = None
+    place_name: Optional[str] = None
+    category: Optional[str] = "attraction"
+    address: Optional[str] = None
+
+@app.post("/api/tts/speak")
+def text_to_speech_endpoint(req: SpeakRequest):
+    from tts_service import synthesize_speech_sarvam
+    from tour_guide_service import generate_poi_story
+
+    narration_text = req.text
+    if not narration_text or len(narration_text.strip()) == 0:
+        if req.place_name:
+            narration_text = generate_poi_story(req.place_name, req.category or "attraction", req.address or "")
+        else:
+            raise HTTPException(status_code=400, detail="Either text or place_name must be provided.")
+
+    audio_b64 = synthesize_speech_sarvam(
+        text=narration_text,
+        target_language_code=req.language or "hi-IN",
+        speaker=req.speaker or "ritu",
+        poi_id=req.place_id
+    )
+    if not audio_b64:
+        raise HTTPException(status_code=500, detail="TTS synthesis failed.")
+
+    return {
+        "status": "ok",
+        "story": narration_text,
+        "audio_base64": audio_b64
+    }
+
+# ── AI CONCIERGE HTTP FALLBACK ENDPOINT ──
+
+class ConciergeRequest(BaseModel):
+    message: Optional[str] = None
+    query: Optional[str] = None
+    mode: Optional[str] = "local"
+    tripId: Optional[str] = None
+    trip_id: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    context: Optional[Dict[str, Any]] = None
+    tripContext: Optional[Dict[str, Any]] = None
+    trip_context: Optional[Dict[str, Any]] = None
+    messages: Optional[List[Dict[str, Any]]] = None
+
+    class Config:
+        extra = "allow"
+        populate_by_name = True
+
+@app.post("/api/ai/concierge")
+async def ai_concierge_endpoint(req: ConciergeRequest):
+    user_msg = req.message or req.query or ""
+    if not user_msg or not user_msg.strip():
+        raise HTTPException(status_code=400, detail="Message cannot be empty.")
+    
+    from tour_guide_service import generate_tour_guide_response, rank_places, search_nearby_pois
+    
+    ctx = req.context or {}
+    user_lat = req.latitude or req.lat or (ctx.get("user_location") or {}).get("latitude")
+    user_lng = req.longitude or req.lng or (ctx.get("user_location") or {}).get("longitude")
+    
+    user_location = None
+    nearby_places = []
+    if user_lat is not None and user_lng is not None:
+        user_location = {"latitude": float(user_lat), "longitude": float(user_lng)}
+        raw_pois = await run_in_threadpool(search_nearby_pois, float(user_lat), float(user_lng), 5000)
+        nearby_places = rank_places(raw_pois, limit=8)
+
+    history_msgs = []
+    if req.messages:
+        for m in req.messages:
+            history_msgs.append({"role": m.get("role", "user"), "text": m.get("text", "")})
+    else:
+        history_msgs = [{"role": "user", "text": user_msg}]
+
+    result = await run_in_threadpool(
+        generate_tour_guide_response,
+        messages=history_msgs,
+        place_context=ctx.get("place"),
+        nearby_places=nearby_places,
+        user_location=user_location,
+        trip_context=req.tripContext or req.trip_context or ctx.get("trip_context"),
+        mode=req.mode or "local"
+    )
+
+    return {
+        "reply": result.get("reply", "I'm here to help!"),
+        "suggestedActions": result.get("suggestedActions", []),
+        "source": "http_fallback"
+    }
 
 # ── TRIP DOMAIN ENDPOINTS ──
 
@@ -1935,14 +2132,7 @@ def verify_trip_ownership(trip_id: str, user_id: str, db: Session) -> TripModel:
 
 from pydantic import BaseModel
 
-class ConciergeRequest(BaseModel):
-    message: str
-    intent: Optional[str] = "CHAT"
-    tripId: Optional[str] = None
-    itineraryId: Optional[str] = None
-    dayId: Optional[str] = None
-    activityId: Optional[str] = None
-    messages: Optional[List[Dict[str, Any]]] = None
+
 
 class ActivityReplacementPayload(BaseModel):
     name: str
@@ -1986,7 +2176,7 @@ def ai_concierge(
     from ai_provider import ai_provider_service
 
     # Build context if tripId is present
-    trip_context = {}
+    trip_context = getattr(req, "tripContext", None) or getattr(req, "trip_context", None) or {}
     itinerary_summary = []
     if req.tripId:
         trip = verify_trip_ownership(req.tripId, auth_user.id, db)

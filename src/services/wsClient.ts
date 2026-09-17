@@ -36,6 +36,8 @@ interface PendingRequest {
   frame: WsRequestFrame;
 }
 
+const DEFAULT_TIMEOUT_MS = 20000;
+
 class WebSocketClient {
   private ws: WebSocket | null = null;
   private url: string;
@@ -146,11 +148,21 @@ class WebSocketClient {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
 
     if (this.offlineBuffer.length > 0) {
-      console.log(`[WS] Replaying ${this.offlineBuffer.length} buffered offline request(s)...`);
-      const bufferToFlush = [...this.offlineBuffer];
+      // Deduplicate buffered frames before replaying
+      const uniqueFrames: WsRequestFrame[] = [];
+      const seen = new Set<string>();
+      for (let i = this.offlineBuffer.length - 1; i >= 0; i--) {
+        const f = this.offlineBuffer[i];
+        const key = `${f.action || f.reqname}:${JSON.stringify(f.payload || f.data)}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          uniqueFrames.unshift(f);
+        }
+      }
+      console.log(`[WS] Replaying ${uniqueFrames.length} unique buffered offline request(s)...`);
       this.offlineBuffer = [];
 
-      for (const frame of bufferToFlush) {
+      for (const frame of uniqueFrames) {
         try {
           this.ws.send(JSON.stringify(frame));
         } catch (err) {
@@ -200,7 +212,7 @@ class WebSocketClient {
   /**
    * Main method to send a request over WebSocket and await the response frame
    */
-  public async sendRequest<T = any>(reqname: string, data: any = {}): Promise<T> {
+  public async sendRequest<T = any>(reqname: string, data: any = {}, timeoutMs: number = DEFAULT_TIMEOUT_MS): Promise<T> {
     const requestId = 'req_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
 
     const frame: WsRequestFrame = {
@@ -215,13 +227,13 @@ class WebSocketClient {
     };
 
     return new Promise<T>((resolve, reject) => {
-      // 30-second timeout for server response
+      // Default 15s timeout for server response
       const timer = setTimeout(() => {
         if (this.pendingRequests.has(requestId)) {
           this.pendingRequests.delete(requestId);
           reject(new Error(`WebSocket request timeout for [${reqname}]`));
         }
-      }, 30000);
+      }, timeoutMs);
 
       this.pendingRequests.set(requestId, { resolve, reject, timer, frame });
 
@@ -234,9 +246,25 @@ class WebSocketClient {
           reject(err);
         }
       } else {
-        // Buffer offline request to replay upon reconnect
+        // Buffer offline request to replay upon reconnect (deduplicated)
         console.log(`[WS] Offline or reconnecting. Buffering request [${reqname}] (${requestId})`);
-        this.offlineBuffer.push(frame);
+        const dataStr = JSON.stringify(data);
+        const existingIdx = this.offlineBuffer.findIndex(
+          (f) => (f.action === reqname || f.reqname === reqname) && JSON.stringify(f.payload || f.data) === dataStr
+        );
+        if (existingIdx !== -1) {
+          const older = this.offlineBuffer[existingIdx];
+          const olderReqId = older.id || older.requestId;
+          if (olderReqId && this.pendingRequests.has(olderReqId)) {
+            const p = this.pendingRequests.get(olderReqId)!;
+            clearTimeout(p.timer);
+            this.pendingRequests.delete(olderReqId);
+            p.reject(new Error(`Superceded by newer [${reqname}] request`));
+          }
+          this.offlineBuffer[existingIdx] = frame;
+        } else {
+          this.offlineBuffer.push(frame);
+        }
         this.ensureConnected();
       }
     });
@@ -258,7 +286,16 @@ class WebSocketClient {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(frame));
     } else {
-      this.offlineBuffer.push(frame);
+      const actionName = reqname || frame.action;
+      const dataStr = JSON.stringify(data);
+      const existingIdx = this.offlineBuffer.findIndex(
+        (f) => (f.action === actionName || f.reqname === actionName) && JSON.stringify(f.payload || f.data) === dataStr
+      );
+      if (existingIdx !== -1) {
+        this.offlineBuffer[existingIdx] = frame;
+      } else {
+        this.offlineBuffer.push(frame);
+      }
       this.ensureConnected();
     }
   }
