@@ -13,7 +13,7 @@ const getApiBaseUrl = (): string => {
     const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
     return `${protocol}//${window.location.hostname}`;
   }
-  return 'https://e461-2401-4900-8927-d7dc-79ef-73bc-4a0d-5fa0.ngrok-free.app';
+  return 'https://4cde-2401-4900-8927-d7dc-592f-ffed-ca7b-155f.ngrok-free.app';
 };
 
 const DEFAULT_HEADERS = {

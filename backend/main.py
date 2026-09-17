@@ -70,12 +70,12 @@ async def websocket_trip_endpoint(websocket: WebSocket, trip_id: str):
     except WebSocketDisconnect:
         ws_manager.disconnect(trip_id, websocket)
 
-# Enable CORS for localhost, Netlify, and ngrok tunnel
+# Enable CORS for Netlify, ngrok, localhost, and all production origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://tour-guide-v1.netlify.app",
-        "https://e461-2401-4900-8927-d7dc-79ef-73bc-4a0d-5fa0.ngrok-free.app",
+        "https://4cde-2401-4900-8927-d7dc-592f-ffed-ca7b-155f.ngrok-free.app",
         "http://localhost",
         "http://127.0.0.1",
         "http://localhost:5173",
@@ -83,10 +83,11 @@ app.add_middleware(
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ],
-    allow_origin_regex=r"https://.*\.netlify\.app|https://.*\.ngrok-free\.app",
+    allow_origin_regex=r".*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 @app.middleware("http")
@@ -580,6 +581,7 @@ async def websocket_location_endpoint(
             trip = db.query(TripModel).filter(TripModel.id == trip_id).first()
             if trip and trip.user_id != user_id:
                 log_event(f"⚠️ [WS LOCATION REJECTED] User {user_id} unauthorized for trip {trip_id}")
+                await websocket.accept()
                 await websocket.close(code=4003)
                 return
         except Exception:

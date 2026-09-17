@@ -67,6 +67,7 @@ class LocationSocketClient {
     this.isConnecting = true;
     const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
     const envWsUrl = import.meta.env.VITE_WS_BASE_URL || import.meta.env.VITE_WS_URL;
+    const envApiUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL;
 
     let baseUrl = '';
     if (isLocalhost) {
@@ -74,17 +75,23 @@ class LocationSocketClient {
     } else if (envWsUrl) {
       const cleanUrl = envWsUrl.replace(/\/ws.*$/, '');
       baseUrl = `${cleanUrl}/ws/location`;
+    } else if (envApiUrl) {
+      const cleanApi = envApiUrl.replace(/^http/, 'ws').replace(/\/$/, '');
+      baseUrl = `${cleanApi}/ws/location`;
     } else {
-      baseUrl = 'wss://e461-2401-4900-8927-d7dc-79ef-73bc-4a0d-5fa0.ngrok-free.app/ws/location';
+      baseUrl = 'wss://4cde-2401-4900-8927-d7dc-592f-ffed-ca7b-155f.ngrok-free.app/ws/location';
     }
 
-    let url = baseUrl;
-
+    const params = new URLSearchParams();
     if (this.currentTripId) {
-      const params = new URLSearchParams();
       params.append('trip_id', this.currentTripId);
-      url += `?${params.toString()}`;
     }
+    if (baseUrl.includes('ngrok')) {
+      params.append('ngrok-skip-browser-warning', 'true');
+    }
+
+    const paramStr = params.toString();
+    const url = paramStr ? `${baseUrl}?${paramStr}` : baseUrl;
 
     console.log(`[LOCATION SOCKET] Connecting to ${url}...`);
 
