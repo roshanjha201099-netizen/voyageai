@@ -212,13 +212,17 @@ def log_frontend_payload(endpoint: str, payload: Any, user_email: Optional[str] 
             print(f"   * {key}: {explanation}", flush=True)
     print("=" * 80 + "\n", flush=True)
 
-def extract_token(request: Request, authorization: Optional[str] = Header(None)) -> str:
+def extract_token_optional(request: Request, authorization: Optional[str] = Header(None)) -> Optional[str]:
     token = request.cookies.get(COOKIE_NAME)
     if not token and authorization:
         if authorization.startswith("Bearer "):
             token = authorization.split(" ")[1]
         else:
             token = authorization
+    return token
+
+def extract_token(request: Request, authorization: Optional[str] = Header(None)) -> str:
+    token = extract_token_optional(request, authorization)
     if not token:
         raise HTTPException(status_code=401, detail="Authentication token missing")
     return token
@@ -365,9 +369,24 @@ def get_session(
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
+    token = extract_token_optional(request, authorization)
+    if not token:
+        return {
+            "token": None,
+            "authUser": None,
+            "userProfile": None,
+            "userPreferences": None
+        }
+
     try:
-        token = extract_token(request, authorization)
         user_tuple = auth.get_session_user(db, token)
+        if not user_tuple:
+            return {
+                "token": None,
+                "authUser": None,
+                "userProfile": None,
+                "userPreferences": None
+            }
         auth_user, user_profile, user_prefs = user_tuple
         return {
             "token": token,
@@ -375,11 +394,14 @@ def get_session(
             "userProfile": user_profile,
             "userPreferences": user_prefs
         }
-    except HTTPException:
-        raise
     except Exception as err:
-        log_event(f"[SESSION ERROR] Session retrieval failed: {str(err)}")
-        raise HTTPException(status_code=401, detail=str(err))
+        log_event(f"[SESSION NOTICE] Session not active: {str(err)}")
+        return {
+            "token": None,
+            "authUser": None,
+            "userProfile": None,
+            "userPreferences": None
+        }
 
 @app.post("/api/auth/logout")
 def logout(
