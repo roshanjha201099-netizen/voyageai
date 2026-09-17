@@ -192,10 +192,10 @@ export const MapView: React.FC = () => {
       attributionControl: false,
     });
 
-    // Full-bleed CARTO Dark Matter basemap
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    // Open-access basemap with custom dark-matter CSS inversion (0 API keys required)
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
-      subdomains: 'abcd',
+      subdomains: ['a', 'b', 'c'],
       className: 'crazy-dark-tiles',
     }).addTo(map);
 
