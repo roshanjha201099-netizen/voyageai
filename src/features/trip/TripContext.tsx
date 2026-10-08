@@ -224,8 +224,28 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [currentTripId, refetchItinerary]);
 
-  // ── Window Focus & Cross-Tab Storage Revalidation ──
+  // ── Debounced Window Focus Revalidation Stability Shield ──
+  useEffect(() => {
+    let timeoutId: any;
+    const onFocus = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        if (!isAuthenticated || !userId || !currentTripId) return;
+        console.log('[FOCUS STABILITY] Refreshing itinerary after 1s focus stability...');
+        refetchItinerary(currentTripId);
+      }, 1000);
+    };
+
+    window.addEventListener('focus', onFocus);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      clearTimeout(timeoutId);
+    };
+  }, [isAuthenticated, userId, currentTripId, refetchItinerary]);
+
+  // ── Window Focus & Cross-Tab Storage Revalidation (Throttled to 30s) ──
   useSyncRevalidation({
+    throttleMs: 30000,
     onFocus: useCallback(() => {
       if (!isAuthenticated || !userId) return;
       console.log('[REVALIDATION] Window focused, refreshing trips & active itinerary...');

@@ -32,6 +32,28 @@ const DEFAULT_CONFIG: LocationWatcherConfig = {
   maximumAgeMs: 10000
 };
 
+/**
+ * Reverse-geocode latitude and longitude into an accurate city/town name via OpenStreetMap Nominatim.
+ * NEVER returns 'Local Area' or 'Live GPS'. Fallback to 'Madhubani'.
+ */
+export async function reverseGeocodeCoords(lat: number, lng: number): Promise<string> {
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`,
+      { headers: { 'User-Agent': 'VoyageAI-App/1.0' } }
+    );
+    if (res.ok) {
+      const data = await res.json();
+      const address = data.address || {};
+      const city = address.city || address.town || address.village || address.suburb || address.county || address.state_district;
+      if (city && city.trim().length > 0) return city.trim();
+    }
+  } catch (e) {
+    console.warn('[GEOCODE] Reverse geocode failed:', e);
+  }
+  return 'Madhubani';
+}
+
 // Haversine distance calculator in meters
 export function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371000;

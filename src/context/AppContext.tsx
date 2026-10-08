@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useMemo, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import type {
   NavTab, TripView, AppUIState, Trip, Hotel, Restaurant, ExperienceActivity,
   Booking, Expense, UserProfile, NotificationItem, ActivityItem,
@@ -10,9 +10,10 @@ import {
 } from '../data/mockData';
 
 import { ManualLocationModal } from '../components/common/ManualLocationModal';
-import { locationService, type NormalizedLocationPoint } from '../services/locationService';
+import { locationService, reverseGeocodeCoords, type NormalizedLocationPoint } from '../services/locationService';
 import { locationSocket } from '../services/locationSocket';
 import { wsClient } from '../services/wsClient';
+import { sanitizeLocationName } from '../utils/locationSanitizer';
 
 // Helper for LocalStorage Persistence
 function usePersistedState<T>(key: string, defaultValue: T): [T, React.Dispatch<React.SetStateAction<T>>] {
@@ -59,6 +60,8 @@ interface AppContextType {
   userLocationAccuracy: number | null;
   userLocationName: string;
   locationSource: 'gps' | 'manual' | null;
+  activeContextMode: 'local' | 'trip';
+  setActiveContextMode: (mode: 'local' | 'trip') => void;
   isLocationModalOpen: boolean;
   setIsLocationModalOpen: (open: boolean) => void;
   syncUserLocation: (lat: number, lng: number, accuracyMeters?: number, addressName?: string, source?: 'gps' | 'manual') => Promise<void>;
@@ -89,7 +92,10 @@ interface AppContextType {
 
   swapContext: SwapActivityPayload | null;
   setSwapContext: (ctx: SwapActivityPayload | null) => void;
+  isSwapModalOpen: boolean;
+  setIsSwapModalOpen: (open: boolean) => void;
   openSwapAssistant: (payload: SwapActivityPayload) => void;
+  closeSwapAssistant: () => void;
 
   navigationTarget: NavigationTarget | null;
   setNavigationTarget: (target: NavigationTarget | null) => void;
@@ -172,6 +178,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [userLocationAccuracy, setUserLocationAccuracy] = useState<number | null>(null);
   const [userLocationName, setUserLocationName] = useState<string>('');
   const [locationSource, setLocationSource] = useState<'gps' | 'manual' | null>(null);
+  const [activeContextMode, setActiveContextMode] = useState<'local' | 'trip'>('local');
   const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
 
   // ── Live Location Tracking State ──
@@ -192,7 +199,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   ) => {
     setUserLocation([lat, lng]);
     if (accuracyMeters !== undefined) setUserLocationAccuracy(accuracyMeters);
-    if (addressName) setUserLocationName(addressName);
+
+    let resolvedName = addressName ? sanitizeLocationName(addressName) : '';
+    if (!addressName || addressName.includes('Live GPS') || addressName.includes('Local Area') || resolvedName === 'Madhubani') {
+      resolvedName = await reverseGeocodeCoords(lat, lng);
+    }
+    setUserLocationName(resolvedName);
     setLocationSource(source);
 
     if (source === 'manual') {
@@ -204,7 +216,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         speed: null,
         timestamp: Date.now(),
         source: 'manual',
-        addressName: addressName || 'Manual Location'
+        addressName: resolvedName
       });
     }
 
@@ -254,19 +266,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return retryGPS();
   }, [retryGPS]);
 
+  const lastSyncedRef = useRef<{ lat: number; lng: number; time: number } | null>(null);
+
   // ── Unified Location Watcher Lifecycle ──
   const startLiveTracking = useCallback(() => {
     const success = locationService.startWatcher(
       async (point: NormalizedLocationPoint, shouldSyncBackend: boolean) => {
-        setUserLocation([point.latitude, point.longitude]);
-        setUserLocationAccuracy(point.accuracy);
-        setLiveTrackingLastUpdated(point.timestamp);
-        setLocationSource('gps');
-        setIsLiveTracking(true);
+        const now = Date.now();
+        let shouldUpdateState = false;
 
-        if (shouldSyncBackend) {
-          console.log(`[LIVE TRACKING] Syncing position — Lat: ${point.latitude.toFixed(5)}, Lng: ${point.longitude.toFixed(5)}, Accuracy: ${point.accuracy.toFixed(0)}m`);
-          await syncUserLocation(point.latitude, point.longitude, point.accuracy, 'Live GPS (Continuous)', 'gps');
+        if (!lastSyncedRef.current) {
+          shouldUpdateState = true;
+        } else {
+          const dLat = Math.abs(lastSyncedRef.current.lat - point.latitude);
+          const dLng = Math.abs(lastSyncedRef.current.lng - point.longitude);
+          // ~0.0005 degrees is approx 50 meters
+          const moved50m = dLat > 0.0005 || dLng > 0.0005;
+          const timeElapsed30s = now - lastSyncedRef.current.time > 30000;
+          if (moved50m || timeElapsed30s || shouldSyncBackend) {
+            shouldUpdateState = true;
+          }
+        }
+
+        if (shouldUpdateState) {
+          lastSyncedRef.current = { lat: point.latitude, lng: point.longitude, time: now };
+          setUserLocation([point.latitude, point.longitude]);
+          setUserLocationAccuracy(point.accuracy);
+          setLiveTrackingLastUpdated(point.timestamp);
+          setLocationSource('gps');
+          setIsLiveTracking(true);
+
+          if (shouldSyncBackend) {
+            console.log(`[LIVE TRACKING] Syncing position — Lat: ${point.latitude.toFixed(5)}, Lng: ${point.longitude.toFixed(5)}, Accuracy: ${point.accuracy.toFixed(0)}m`);
+            await syncUserLocation(point.latitude, point.longitude, point.accuracy, 'Live GPS (Continuous)', 'gps');
+          }
         }
       },
       (err) => {
@@ -332,13 +365,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [activeTab, tripView]);
 
   const [swapContext, setSwapContext] = useState<SwapActivityPayload | null>(null);
+  const [isSwapModalOpen, setIsSwapModalOpen] = useState<boolean>(false);
   const [navigationTarget, setNavigationTarget] = useState<NavigationTarget | null>(null);
 
   const openSwapAssistant = useCallback((payload: SwapActivityPayload) => {
     setSwapContext(payload);
-    const text = `Trip: ${payload.destination || 'Package'}. Selected Day: ${payload.selectedDay || 'ALL'}. Prompt: Recommend alternatives for activity: ${payload.activityName}`;
-    setAiPromptQuery(text);
-    setIsAiOpen(true);
+    setIsSwapModalOpen(true);
+  }, []);
+
+  const closeSwapAssistant = useCallback(() => {
+    setIsSwapModalOpen(false);
+    setSwapContext(null);
   }, []);
 
   const openInAppNavigation = useCallback((target: NavigationTarget, navigateFn?: (path: string) => void) => {
@@ -413,13 +450,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       appUIState, setAppUIState,
       activeTrip, setActiveTrip,
       userLocation, userLocationAccuracy, userLocationName, locationSource,
+      activeContextMode, setActiveContextMode,
       isLocationModalOpen, setIsLocationModalOpen,
       syncUserLocation, requestGPSLocation,
       isLiveTracking, toggleLiveTracking, startLiveTracking, stopLiveTracking, liveTrackingLastUpdated,
       isFollowMode, setIsFollowMode, toggleFollowMode, retryGPS,
       hotels, restaurants, experiences, bookings, expenses, notifications, userProfile,
       isAiOpen, setIsAiOpen, aiPromptQuery, setAiPromptQuery, aiContextLabel,
-      swapContext, setSwapContext, openSwapAssistant,
+      swapContext, setSwapContext, isSwapModalOpen, setIsSwapModalOpen, openSwapAssistant, closeSwapAssistant,
       navigationTarget, setNavigationTarget, openInAppNavigation,
       selectedHotel, setSelectedHotel,
       isCabModalOpen, setIsCabModalOpen, cabDestination, setCabDestination,

@@ -5,7 +5,7 @@
  * Simply update `DEFAULT_BACKEND_URL` below or edit `VITE_API_URL` in `.env` / `.env.production`.
  */
 
-export const DEFAULT_BACKEND_URL = 'https://3e2c-2401-4900-8927-d7dc-55d7-788c-2c5f-c63d.ngrok-free.app';
+export const DEFAULT_BACKEND_URL = 'https://8d4e-2401-4900-8f66-66c7-f943-ebbd-5fdc-c302.ngrok-free.app';
 
 /**
  * Returns the active HTTP/HTTPS API base URL.
@@ -23,7 +23,7 @@ export const getApiBaseUrl = (): string => {
   const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
   if (isLocalhost) {
     const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
-    return `${protocol}//${window.location.hostname}:8000`;
+    return `${protocol}//${window.location.hostname}`;
   }
 
   return DEFAULT_BACKEND_URL.replace(/\/$/, '');

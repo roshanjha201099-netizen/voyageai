@@ -22,6 +22,7 @@ import { HotelDetailModal } from './components/hotels/HotelDetailModal';
 import { CabBookingModal } from './components/cabs/CabBookingModal';
 import { FoodSheet } from './components/food/FoodSheet';
 import { EmergencyModal } from './components/common/EmergencyModal';
+import { SwapActivityModal } from './components/itinerary/SwapActivityModal';
 
 import { HomePage } from './components/home/HomePage';
 import { MyTripsPage } from './components/trips/MyTripsPage';
@@ -112,18 +113,20 @@ const MainContent: React.FC = () => {
     </Routes>
   );
 };
-
 const AppShell: React.FC = () => {
+  const location = useLocation();
+  const isGuideView = location.pathname === '/guide' || location.pathname === '/tour-guide';
+
   return (
-    <div className="min-h-dvh bg-[#F6F7F5] text-[#1F2522] flex flex-col antialiased">
+    <div className="min-h-dvh bg-[#F6F7F5] text-[#1F2522] flex flex-col antialiased overflow-x-hidden w-full max-w-full">
       {/* Mobile Lightweight Header */}
       <MobileHeader />
 
       {/* Main Layout Area */}
-      <div className="flex-1 flex max-w-7xl w-full mx-auto">
+      <div className="flex-1 flex max-w-7xl w-full mx-auto overflow-hidden">
         <DesktopSidebar />
 
-        <main className="flex-1 min-w-0 px-4 lg:px-8 py-4 lg:py-6">
+        <main className={`flex-1 min-w-0 flex flex-col max-w-full overflow-x-hidden ${isGuideView ? 'px-0 sm:px-4 py-0 sm:py-2 overflow-hidden' : 'px-4 lg:px-8 py-4 lg:py-6 overflow-y-auto'}`}>
           <MainContent />
         </main>
       </div>
@@ -131,8 +134,8 @@ const AppShell: React.FC = () => {
       {/* Fixed 4-Tab Bottom Navigation */}
       <MobileBottomNav />
 
-      {/* Floating Contextual AI Button */}
-      <FloatingAIButton />
+      {/* Floating Contextual AI Button (Omitted on Guide page) */}
+      {!isGuideView && <FloatingAIButton />}
 
       {/* Bottom Sheets & Modals */}
       <NotificationDrawer />
@@ -142,6 +145,7 @@ const AppShell: React.FC = () => {
       <CabBookingModal />
       <FoodSheet />
       <EmergencyModal />
+      <SwapActivityModal />
     </div>
   );
 };

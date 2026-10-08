@@ -4,6 +4,7 @@
  */
 
 import { wsClient } from './wsClient';
+import { getApiBaseUrl, DEFAULT_HEADERS } from '../config/apiConfig';
 
 export interface TourPlace {
   id: string;
@@ -18,6 +19,8 @@ export interface TourPlace {
   wikipedia?: string;
   source: string;
   dataReliability: 'VERIFIED' | 'ESTIMATED' | 'AI_INTERPRETATION';
+  is_mock?: boolean;
+  _isMock?: boolean;
 }
 
 export interface TourGuideMessage {
@@ -54,20 +57,52 @@ export async function fetchNearbyPlaces(
   lng: number,
   radius: number = 5000
 ): Promise<NearbyResponse> {
-  const data = await wsClient.sendRequest('tour_guide:get_nearby', {
-    lat,
-    lng,
-    radius: Math.min(radius, 5000)
-  });
+  try {
+    const baseUrl = getApiBaseUrl();
+    const res = await fetch(`${baseUrl}/api/tour-guide/nearby?lat=${lat}&lng=${lng}&radius=${Math.min(radius, 5000)}`, {
+      headers: DEFAULT_HEADERS
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return {
+        places: data.places || [],
+        center: data.center || { latitude: lat, longitude: lng },
+        radius_m: data.radius_m || radius,
+        count: data.count || (data.places ? data.places.length : 0),
+        total_raw: data.total_raw || 0,
+        proactive_alert: data.proactive_alert || null
+      };
+    }
+  } catch (err) {
+    console.warn('[FETCH NEARBY HTTP WARN]', err);
+  }
 
-  return {
-    places: data.places || [],
-    center: data.user_location || { latitude: lat, longitude: lng },
-    radius_m: data.radius_meters || radius,
-    count: data.total || (data.places ? data.places.length : 0),
-    total_raw: data.total || 0,
-    proactive_alert: data.proactive_alert || null
-  };
+  try {
+    const data = await wsClient.sendRequest('tour_guide:get_nearby', {
+      lat,
+      lng,
+      radius: Math.min(radius, 5000)
+    });
+
+    return {
+      places: data.places || [],
+      center: data.user_location || { latitude: lat, longitude: lng },
+      radius_m: data.radius_meters || radius,
+      count: data.total || (data.places ? data.places.length : 0),
+      total_raw: data.total || 0,
+      proactive_alert: data.proactive_alert || null
+    };
+  } catch (err) {
+    console.warn('[FETCH NEARBY WS WARN]', err);
+    return {
+      places: [],
+      center: { latitude: lat, longitude: lng },
+      radius_m: radius,
+      count: 0,
+      total_raw: 0,
+      proactive_alert: null
+    };
+  }
 }
 
 export async function sendTourGuideMessage(
