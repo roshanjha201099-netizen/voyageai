@@ -5,7 +5,7 @@ from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from database import get_db, SessionLocal, engine, Base, get_db_context, get_db_pool_status
 from models import LoginRequest, OnboardingRequest, SessionResponse
@@ -31,9 +31,18 @@ from starlette.concurrency import run_in_threadpool
 from contextlib import asynccontextmanager
 from events_listener import start_redis_events_listener
 from websocket_manager import ws_manager
+import models_chat  # Ensure ChatMessageModel is registered on Base
 
-# Ensure database tables are created
-Base.metadata.create_all(bind=engine)
+from database import init_db
+
+# Ensure database tables and indexes are created safely
+try:
+    Base.metadata.create_all(bind=engine)
+    init_db()
+except Exception as e:
+    print(f"[DATABASE] Table creation notice: {e}")
+
+
 
 async def broadcast_trip_update_to_clients(trip_id: str, payload: dict):
     """Dispatches the Redis Pub/Sub message to local WebSockets."""
@@ -46,6 +55,18 @@ async def broadcast_trip_update_to_clients(trip_id: str, payload: dict):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Flush stale mock spotlight caches on startup
+    from redis_client import redis_conn
+    if redis_conn:
+        try:
+            count = 0
+            for key in redis_conn.scan_iter("cache:spotlight:*"):
+                redis_conn.delete(key)
+                count += 1
+            print(f">>> [CLEANUP] Deleted {count} stale spotlight cache keys from Redis.", flush=True)
+        except Exception as e:
+            print(f"⚠️ [REDIS CLEANUP WARN] {e}", flush=True)
+
     # STARTUP: Launch Pub/Sub listener as a concurrent background task
     listener_task = asyncio.create_task(
         start_redis_events_listener(broadcast_trip_update_to_clients)
@@ -75,9 +96,12 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://tour-guide-v1.netlify.app",
-        "https://3e2c-2401-4900-8927-d7dc-55d7-788c-2c5f-c63d.ngrok-free.app",
+        "https://8d4e-2401-4900-8f66-66c7-f943-ebbd-5fdc-c302.ngrok-free.app",
+        "https://9f8b-2401-4900-8f64-3c24-c018-4e44-5211-fbf9.ngrok-free.app",
         "http://localhost",
         "http://127.0.0.1",
+        "http://localhost:80",
+        "http://127.0.0.1:80",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:3000",
@@ -442,11 +466,58 @@ def update_onboarding(
         updated_profile, updated_prefs = auth.update_user_onboarding(db, auth_user.id, req)
         return {
             "userProfile": updated_profile,
-            "userPreferences": updated_prefs
-        }
+            "userPreferences": updated_prefs}
     except Exception as e:
         log_event(f"❌ Onboarding Update Error: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
+
+class SavePlaceRequest(BaseModel):
+    place_id: str
+    title: str
+    category: Optional[str] = "Sights"
+    location: Optional[str] = ""
+    coordinates: Optional[List[float]] = None
+
+@app.post("/api/user/saved-places")
+def save_place(req: SavePlaceRequest):
+    from redis_client import redis_conn
+    if redis_conn:
+        try:
+            key = "user:saved_places"
+            redis_conn.hset(key, req.place_id, json.dumps(req.dict()))
+            return {"status": "success", "message": f"Saved {req.title}"}
+        except Exception as e:
+            print(f"[SAVE PLACE REDIS ERROR] {e}", flush=True)
+    return {"status": "success", "message": f"Saved {req.title}"}
+
+@app.delete("/api/user/saved-places")
+def unsave_place(req: SavePlaceRequest):
+    from redis_client import redis_conn
+    if redis_conn:
+        try:
+            key = "user:saved_places"
+            redis_conn.hdel(key, req.place_id)
+            return {"status": "success", "message": f"Unsaved {req.title}"}
+        except Exception as e:
+            print(f"[UNSAVE PLACE REDIS ERROR] {e}", flush=True)
+    return {"status": "success", "message": f"Unsaved {req.title}"}
+
+@app.get("/api/user/saved-places")
+def get_saved_places():
+    from redis_client import redis_conn
+    if redis_conn:
+        try:
+            key = "user:saved_places"
+            raw = redis_conn.hgetall(key)
+            results = []
+            for k, v in raw.items():
+                if isinstance(v, bytes):
+                    v = v.decode("utf-8")
+                results.append(json.loads(v))
+            return results
+        except Exception as e:
+            print(f"[GET SAVED PLACES REDIS ERROR] {e}", flush=True)
+    return []
 
 class LocationPayload(BaseModel):
     latitude: float
@@ -861,106 +932,58 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
         }
 
     elif reqname in ("tour_guide:chat", "ai:concierge", "concierge:chat"):
-        from tour_guide_service import (
-            search_nearby_pois, rank_places, get_or_create_session, should_refresh_nearby,
-            resolve_active_place, add_message_to_session, generate_tour_guide_response, haversine_meters
-        )
+        from tour_guide_service import process_concierge_message
         token = extract_ws_token(websocket, data)
-        user_id = "guest"
-        user_prefs = None
+        user_id = "guest_user"
         if token:
             try:
                 u_tuple = auth.get_session_user(db, token)
-                if u_tuple:
+                if u_tuple and u_tuple[0]:
                     user_id = u_tuple[0].id
-                    if u_tuple[2]:
-                        user_prefs = {
-                            "activityInterests": u_tuple[2].activity_interests or [],
-                            "travelStyles": u_tuple[2].travel_styles or [],
-                        }
             except Exception:
                 pass
 
         target_mode = data.get("mode") or "local"
         target_trip_id = data.get("trip_id") or data.get("tripId")
         user_msg = data.get("message") or data.get("user_message") or data.get("query") or ""
-        place_id = data.get("place_id")
+        dest_name = data.get("destination_name") or data.get("destinationName") or data.get("destination")
         lat = data.get("latitude") or data.get("lat")
         lng = data.get("longitude") or data.get("lng")
 
-        trip_context = None
-        if target_trip_id or target_mode == "trip":
+        if (not dest_name) and (target_trip_id or target_mode == "trip"):
             try:
                 trip_model = None
                 if target_trip_id:
                     trip_model = db.query(TripModel).filter(TripModel.id == target_trip_id).first()
                 else:
-                    trip_model = db.query(TripModel).filter(TripModel.user_id == user_id).first()
+                    trip_model = db.query(TripModel).filter(TripModel.user_id == user_id).order_by(TripModel.created_at.desc()).first()
 
                 if trip_model:
                     target_trip_id = trip_model.id
-                    dest = {
-                        "name": getattr(trip_model, 'destination', 'Goa'),
-                        "latitude": getattr(trip_model, 'destination_lat', 15.2993),
-                        "longitude": getattr(trip_model, 'destination_lng', 74.1240),
-                    }
-                    trip_context = {
-                        "id": trip_model.id,
-                        "title": trip_model.title,
-                        "destination": dest,
-                        "startDate": str(trip_model.start_date),
-                        "endDate": str(trip_model.end_date),
-                        "status": trip_model.status,
-                    }
+                    dest_name = getattr(trip_model, 'destination', None) or trip_model.title
             except Exception as e:
-                log_event(f"⚠️ [TOUR GUIDE WS WARN] Trip lookup error: {e}")
+                print(f"[WS TOUR GUIDE WARN] Trip lookup error: {e}", flush=True)
 
-        session = get_or_create_session(user_id)
-        session["mode"] = target_mode
-        if target_trip_id:
-            session["trip_id"] = target_trip_id
-
-        user_location = None
-        if lat is not None and lng is not None:
-            user_location = {"latitude": lat, "longitude": lng}
-            if should_refresh_nearby(session, lat, lng) or not session.get("nearby_places"):
-                raw = await run_in_threadpool(search_nearby_pois, lat, lng, radius_m=5000, category="all")
-                ranked = rank_places(raw, user_prefs, limit=10)
-                session["nearby_places"] = ranked
-                session["last_nearby_lat"] = lat
-                session["last_nearby_lng"] = lng
-                session["last_nearby_refresh"] = __import__("time").time()
-
-        place_context = resolve_active_place(place_id, user_msg, session, session.get("nearby_places", []))
-        active_place_id = place_context["id"] if place_context else place_id
-
-        if place_context and user_location and place_context.get("latitude") and place_context.get("longitude"):
-            place_context["distanceMeters"] = round(
-                haversine_meters(lat, lng, place_context["latitude"], place_context["longitude"])
-            )
-
-        add_message_to_session(session, "user", user_msg, active_place_id)
-
-        result = await run_in_threadpool(
-            generate_tour_guide_response,
-            messages=session["messages"],
-            place_context=place_context,
-            nearby_places=session.get("nearby_places", []),
-            user_location=user_location,
-            trip_context=trip_context,
-            user_prefs=user_prefs,
-            mode=target_mode
+        res = await run_in_threadpool(
+            process_concierge_message,
+            user_id=user_id,
+            message=user_msg,
+            mode=target_mode,
+            trip_id=target_trip_id,
+            destination_name=dest_name,
+            lat=lat if target_mode == "local" else None,
+            lng=lng if target_mode == "local" else None,
+            db=db
         )
 
-        add_message_to_session(session, "guide", result.get("reply", ""), active_place_id)
-
         return {
-            "reply": result.get("reply", "I'm here to help!"),
-            "suggestedActions": result.get("suggestedActions", []),
-            "place": place_context,
+            "reply": res.get("reply", ""),
+            "chips": res.get("chips", []),
+            "card": res.get("card"),
             "mode": target_mode,
             "trip_id": target_trip_id,
-            "source": result.get("source", "websocket")
+            "error": res.get("error"),
+            "source": "websocket"
         }
 
     elif reqname == "tour_guide:visit":
@@ -1684,9 +1707,7 @@ def get_nearby_places(
     radius: Optional[int] = 5000
 ):
     """
-    TripAdvisor-style unified map discovery endpoint:
-    - Category filtering: 'hotels', 'food', 'activities', 'all'
-    - Local free-text search bounded strictly to current map viewport
+    TripAdvisor-style unified map discovery endpoint with 502/504 Bad Gateway shield.
     """
     resolved_lng = lng if lng is not None else lon
     if lat is None or resolved_lng is None:
@@ -1694,36 +1715,80 @@ def get_nearby_places(
 
     log_event(f"🗺️ GET /api/places/nearby | Cat: {category} | Query: {q} | Coords: ({lat:.4f}, {resolved_lng:.4f})")
 
-    from tour_guide_service import search_nearby_pois
+    try:
+        from tour_guide_service import search_nearby_pois
 
-    # 1. Free-text Search inside map area (e.g. "chai", "pizza", "mandir")
-    if q and len(q.strip()) >= 2:
-        clean_q = q.strip().lower()
-        search_radius = max(radius or 5000, 10000)
-        
-        # Check cached/local Overpass POIs first
-        all_nearby = search_nearby_pois(lat, resolved_lng, radius_m=search_radius, category="all")
-        matched = [
-            p for p in all_nearby 
-            if clean_q in p.get("name", "").lower() 
-            or clean_q in p.get("category", "").lower() 
-            or clean_q in (p.get("address") or "").lower()
-        ]
-        
-        # Local Viewport Fallback: Strictly bounded to local coordinates (Not whole India!)
-        if not matched:
-            from places import search_local_amenities
-            local_results = search_local_amenities(clean_q, lat, resolved_lng, radius_km=(search_radius / 1000.0))
-            return local_results if local_results else all_nearby[:10]
+        # 1. Free-text Search inside map area (e.g. "chai", "pizza", "mandir")
+        if q and len(q.strip()) >= 2:
+            clean_q = q.strip().lower()
+            search_radius = max(radius or 5000, 10000)
             
-        return matched
+            all_nearby = search_nearby_pois(lat, resolved_lng, radius_m=search_radius, category="all")
+            matched = [
+                p for p in all_nearby 
+                if clean_q in p.get("name", "").lower() 
+                or clean_q in p.get("category", "").lower() 
+                or clean_q in (p.get("address") or "").lower()
+            ]
+            
+            if not matched:
+                from places import search_local_amenities
+                local_results = search_local_amenities(clean_q, lat, resolved_lng, radius_km=(search_radius / 1000.0))
+                return local_results if local_results else all_nearby[:10]
+                
+            return matched
 
-    # 2. Category discovery (Pills: Hotels, Food, Activities)
-    req_radius = radius or 5000
-    places = search_nearby_pois(lat, resolved_lng, radius_m=req_radius, category=category)
-    # Discard items outside the user's explicit radius before returning
-    filtered_places = [p for p in places if p.get("distanceMeters", 0) <= req_radius]
-    return filtered_places if filtered_places else places
+        # 2. Category discovery with strict timeout shield
+        from places import get_progressive_nearby_places
+        places = get_progressive_nearby_places(lat, resolved_lng, category=category)
+        return places if places else [
+            {
+                "id": f"mock_overpass_1_{int(lat*100)}",
+                "name": "MOCK • Overpass Spot 1 • MOCK",
+                "title": "MOCK • Overpass Spot 1 • MOCK",
+                "category": category or "MOCK",
+                "latitude": lat + 0.008,
+                "longitude": resolved_lng + 0.008,
+                "distanceMeters": 1000,
+                "address": "MOCK LOCATION • NO LIVE DATA",
+                "rating": 4.5,
+                "is_mock": True,
+                "_isMock": True,
+                "description": "MOCK: Overpass / Google Places returned 0 results for these coordinates."
+            },
+            {
+                "id": f"mock_overpass_2_{int(resolved_lng*100)}",
+                "name": "MOCK • Overpass Spot 2 • MOCK",
+                "title": "MOCK • Overpass Spot 2 • MOCK",
+                "category": category or "MOCK",
+                "latitude": lat - 0.006,
+                "longitude": resolved_lng - 0.006,
+                "distanceMeters": 850,
+                "address": "MOCK LOCATION • NO LIVE DATA",
+                "rating": 4.6,
+                "is_mock": True,
+                "_isMock": True,
+                "description": "MOCK: Overpass / Google Places returned 0 results for these coordinates."
+            }
+        ]
+    except Exception as e:
+        print(f"[NEARBY ENDPOINT ERROR]: {e}", flush=True)
+        return [
+            {
+                "id": f"mock_overpass_1_{int(lat*100)}",
+                "name": "MOCK • Overpass Spot 1 • MOCK",
+                "title": "MOCK • Overpass Spot 1 • MOCK",
+                "category": category or "MOCK",
+                "latitude": lat + 0.008,
+                "longitude": resolved_lng + 0.008,
+                "distanceMeters": 1000,
+                "address": "MOCK LOCATION • NO LIVE DATA",
+                "rating": 4.5,
+                "is_mock": True,
+                "_isMock": True,
+                "description": "MOCK: Overpass / Google Places returned 0 results for these coordinates."
+            }
+        ]
 
 # ── SARVAM AI TTS SYNTHESIS ENDPOINT ──
 
@@ -1735,22 +1800,25 @@ class TTSRequest(BaseModel):
 
 @app.post("/api/tts/synthesize")
 async def tts_synthesize(req: TTSRequest):
-    from tts_service import synthesize_speech_sarvam
-    base64_audio = await run_in_threadpool(
-        synthesize_speech_sarvam,
-        text=req.text,
-        target_language_code=req.target_language_code or "hi-IN",
-        speaker=req.speaker or "meera",
-        poi_id=req.poi_id
-    )
-    if not base64_audio:
-        raise HTTPException(status_code=500, detail="Failed to synthesize speech via Sarvam AI")
-    return {
-        "audio_base64": base64_audio,
-        "format": "audio/wav",
-        "speaker": req.speaker,
-        "language": req.target_language_code
-    }
+    try:
+        from tts_service import synthesize_speech_sarvam
+        base64_audio = await run_in_threadpool(
+            synthesize_speech_sarvam,
+            text=req.text,
+            target_language_code=req.target_language_code or "hi-IN",
+            speaker=req.speaker or "meera",
+            poi_id=req.poi_id
+        )
+        return {
+            "audio_base64": base64_audio,
+            "format": "audio/wav",
+            "speaker": req.speaker,
+            "language": req.target_language_code,
+            "status": "ok" if base64_audio else "unavailable"
+        }
+    except Exception as e:
+        print(f"[TTS SYNTHESIZE ERROR]: {e}", flush=True)
+        return {"audio_base64": None, "status": "error", "message": str(e)}
 
 class SpeakRequest(BaseModel):
     text: Optional[str] = None
@@ -1763,30 +1831,31 @@ class SpeakRequest(BaseModel):
 
 @app.post("/api/tts/speak")
 def text_to_speech_endpoint(req: SpeakRequest):
-    from tts_service import synthesize_speech_sarvam
-    from tour_guide_service import generate_poi_story
+    try:
+        from tts_service import synthesize_speech_sarvam
+        from tour_guide_service import generate_poi_story
 
-    narration_text = req.text
-    if not narration_text or len(narration_text.strip()) == 0:
-        if req.place_name:
-            narration_text = generate_poi_story(req.place_name, req.category or "attraction", req.address or "")
-        else:
-            raise HTTPException(status_code=400, detail="Either text or place_name must be provided.")
+        narration_text = req.text
+        if not narration_text or len(narration_text.strip()) == 0:
+            if req.place_name:
+                narration_text = generate_poi_story(req.place_name, req.category or "attraction", req.address or "")
+            else:
+                return {"status": "error", "message": "Either text or place_name must be provided.", "audio_base64": None}
 
-    audio_b64 = synthesize_speech_sarvam(
-        text=narration_text,
-        target_language_code=req.language or "hi-IN",
-        speaker=req.speaker or "ritu",
-        poi_id=req.place_id
-    )
-    if not audio_b64:
-        raise HTTPException(status_code=500, detail="TTS synthesis failed.")
-
-    return {
-        "status": "ok",
-        "story": narration_text,
-        "audio_base64": audio_b64
-    }
+        audio_b64 = synthesize_speech_sarvam(
+            text=narration_text,
+            target_language_code=req.language or "hi-IN",
+            speaker=req.speaker or "ritu",
+            poi_id=req.place_id
+        )
+        return {
+            "status": "ok" if audio_b64 else "unavailable",
+            "story": narration_text,
+            "audio_base64": audio_b64
+        }
+    except Exception as e:
+        print(f"[TTS SPEAK ERROR]: {e}", flush=True)
+        return {"status": "error", "message": str(e), "audio_base64": None}
 
 # ── AI CONCIERGE HTTP FALLBACK ENDPOINT ──
 
@@ -1853,33 +1922,471 @@ async def ai_concierge_endpoint(req: ConciergeRequest):
 
 # ── TRIP HIGHLIGHTS & ITINERARY ADD ENDPOINTS ──
 
+@app.get("/api/trips/highlights")
+def get_trip_highlights_query(
+    destination: Optional[str] = Query(None),
+    lat: Optional[float] = Query(None),
+    lng: Optional[float] = Query(None)
+):
+    try:
+        from trips_service import generate_live_destination_highlights
+        return generate_live_destination_highlights(destination=destination, lat=lat, lng=lng)
+    except Exception as e:
+        print(f"[HIGHLIGHTS FETCH FAILED]: {e}", flush=True)
+        return {
+            "destination": f"MOCK {(destination or 'DESTINATION').upper()} • MOCK MOCK",
+            "region": "MOCK REGION",
+            "overview": "MOCK DATA: Live data failed to fetch from backend. Inspect backend logs.",
+            "is_mock": True,
+            "activities": [
+                {
+                    "id": "mock_1",
+                    "title": "MOCK SPOT 1 • MOCK MOCK",
+                    "category": "MOCK",
+                    "tag": "MOCK",
+                    "location": f"MOCK LOCATION • {destination or 'DESTINATION'}",
+                    "duration": "MOCK",
+                    "cost": 0,
+                    "is_mock": True,
+                    "heads_up": "MOCK: Live data failed to fetch from backend"
+                },
+                {
+                    "id": "mock_2",
+                    "title": "MOCK SPOT 2 • MOCK MOCK",
+                    "category": "MOCK",
+                    "tag": "MOCK",
+                    "location": f"MOCK LOCATION • {destination or 'DESTINATION'}",
+                    "duration": "MOCK",
+                    "cost": 0,
+                    "is_mock": True,
+                    "heads_up": "MOCK: LLM fallback triggered"
+                }
+            ],
+            "events": []
+        }
+
 @app.get("/api/trips/{destination}/highlights")
-def get_trip_highlights_endpoint(destination: str):
-    from trips_service import get_destination_spotlight
-    from redis_client import redis_conn
-    return get_destination_spotlight(destination, redis_conn)
+def get_trip_highlights_endpoint(
+    destination: str,
+    lat: Optional[float] = Query(None),
+    lng: Optional[float] = Query(None)
+):
+    try:
+        from trips_service import generate_live_destination_highlights
+        return generate_live_destination_highlights(destination=destination, lat=lat, lng=lng)
+    except Exception as e:
+        print(f"[HIGHLIGHTS FETCH FAILED]: {e}", flush=True)
+        return {
+            "destination": f"MOCK {destination.upper()} • MOCK MOCK",
+            "region": "MOCK REGION",
+            "overview": "MOCK DATA: Live data failed to fetch from backend. Inspect backend logs.",
+            "is_mock": True,
+            "activities": [
+                {
+                    "id": "mock_1",
+                    "title": "MOCK SPOT 1 • MOCK MOCK",
+                    "category": "MOCK",
+                    "tag": "MOCK",
+                    "location": f"MOCK LOCATION • {destination}",
+                    "duration": "MOCK",
+                    "cost": 0,
+                    "is_mock": True,
+                    "heads_up": "MOCK: Live data failed to fetch from backend"
+                },
+                {
+                    "id": "mock_2",
+                    "title": "MOCK SPOT 2 • MOCK MOCK",
+                    "category": "MOCK",
+                    "tag": "MOCK",
+                    "location": f"MOCK LOCATION • {destination}",
+                    "duration": "MOCK",
+                    "cost": 0,
+                    "is_mock": True,
+                    "heads_up": "MOCK: LLM fallback triggered"
+                }
+            ],
+            "events": []
+        }
 
 class AddItineraryItemRequest(BaseModel):
-    trip_id: Optional[str] = "active_trip"
+    trip_id: str = "active_trip"
     destination: str
     item_id: str
     title: str
     location: str
     tag: str
     price: str
+    day_number: int = 1
+    time_slot: Optional[str] = "Morning"
+    scheduled_time: Optional[str] = None
+    order_index: Optional[int] = 0
 
 @app.post("/api/trips/itinerary/add")
-def add_to_itinerary(req: AddItineraryItemRequest):
+def add_to_itinerary(req: AddItineraryItemRequest, db: Session = Depends(get_db)):
     from redis_client import redis_conn
-    itinerary_key = f"trip:itinerary:{req.trip_id}"
-    item_payload = json.dumps(req.dict())
-    
+    from models_trip import TripModel
+    from models_itinerary import ItineraryModel, ItineraryDayModel, ItineraryActivityModel
+
+    req_trip_id = (req.trip_id or "active_trip").strip()
+    target_trip = None
+
+    if req_trip_id and req_trip_id != "active_trip":
+        target_trip = db.query(TripModel).filter(TripModel.id == req_trip_id).first()
+
+    if not target_trip:
+        target_trip = db.query(TripModel).order_by(TripModel.created_at.desc()).first()
+
+    target_trip_id = target_trip.id if target_trip else req_trip_id
+    day_num = req.day_number or 1
+
+    cost_val = 0
+    if req.price:
+        import re
+        digits = re.findall(r'\d+', str(req.price))
+        if digits:
+            cost_val = int("".join(digits))
+
+    new_activity_payload = {
+        "id": req.item_id or f"act_{uuid.uuid4().hex[:12]}",
+        "title": req.title,
+        "location": req.location,
+        "tag": req.tag or "SIGHTSEEING",
+        "price": req.price or "Free Entry",
+        "time_slot": req.time_slot or req.scheduled_time or "Morning",
+        "scheduled_time": req.scheduled_time or "10:00 AM"
+    }
+
+    # 1. Commit to PostgreSQL Database
+    if target_trip:
+        try:
+            now_iso = datetime.now(timezone.utc).isoformat()
+            itin = db.query(ItineraryModel).filter(ItineraryModel.trip_id == target_trip.id).first()
+            if not itin:
+                itin = ItineraryModel(
+                    id=f"itin_{uuid.uuid4().hex[:12]}",
+                    trip_id=target_trip.id,
+                    status="READY",
+                    created_at=now_iso,
+                    updated_at=now_iso
+                )
+                db.add(itin)
+                db.flush()
+
+            day_record = db.query(ItineraryDayModel).filter(
+                ItineraryDayModel.itinerary_id == itin.id,
+                ItineraryDayModel.day_number == day_num
+            ).first()
+            if not day_record:
+                day_record = ItineraryDayModel(
+                    id=f"day_{uuid.uuid4().hex[:12]}",
+                    itinerary_id=itin.id,
+                    day_number=day_num,
+                    date=f"Day {day_num}",
+                    title=f"Day {day_num} Highlights",
+                    summary=f"Curated schedule for Day {day_num}"
+                )
+                db.add(day_record)
+                db.flush()
+
+            act_id = new_activity_payload["id"]
+            existing_act = db.query(ItineraryActivityModel).filter(
+                ItineraryActivityModel.day_id == day_record.id,
+                ItineraryActivityModel.title == req.title
+            ).first()
+
+            if not existing_act:
+                new_act = ItineraryActivityModel(
+                    id=act_id,
+                    day_id=day_record.id,
+                    time_slot=new_activity_payload["time_slot"],
+                    title=req.title,
+                    description=f"Curated spot: {req.title} at {req.location}",
+                    activity_type=req.tag or "SIGHTSEEING",
+                    location_name=req.location,
+                    estimated_cost_inr=cost_val,
+                    booking_required=False,
+                    is_confirmed=True
+                )
+                db.add(new_act)
+                db.commit()
+                print(f"[DB ITINERARY ADD SUCCESS] Added '{req.title}' to PostgreSQL DB trip '{target_trip.id}' Day {day_num}", flush=True)
+        except Exception as db_err:
+            db.rollback()
+            print(f"[DB ITINERARY ADD WARN] {db_err}", flush=True)
+
+    # 2. Commit to Redis Cache
+    itinerary_key = f"trip:itinerary:{target_trip_id}"
+    day_key = f"trip:{target_trip_id}:day:{day_num}"
+    trip_key = f"trip:{target_trip_id}"
+    item_dict = req.dict()
+    item_dict["trip_id"] = target_trip_id
+    item_payload = json.dumps(item_dict)
+
     try:
-        redis_conn.rpush(itinerary_key, item_payload)
+        if redis_conn:
+            redis_conn.rpush(itinerary_key, item_payload)
+            redis_conn.rpush(day_key, item_payload)
+
+            # Update canonical trip json blob in Redis if present
+            raw_trip_blob = redis_conn.get(trip_key)
+            if raw_trip_blob:
+                if isinstance(raw_trip_blob, bytes):
+                    raw_trip_blob = raw_trip_blob.decode("utf-8")
+                trip_blob = json.loads(raw_trip_blob)
+                day_str = str(day_num)
+                if "days" not in trip_blob:
+                    trip_blob["days"] = {}
+                if day_str not in trip_blob["days"]:
+                    trip_blob["days"][day_str] = []
+                trip_blob["days"][day_str].append(new_activity_payload)
+                redis_conn.set(trip_key, json.dumps(trip_blob))
+
+            print(f"[REDIS ITINERARY ADD SUCCESS] Pushed '{req.title}' to Redis key '{day_key}'", flush=True)
     except Exception as e:
-        print(f"⚠️ [REDIS ITINERARY WARN] {e}", flush=True)
-        
-    return {"status": "success", "message": f"Added '{req.title}' to itinerary!"}
+        print(f"[REDIS ITINERARY WARN] {e}", flush=True)
+
+    return {
+        "status": "success",
+        "message": f"Added {req.title} to Day {day_num}",
+        "day_number": day_num,
+        "trip_id": target_trip_id,
+        "activity": new_activity_payload
+    }
+
+@app.get("/api/trips/itinerary/{trip_id}")
+def get_trip_itinerary(trip_id: str):
+    from redis_client import redis_conn
+    grouped_days = {}
+    
+    if redis_conn:
+        try:
+            for day_idx in range(1, 11):
+                day_key = f"trip:{trip_id}:day:{day_idx}"
+                raw_items = redis_conn.lrange(day_key, 0, -1)
+                if raw_items:
+                    parsed_items = []
+                    for item in raw_items:
+                        if isinstance(item, bytes):
+                            item = item.decode("utf-8")
+                        parsed_items.append(json.loads(item))
+                    grouped_days[str(day_idx)] = parsed_items
+            
+            if not grouped_days:
+                main_key = f"trip:itinerary:{trip_id}"
+                raw_items = redis_conn.lrange(main_key, 0, -1)
+                if raw_items:
+                    for item in raw_items:
+                        if isinstance(item, bytes):
+                            item = item.decode("utf-8")
+                        parsed = json.loads(item)
+                        d_num = str(parsed.get("day_number", 1))
+                        if d_num not in grouped_days:
+                            grouped_days[d_num] = []
+                        grouped_days[d_num].append(parsed)
+        except Exception as e:
+            print(f"⚠️ [REDIS GET ITINERARY WARN] {e}", flush=True)
+            
+    return {
+        "trip_id": trip_id,
+        "days": grouped_days
+    }
+
+# ── DEDICATED ACTIVITY SWAP ENGINE ENDPOINTS ──
+
+class SwapRecommendationRequest(BaseModel):
+    trip_id: Optional[str] = "active_trip"
+    destination: str
+    activity_title: str
+    category: Optional[str] = "Sights"
+    day_number: Optional[int] = 1
+
+@app.post("/api/trips/itinerary/swap-options")
+def get_swap_options(req: SwapRecommendationRequest):
+    api_key = os.getenv("GEMINI_API_KEY")
+    dest_clean = (req.destination or "Jaipur").strip().title()
+    title_clean = (req.activity_title or "Activity").strip()
+    cat_clean = req.category or "Sights"
+    day_num = req.day_number or 1
+
+    prompt = f"""
+    You are an expert itinerary planner for {dest_clean}.
+    The traveler wants to replace/swap the activity: "{title_clean}" (Category: {cat_clean}) on Day {day_num} of their trip to {dest_clean}.
+
+    Suggest 3 distinct, authentic alternatives strictly located in {dest_clean} that fit into the same time window.
+    DO NOT use user GPS or any location outside of {dest_clean}.
+
+    Return strictly valid JSON:
+    {{
+      "alternatives": [
+        {{
+          "id": "alt_1",
+          "title": "Specific landmark/activity name in {dest_clean}",
+          "category": "{cat_clean}",
+          "tag": "Must Visit | Cultural | Hidden Gem",
+          "duration": "2 hours",
+          "cost": 400,
+          "location": "Exact area in {dest_clean}",
+          "description": "1 crisp sentence why this is a great alternative to {title_clean}."
+        }}
+      ]
+    }}
+    """
+
+    if api_key:
+        model_candidates = [
+            "gemini-2.5-flash",
+            "gemini-flash-latest",
+            "gemini-flash-lite-latest",
+            "gemini-2.5-pro",
+            "gemini-2.5-flash-lite",
+            "gemini-3.5-flash"
+        ]
+        for m_name in model_candidates:
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{m_name}:generateContent?key={api_key}"
+                payload = {
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {
+                        "response_mime_type": "application/json",
+                        "temperature": 0.3,
+                        "maxOutputTokens": 1500
+                    }
+                }
+                res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=12.0)
+                if res.status_code == 200:
+                    res_json = res.json()
+                    candidates = res_json.get("candidates", [])
+                    if candidates and "content" in candidates[0]:
+                        text = candidates[0]["content"]["parts"][0]["text"].strip()
+                        parsed = json.loads(text)
+                        if isinstance(parsed, dict) and "alternatives" in parsed:
+                            return parsed
+            except Exception as e:
+                print(f"[SWAP OPTIONS GEMINI WARN] Model {m_name} error: {e}", flush=True)
+
+    # Explicit loud mock fallback options if Gemini is unavailable
+    return {
+        "is_mock": True,
+        "alternatives": [
+            {
+                "id": "mock_alt_1",
+                "title": "MOCK ALTERNATIVE 1 • MOCK MOCK",
+                "category": cat_clean,
+                "tag": "MOCK",
+                "duration": "MOCK",
+                "cost": 0,
+                "is_mock": True,
+                "location": f"MOCK LOCATION, {dest_clean}",
+                "description": "MOCK: Gemini swap-options service unavailable. Inspect backend logs."
+            },
+            {
+                "id": "mock_alt_2",
+                "title": "MOCK ALTERNATIVE 2 • MOCK MOCK",
+                "category": cat_clean,
+                "tag": "MOCK",
+                "duration": "MOCK",
+                "cost": 0,
+                "is_mock": True,
+                "location": f"MOCK LOCATION, {dest_clean}",
+                "description": "MOCK: Gemini swap-options service unavailable. Inspect backend logs."
+            }
+        ]
+    }
+
+
+class ExecuteSwapRequest(BaseModel):
+    trip_id: Optional[str] = "active_trip"
+    day_number: Optional[int] = 1
+    old_activity_id: str
+    new_activity: dict
+
+@app.post("/api/trips/itinerary/swap-execute")
+def execute_swap(req: ExecuteSwapRequest, db: Session = Depends(get_db)):
+    from redis_client import redis_conn
+    from models_trip import TripModel
+    from models_itinerary import ItineraryModel, ItineraryDayModel, ItineraryActivityModel
+
+    req_trip_id = (req.trip_id or "active_trip").strip()
+    target_trip = None
+
+    if req_trip_id and req_trip_id != "active_trip":
+        target_trip = db.query(TripModel).filter(TripModel.id == req_trip_id).first()
+
+    if not target_trip:
+        target_trip = db.query(TripModel).order_by(TripModel.created_at.desc()).first()
+
+    target_trip_id = target_trip.id if target_trip else req_trip_id
+    day_num = req.day_number or 1
+
+    new_act = req.new_activity or {}
+    new_title = new_act.get("title", "Alternative Spot")
+    new_loc = new_act.get("location", new_act.get("location_name", "City Center"))
+    new_cost = int(new_act.get("cost", new_act.get("estimatedCost", 0)))
+    new_desc = new_act.get("description", f"Authentic experience in {new_loc}")
+    new_tag = new_act.get("tag", new_act.get("category", "Sights"))
+
+    # 1. Update PostgreSQL Database
+    if target_trip:
+        try:
+            itin = db.query(ItineraryModel).filter(ItineraryModel.trip_id == target_trip.id).first()
+            if itin:
+                day_record = db.query(ItineraryDayModel).filter(
+                    ItineraryDayModel.itinerary_id == itin.id,
+                    ItineraryDayModel.day_number == day_num
+                ).first()
+
+                if day_record:
+                    act_record = db.query(ItineraryActivityModel).filter(
+                        ItineraryActivityModel.day_id == day_record.id,
+                        ItineraryActivityModel.id == req.old_activity_id
+                    ).first()
+
+                    if not act_record:
+                        act_record = db.query(ItineraryActivityModel).filter(
+                            ItineraryActivityModel.day_id == day_record.id
+                        ).first()
+
+                    if act_record:
+                        act_record.title = new_title
+                        act_record.location_name = new_loc
+                        act_record.description = new_desc
+                        act_record.estimated_cost_inr = new_cost
+                        act_record.activity_type = new_tag
+                        db.commit()
+                        print(f"[DB SWAP SUCCESS] Swapped activity in trip '{target_trip.id}' Day {day_num} -> '{new_title}'", flush=True)
+        except Exception as db_err:
+            db.rollback()
+            print(f"[DB SWAP WARN] {db_err}", flush=True)
+
+    # 2. Update Redis Cache
+    if redis_conn:
+        try:
+            day_key = f"trip:{target_trip_id}:day:{day_num}"
+            raw_items = redis_conn.lrange(day_key, 0, -1)
+            if raw_items:
+                redis_conn.delete(day_key)
+                for item in raw_items:
+                    if isinstance(item, bytes):
+                        item = item.decode("utf-8")
+                    parsed = json.loads(item)
+                    if parsed.get("id") == req.old_activity_id or parsed.get("item_id") == req.old_activity_id:
+                        parsed["title"] = new_title
+                        parsed["location"] = new_loc
+                        parsed["cost"] = new_cost
+                        parsed["description"] = new_desc
+                    redis_conn.rpush(day_key, json.dumps(parsed))
+            
+            print(f"[REDIS SWAP SUCCESS] Updated Redis day_key '{day_key}'", flush=True)
+        except Exception as red_err:
+            print(f"[REDIS SWAP WARN] {red_err}", flush=True)
+
+    return {
+        "status": "success",
+        "message": f"Activity swapped successfully to {new_title}",
+        "updated_day": day_num,
+        "trip_id": target_trip_id,
+        "new_activity": new_act
+    }
 
 # ── TRIP DOMAIN ENDPOINTS ──
 
@@ -1910,6 +2417,48 @@ def get_trips(user_data = Depends(get_current_user), db: Session = Depends(get_d
     return result
 
 import threading
+
+# ── TOUR GUIDE CONCIERGE REST ENDPOINTS ──
+
+class HistoryItem(BaseModel):
+    role: str
+    content: str
+
+class TourGuideChatRequest(BaseModel):
+    user_id: Optional[str] = "guest_user"
+    message: str
+    mode: Optional[str] = "local"
+    trip_id: Optional[str] = None
+    destination_name: Optional[str] = None
+    place_id: Optional[str] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    recent_history: Optional[List[HistoryItem]] = []
+
+@app.post("/api/tour-guide/chat")
+def chat_with_concierge(payload: TourGuideChatRequest, db: Session = Depends(get_db)):
+    from tour_guide_service import process_concierge_message
+    eff_lat = payload.lat if payload.lat is not None else payload.latitude
+    eff_lng = payload.lng if payload.lng is not None else payload.longitude
+    recent_hist_dicts = [h.dict() for h in (payload.recent_history or [])]
+    return process_concierge_message(
+        user_id=payload.user_id or "guest_user",
+        message=payload.message,
+        mode=payload.mode or "local",
+        trip_id=payload.trip_id,
+        destination_name=payload.destination_name,
+        lat=eff_lat if (payload.mode or "local") == "local" else None,
+        lng=eff_lng if (payload.mode or "local") == "local" else None,
+        recent_history=recent_hist_dicts,
+        db=db
+    )
+
+@app.get("/api/tour-guide/history")
+def get_tour_guide_history(user_id: str = Query("guest_user"), limit: int = 50, db: Session = Depends(get_db)):
+    from tour_guide_service import fetch_chat_history
+    return fetch_chat_history(user_id=user_id, limit=limit, db=db)
 
 @app.post("/trips", status_code=status.HTTP_201_CREATED, dependencies=[Depends(ai_limiter)])
 @app.post("/api/trips", status_code=status.HTTP_201_CREATED, dependencies=[Depends(ai_limiter)])
@@ -2080,7 +2629,6 @@ def get_trip_by_id(trip_id: str, db: Session = Depends(get_db)):
         "totalDays": trip.total_days,
         "destination": trip.destination,
         "coverMedia": trip.cover_media,
-        "travelers": trip.travelers,
         "preferencesSnapshot": trip.preferences_snapshot,
         "budget": trip.budget,
         "progress": trip.progress,
@@ -2089,57 +2637,105 @@ def get_trip_by_id(trip_id: str, db: Session = Depends(get_db)):
     }
 
 @app.get("/api/trips/{trip_id}/itinerary", dependencies=[Depends(general_limiter)])
-def get_itinerary(trip_id: str, user_data = Depends(get_current_user), db: Session = Depends(get_db)):
-    auth_user, _, _ = user_data
-    trip = db.query(TripModel).filter(TripModel.id == trip_id, TripModel.user_id == auth_user.id).first()
+def get_itinerary(
+    trip_id: str,
+    request: Request,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    from redis_client import redis_conn
+    from models_trip import TripModel
+    from models_itinerary import ItineraryModel, ItineraryDayModel, ItineraryActivityModel
+
+    req_trip_id = (trip_id or "active_trip").strip()
+    trip = None
+
+    if req_trip_id != "active_trip":
+        trip = db.query(TripModel).filter(TripModel.id == req_trip_id).first()
+
     if not trip:
-        raise HTTPException(status_code=404, detail="Trip not found")
+        trip = db.query(TripModel).order_by(TripModel.created_at.desc()).first()
 
-    itin = db.query(ItineraryModel).filter(ItineraryModel.trip_id == trip_id).first()
-    if not itin:
-        return {
-            "status": trip.itinerary_status,
-            "days": []
-        }
+    target_trip_id = trip.id if trip else req_trip_id
 
-    days_records = db.query(ItineraryDayModel).filter(ItineraryDayModel.itinerary_id == itin.id).order_by(ItineraryDayModel.day_number).all()
+    itin = db.query(ItineraryModel).filter(ItineraryModel.trip_id == target_trip_id).first() if target_trip_id else None
     days_data = []
 
-    for d in days_records:
-        activities_records = db.query(ItineraryActivityModel).filter(ItineraryActivityModel.day_id == d.id).all()
-        activities_data = []
-        for a in activities_records:
-            activities_data.append({
-                "id": a.id,
-                "timeSlot": a.time_slot,
-                "title": a.title,
-                "description": a.description,
-                "activityType": a.activity_type,
-                "locationName": a.location_name,
-                "latitude": a.latitude,
-                "longitude": a.longitude,
-                "estimatedCostInr": a.estimated_cost_inr,
-                "bookingRequired": a.booking_required,
-                "isConfirmed": a.is_confirmed
+    if itin:
+        days_records = db.query(ItineraryDayModel).filter(ItineraryDayModel.itinerary_id == itin.id).order_by(ItineraryDayModel.day_number).all()
+        for d in days_records:
+            activities_records = db.query(ItineraryActivityModel).filter(ItineraryActivityModel.day_id == d.id).all()
+            activities_data = []
+            for a in activities_records:
+                activities_data.append({
+                    "id": a.id,
+                    "timeSlot": a.time_slot,
+                    "title": a.title,
+                    "description": a.description,
+                    "activityType": a.activity_type,
+                    "locationName": a.location_name,
+                    "latitude": a.latitude,
+                    "longitude": a.longitude,
+                    "estimatedCostInr": a.estimated_cost_inr,
+                    "bookingRequired": a.booking_required,
+                    "isConfirmed": a.is_confirmed
+                })
+
+            days_data.append({
+                "id": d.id,
+                "dayNumber": d.day_number,
+                "date": d.date,
+                "title": d.title,
+                "summary": d.summary,
+                "activities": activities_data
             })
 
-        days_data.append({
-            "id": d.id,
-            "dayNumber": d.day_number,
-            "date": d.date,
-            "title": d.title,
-            "summary": d.summary,
-            "activities": activities_data
-        })
+    # Redis Fallback / Merge if DB days are empty or for standalone items
+    if not days_data and redis_conn:
+        try:
+            redis_days_map = {}
+            for day_idx in range(1, 11):
+                day_key = f"trip:{target_trip_id}:day:{day_idx}"
+                raw_items = redis_conn.lrange(day_key, 0, -1)
+                if raw_items:
+                    parsed_activities = []
+                    for item in raw_items:
+                        if isinstance(item, bytes):
+                            item = item.decode("utf-8")
+                        parsed = json.loads(item)
+                        parsed_activities.append({
+                            "id": parsed.get("item_id") or parsed.get("id"),
+                            "timeSlot": parsed.get("time_slot") or "Morning",
+                            "title": parsed.get("title"),
+                            "description": f"Spot: {parsed.get('title')} at {parsed.get('location', '')}",
+                            "activityType": parsed.get("tag") or "SIGHTSEEING",
+                            "locationName": parsed.get("location"),
+                            "estimatedCostInr": 500,
+                            "bookingRequired": False,
+                            "isConfirmed": True
+                        })
+                    redis_days_map[day_idx] = parsed_activities
 
+            for d_num, acts in redis_days_map.items():
+                days_data.append({
+                    "id": f"redis_day_{d_num}",
+                    "dayNumber": d_num,
+                    "date": f"Day {d_num}",
+                    "title": f"Day {d_num} Schedule",
+                    "summary": f"Day {d_num} Planned Activities",
+                    "activities": acts
+                })
+        except Exception as r_err:
+            print(f"⚠️ [GET ITINERARY REDIS WARN] {r_err}", flush=True)
+
+    status_val = (itin.status if itin else (trip.itinerary_status if trip else "READY"))
     return {
-        "id": itin.id,
-        "tripId": itin.trip_id,
-        "version": itin.version,
-        "status": itin.status,
-        "providerName": itin.provider_name,
-        "days": days_data,
-        "createdAt": itin.created_at
+        "id": itin.id if itin else f"itin_{target_trip_id}",
+        "tripId": target_trip_id,
+        "version": itin.version if itin else 1,
+        "status": status_val,
+        "providerName": itin.provider_name if itin else "HYBRID_PROVIDER",
+        "days": days_data
     }
 
 @app.post("/api/trips/{trip_id}/itinerary/regenerate", status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(ai_limiter)])
@@ -2755,13 +3351,6 @@ from tour_guide_service import (
     resolve_active_place
 )
 
-class TourGuideChatRequest(BaseModel):
-    message: str
-    place_id: Optional[str] = None
-    mode: Optional[str] = "local"  # "local" | "trip"
-    trip_id: Optional[str] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
 
 class TourGuideVisitRequest(BaseModel):
     place_id: str
@@ -2821,165 +3410,7 @@ def tour_guide_nearby(
         "proactive_alert": alert_place
     }
 
-@app.post("/api/tour-guide/chat", dependencies=[Depends(ai_limiter)])
-def tour_guide_chat(
-    req: TourGuideChatRequest,
-    request: Request = None,
-    authorization: Optional[str] = Header(None),
-    db: Session = Depends(get_db)
-):
-    """Conversational AI tour guide chat supporting Local Mode and Trip Mode."""
-    log_frontend_payload(
-        endpoint="POST /api/tour-guide/chat",
-        payload=req,
-        usage_summary={
-            "message": "User query string sent from AI Guide screen.",
-            "mode": f"Chat mode ('{req.mode}'). Used to decide between nearby POI guide or active trip guide.",
-            "place_id": f"Specific POI selected ({req.place_id}). Used to fetch detailed history & stories for the place card.",
-            "latitude / longitude": f"User location coordinates ({req.latitude}, {req.longitude}). Used to query Overpass API for real nearby places."
-        }
-    )
-    user_id = "guest"
-    user_prefs = None
-    trip_context = None
 
-    try:
-        token = extract_token(request, authorization)
-        user_tuple = auth.get_session_user(db, token)
-        if user_tuple:
-            user_id = user_tuple[0].id
-            if user_tuple[2]:
-                user_prefs = {
-                    "activityInterests": user_tuple[2].activity_interests or [],
-                    "travelStyles": user_tuple[2].travel_styles or [],
-                }
-    except Exception:
-        pass
-
-    target_mode = req.mode or "local"
-    target_trip_id = req.trip_id
-
-    # If in trip mode or trip_id passed, fetch trip details
-    if target_trip_id or target_mode == "trip":
-        try:
-            trip_model = None
-            if target_trip_id:
-                trip_model = db.query(TripModel).filter(TripModel.id == target_trip_id).first()
-            else:
-                trip_model = db.query(TripModel).filter(TripModel.user_id == user_id).first()
-
-            if trip_model:
-                target_trip_id = trip_model.id
-                dest = {
-                    "name": trip_model.destination_name,
-                    "latitude": trip_model.destination_lat,
-                    "longitude": trip_model.destination_lng,
-                }
-                days_list = []
-                try:
-                    for day in trip_model.itinerary_days:
-                        acts = [{"title": a.title, "category": a.category, "locationName": a.location_name} for a in day.activities]
-                        days_list.append({"dayNumber": day.day_number, "theme": day.theme, "activities": acts})
-                except Exception:
-                    pass
-
-                trip_context = {
-                    "id": trip_model.id,
-                    "title": trip_model.title,
-                    "destination": dest,
-                    "startDate": trip_model.start_date.isoformat() if trip_model.start_date else None,
-                    "endDate": trip_model.end_date.isoformat() if trip_model.end_date else None,
-                    "status": trip_model.status,
-                    "days": days_list
-                }
-        except Exception:
-            pass
-
-    session = get_or_create_session(user_id)
-    session["mode"] = target_mode
-    if target_trip_id:
-        session["trip_id"] = target_trip_id
-
-    # Refresh nearby if needed first to ensure nearby_places has latest POIs
-    user_location = None
-    if req.latitude and req.longitude:
-        user_location = {"latitude": req.latitude, "longitude": req.longitude}
-        if should_refresh_nearby(session, req.latitude, req.longitude) or not session.get("nearby_places"):
-            raw = search_nearby_pois(req.latitude, req.longitude, 5000)
-            ranked = rank_places(raw, user_prefs, limit=10)
-            session["nearby_places"] = ranked
-            session["last_nearby_lat"] = req.latitude
-            session["last_nearby_lng"] = req.longitude
-            session["last_nearby_refresh"] = __import__("time").time()
-
-    # Resolve active place context accurately
-    place_context = resolve_active_place(req.place_id, req.message, session, session.get("nearby_places", []))
-    active_place_id = place_context["id"] if place_context else req.place_id
-
-    # Recalculate place_context distance if location is present
-    if place_context and user_location and place_context.get("latitude") and place_context.get("longitude"):
-        place_context["distanceMeters"] = round(
-            haversine_meters(req.latitude, req.longitude, place_context["latitude"], place_context["longitude"])
-        )
-
-    # Add user message to session with active place ID
-    add_message_to_session(session, "user", req.message, active_place_id)
-
-    log_event(
-        f"TOUR GUIDE CHAT | Mode: {target_mode} | User: {user_id} | ActivePlace: {place_context.get('name') if place_context else 'None'} "
-        f"(id: {active_place_id}) | Msg: {req.message[:80]} | HistoryLen: {len(session['messages'])}"
-    )
-
-    # Generate AI response
-    result = generate_tour_guide_response(
-        messages=session["messages"],
-        place_context=place_context,
-        nearby_places=session.get("nearby_places", []),
-        user_location=user_location,
-        trip_context=trip_context,
-        user_prefs=user_prefs,
-        mode=target_mode
-    )
-
-    # Add AI response to session with active place ID
-    add_message_to_session(session, "guide", result.get("reply", ""), active_place_id)
-
-    res_payload = {
-        "reply": result.get("reply", "I'm here to help!"),
-        "suggestedActions": result.get("suggestedActions", []),
-        "place": place_context,
-        "mode": target_mode,
-        "trip_id": target_trip_id,
-        "source": result.get("source", "unknown")
-    }
-
-    try:
-        log_pipeline_5_steps(
-            flow_name="AI Tour Guide Chat",
-            user_sends=req,
-            backend_received={
-                "user": user_id,
-                "message": req.message,
-                "mode": target_mode,
-                "placeId": active_place_id,
-                "userLocation": user_location
-            },
-            given_to_ai={
-                "input_data": {
-                    "placeContext": place_context.get("name") if place_context else None,
-                    "nearbyPOIs": len(session.get("nearby_places", [])),
-                    "userPreferences": user_prefs,
-                    "mode": target_mode
-                },
-                "prompt": f"User Query: {req.message} | Place Focus: {place_context.get('name') if place_context else 'General'} | Mode: {target_mode}"
-            },
-            ai_returned=result,
-            send_to_frontend=res_payload
-        )
-    except Exception:
-        pass
-
-    return res_payload
 
 @app.post("/api/tour-guide/visit", dependencies=[Depends(general_limiter)])
 def tour_guide_visit(
