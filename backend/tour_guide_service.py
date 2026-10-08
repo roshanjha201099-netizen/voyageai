@@ -1,1106 +1,392 @@
-"""
-VoyageAI — AI Tour Guide Service
-Provides:
-  1. Nearby POI discovery via Overpass API (OpenStreetMap)
-  2. Place ranking by distance, importance, category
-  3. Gemini-powered conversational tour guide AI
-  4. In-memory session management with conversation history
-"""
-
-import math
+import os
 import json
-import time
-import hashlib
-import urllib.request
-import urllib.parse
-from typing import List, Dict, Any, Optional
+import re
+import uuid
+import random
+import requests
+from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone
-from redis_client import redis_conn
 
-OSM_CACHE_TTL = 24 * 60 * 60
+from dotenv import load_dotenv
 
+# Load .env explicitly so API keys and DB credentials resolve
+load_dotenv()
 
-# ── Haversine Distance (meters) ──
+try:
+    import google.generativeai as genai
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if api_key:
+        genai.configure(api_key=api_key)
+except ImportError:
+    genai = None
 
-def haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    R = 6371000
-    dlat = math.radians(lat2 - lat1)
-    dlon = math.radians(lon2 - lon1)
-    a = (math.sin(dlat / 2) ** 2 +
-         math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) *
-         math.sin(dlon / 2) ** 2)
-    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+from sqlalchemy import text
+from cost_guard import evaluate_cost_guards
+from database import engine
 
+JARVIS_SYSTEM_PROMPT = """
+You are VoyageAI's Jarvis-grade Travel Concierge.
+You provide verified, real-time insider guidance and proactive assistance.
 
-# ── Overpass API Nearby POI Search ──
-
-# Category weights for ranking (higher = more important for tour guide)
-CATEGORY_WEIGHTS = {
-    "historic": 10,
-    "monument": 9,
-    "fort": 9,
-    "palace": 9,
-    "museum": 8,
-    "religious": 7,
-    "temple": 7,
-    "mosque": 7,
-    "church": 7,
-    "cultural": 6,
-    "viewpoint": 6,
-    "park": 5,
-    "market": 5,
-    "architecture": 6,
-    "memorial": 7,
-    "ruins": 8,
-    "archaeological": 9,
-    "tourism": 5,
-    "food_landmark": 4,
-}
-
-# Overpass query for interesting POIs (optimized query with 5s timeout)
-OVERPASS_QUERY_TEMPLATE = """
-[out:json][timeout:5];
-(
-  node["historic"](around:{radius},{lat},{lng});
-  way["historic"](around:{radius},{lat},{lng});
-  node["tourism"](around:{radius},{lat},{lng});
-  way["tourism"](around:{radius},{lat},{lng});
-  node["amenity"="place_of_worship"](around:{radius},{lat},{lng});
-  way["amenity"="place_of_worship"](around:{radius},{lat},{lng});
-  node["leisure"~"park|garden"](around:{radius},{lat},{lng});
-  way["leisure"~"park|garden"](around:{radius},{lat},{lng});
-  node["man_made"~"tower|monument|memorial"](around:{radius},{lat},{lng});
-  way["man_made"~"tower|monument|memorial"](around:{radius},{lat},{lng});
-  node["shop"="marketplace"](around:{radius},{lat},{lng});
-);
-out center 40;
+RULES:
+1. Speak concisely (2 to 4 crisp sentences). Natural Hinglish or English based on user query language.
+2. If recommending an activity or sight, explain the ground reality: best timing or any heads-up (closures, peak queues, ticket hacks).
+3. If recommending a concrete spot to add in Trip Mode, append a structured card at the very end:
+<<<CARD:{"id": "rec_id_1", "title": "Place Name", "category": "Food/Sight/Stay", "location": "Area", "duration": "1.5h", "cost": 300, "heads_up": "Live warning or None"}>>>
+4. Always provide 2-3 short contextual follow-up chips at the end:
+<<<CHIPS:["Check timings", "Alternative spot", "Show on Map"]>>>
+5. Under NO circumstances output markdown code blocks (```). You are strictly a travel companion.
 """
 
-# Overpass response cache: key → (timestamp, results)
-_overpass_cache: Dict[str, tuple] = {}
-CACHE_TTL_SECONDS = 300  # 5 minutes
+EMERGENCY_SYSTEM_PROMPT = """
+You are VoyageAI's Emergency & Essentials Travel Assistant.
+The traveler has an urgent, hygiene, or medical requirement (e.g. sanitary pads, medicine, doctor, clinic, fever, period cramps, police, lost items).
 
+RULES:
+1. Be immediate, empathetic, calm, and 100% practical. No travel fluff or poetic descriptions.
+2. Directly advise nearest action: mention 24x7 pharmacies, Apollo/MedPlus/local chemist availability, quick delivery apps (Blinkit, Zepto, Swiggy Instamart) if applicable, or local hospital emergency desk.
+3. If nearby emergency places data is provided in context, use those exact names and areas.
+4. Keep the response crisp (2-3 sentences).
+5. Output relevant emergency follow-up chips at the end:
+<<<CHIPS:["Locate "Emergency "Quick Delivery", Helpline"] Map", on>>>
+6. Do NOT output markdown code blocks (```).
+"""
 
-def _cache_key(lat: float, lng: float, radius: int, category: str = "all") -> str:
-    """Grid-based cache key (~100m cells)."""
-    cat_norm = normalize_category(category)
-    return f"{round(lat, 3)}_{round(lng, 3)}_{radius}_{cat_norm}"
-
-
-def _classify_category(tags: Dict[str, str]) -> str:
-    """Classify OSM tags into a tour guide category."""
-    historic = tags.get("historic", "")
-    tourism = tags.get("tourism", "")
-    amenity = tags.get("amenity", "")
-    building = tags.get("building", "")
-    leisure = tags.get("leisure", "")
-    man_made = tags.get("man_made", "")
-    religion = tags.get("religion", "")
-
-    if historic in ("castle", "fort", "citadel"):
-        return "fort"
-    if historic in ("palace",):
-        return "palace"
-    if historic in ("ruins", "archaeological_site"):
-        return "ruins"
-    if historic in ("monument", "memorial", "battlefield"):
-        return "monument"
-    if historic:
-        return "historic"
-
-    if tourism == "museum":
-        return "museum"
-    if tourism == "viewpoint":
-        return "viewpoint"
-    if tourism in ("attraction", "artwork", "gallery"):
-        return "cultural"
-
-    if amenity == "place_of_worship":
-        if religion == "hindu":
-            return "temple"
-        if religion == "muslim" or religion == "islam":
-            return "mosque"
-        if religion == "christian":
-            return "church"
-        return "religious"
-
-    if building in ("temple", "church", "mosque", "cathedral"):
-        return "religious"
-    if building in ("palace", "fort"):
-        return "fort"
-
-    if man_made in ("tower", "monument", "memorial"):
-        return "monument"
-
-    if leisure in ("park", "garden"):
-        return "park"
-
-    return "tourism"
-
-
-def _extract_name(tags: Dict[str, str]) -> Optional[str]:
-    """Extract best available name from OSM tags."""
-    return (
-        tags.get("name:en") or
-        tags.get("name") or
-        tags.get("alt_name") or
-        tags.get("official_name") or
-        None
-    )
-
-
-def _fetch_nominatim_location(lat: float, lng: float) -> List[Dict[str, Any]]:
-    """Fast Nominatim reverse-geocoding fallback if Overpass times out."""
-    try:
-        url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lng}&format=json&zoom=16"
-        req = urllib.request.Request(
-            url,
-            headers={"User-Agent": "VoyageAI-TourGuide/1.0 (contact@voyageai.local)"}
-        )
-        with urllib.request.urlopen(req, timeout=4) as response:
-            if response.status == 200:
-                data = json.loads(response.read().decode("utf-8"))
-                addr = data.get("address", {})
-                place_name = (
-                    data.get("name") or
-                    addr.get("amenity") or
-                    addr.get("historic") or
-                    addr.get("village") or
-                    addr.get("town") or
-                    addr.get("suburb") or
-                    addr.get("county") or
-                    "Local Area"
-                )
-                display_name = data.get("display_name", place_name)
-                return [{
-                    "id": f"tg_nom_{hashlib.md5(display_name.encode()).hexdigest()[:8]}",
-                    "name": place_name,
-                    "category": "tourism",
-                    "latitude": lat,
-                    "longitude": lng,
-                    "distanceMeters": 0,
-                    "address": display_name,
-                    "source": "nominatim_fallback",
-                    "dataReliability": "VERIFIED"
-                }]
-    except Exception:
-        pass
-    return []
-
-def normalize_category(category: Optional[str]) -> str:
-    cat = (category or "").lower().strip()
-    if cat in ["food", "restaurant", "restaurants", "dining", "eatery", "cafe"]:
-        return "food"
-    elif cat in ["activities", "activity", "attraction", "attractions", "sightseeing", "landmark"]:
-        return "activity"
-    elif cat in ["hotels", "hotel", "stays", "stay", "lodging"]:
-        return "hotel"
-    return "all"
-
-def _cache_key(lat: float, lng: float, radius: int, category: str = "all") -> str:
-    """Grid-based in-memory cache key (~100m cells) with category support."""
-    cat_norm = normalize_category(category)
-    return f"{round(lat, 3)}_{round(lng, 3)}_{radius}_{cat_norm}"
-
-
-def _fetch_overpass_category(lat: float, lng: float, radius: int, cat_norm: str) -> List[Dict[str, Any]]:
-    """Fetches POIs directly from Overpass API matching category tags."""
-    if cat_norm == "hotel":
-        tag_filter = """
-          nwr["tourism"~"hotel|guest_house|resort|motel|lodge|homestay|hostel"](around:{radius},{lat},{lng});
-          nwr["building"="hotel"](around:{radius},{lat},{lng});
-        """
-    elif cat_norm == "food":
-        tag_filter = """
-          nwr["amenity"~"restaurant|cafe|fast_food|food_court|ice_cream|dhaba|bar"](around:{radius},{lat},{lng});
-          nwr["shop"~"confectionery|bakery"](around:{radius},{lat},{lng});
-        """
-    elif cat_norm == "activity":
-        tag_filter = """
-          nwr["tourism"~"attraction|museum|viewpoint|gallery|theme_park"](around:{radius},{lat},{lng});
-          nwr["historic"~"monument|memorial|archaeological_site|fort|castle|ruins"](around:{radius},{lat},{lng});
-          nwr["amenity"~"place_of_worship|arts_centre"](around:{radius},{lat},{lng});
-          nwr["leisure"~"park|garden|sports_centre"](around:{radius},{lat},{lng});
-        """
-    else:  # all
-        tag_filter = """
-          nwr["tourism"~"hotel|guest_house|attraction|museum"](around:{radius},{lat},{lng});
-          nwr["amenity"~"restaurant|cafe|dhaba|place_of_worship"](around:{radius},{lat},{lng});
-          nwr["historic"~"monument|memorial|fort"](around:{radius},{lat},{lng});
-        """
-
-    query = f"""[out:json][timeout:5];
-(
-{tag_filter.format(radius=radius, lat=lat, lng=lng)}
-);
-out center 30;"""
-
-    endpoints = [
-        "https://overpass-api.de/api/interpreter",
-        "https://overpass.kumi.systems/api/interpreter"
-    ]
-
-    places = []
-    seen = set()
-
-    for base_url in endpoints:
+def parse_blocks(raw_text: str):
+    chips = []
+    card = None
+    chips_match = re.search(r'<<<CHIPS:(.*?)>>>', raw_text, re.DOTALL)
+    if chips_match:
         try:
-            req = urllib.request.Request(
-                f"{base_url}?data={urllib.parse.quote(query)}",
-                headers={"User-Agent": "VoyageAI-TourGuide/1.0 (contact@voyageai.local)"}
-            )
-            with urllib.request.urlopen(req, timeout=5.0) as resp:
-                if resp.status == 200:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    for el in data.get("elements", []):
-                        tags = el.get("tags") or {}
-                        name = _extract_name(tags)
-                        if not name or len(name.strip()) < 2:
-                            continue
-
-                        k = name.strip().lower()
-                        if k in seen:
-                            continue
-                        seen.add(k)
-
-                        el_lat = float(el.get("lat") or ((el.get("center") or {}).get("lat") or 0))
-                        el_lng = float(el.get("lon") or ((el.get("center") or {}).get("lon") or 0))
-                        if not el_lat or not el_lng:
-                            continue
-
-                        dist = haversine_meters(lat, lng, el_lat, el_lng)
-                        if dist > 35000:
-                            continue
-
-                        places.append({
-                            "id": f"osm_{el.get('id')}",
-                            "name": name.strip(),
-                            "category": cat_norm,
-                            "latitude": el_lat,
-                            "longitude": el_lng,
-                            "distanceMeters": round(dist),
-                            "address": tags.get("addr:city") or tags.get("addr:street") or f"{round(dist/1000, 1)} km away",
-                            "source": "osm",
-                            "dataReliability": "VERIFIED"
-                        })
-                    if len(places) >= 3:
-                        break
+            chips = json.loads(chips_match.group(1))
         except Exception:
-            continue
+            chips = []
 
-    return places
-
-
-def _fetch_nominatim_category(lat: float, lng: float, cat_norm: str) -> List[Dict[str, Any]]:
-    """Fallback geocoder using Nominatim when Overpass has no coverage."""
-    search_q = "hotel" if cat_norm == "hotel" else ("restaurant" if cat_norm == "food" else "tourist attraction")
-    
-    params = {
-        "q": search_q,
-        "format": "json",
-        "countrycodes": "in",
-        "viewbox": f"{lng-0.35},{lat+0.35},{lng+0.35},{lat-0.35}",
-        "bounded": 1,
-        "limit": 25
-    }
-    url = f"https://nominatim.openstreetmap.org/search?{urllib.parse.urlencode(params)}"
-    places = []
-    seen = set()
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "VoyageAI-App/1.0 (contact@voyageai.local)"})
-        with urllib.request.urlopen(req, timeout=5.0) as resp:
-            if resp.status == 200:
-                data = json.loads(resp.read().decode("utf-8"))
-                for item in data:
-                    raw_display = item.get("display_name", "")
-                    parts = [p.strip() for p in raw_display.split(",") if p.strip()]
-                    name = parts[0] if parts else search_q.capitalize()
-                    if not name or len(name) < 2:
-                        continue
-                    k = name.lower()
-                    if k in seen:
-                        continue
-                    seen.add(k)
-
-                    plat = float(item["lat"])
-                    plng = float(item["lon"])
-                    dist = haversine_meters(lat, lng, plat, plng)
-
-                    clean_addr = ", ".join(parts[1:3]) if len(parts) > 2 else raw_display
-
-                    places.append({
-                        "id": f"nom_{item.get('place_id', 0)}",
-                        "name": name,
-                        "category": cat_norm,
-                        "latitude": plat,
-                        "longitude": plng,
-                        "distanceMeters": round(dist),
-                        "address": clean_addr,
-                        "source": "nominatim_real",
-                        "dataReliability": "VERIFIED"
-                    })
-    except Exception as e:
-        print(f"⚠️ [NOMINATIM WARN]: {e}", flush=True)
-    return places
-
-def fetch_and_cache_pois_task(
-    lat: float, 
-    lng: float, 
-    radius_m: int = 5000, 
-    category: str = "all"
-) -> List[Dict[str, Any]]:
-    """
-    Background worker task: executes Overpass / Nominatim network queries,
-    saves resolved places to Redis with a 24-hour TTL, and publishes a completion event.
-    """
-    cat_norm = normalize_category(category)
-    grid_lat = round(lat, 2)
-    grid_lon = round(lng, 2)
-    cache_key = f"osm:poi:{cat_norm}:{grid_lat}:{grid_lon}:{radius_m}"
-
-    print(f">>> [WORKER POI TASK] Fetching fresh {cat_norm} POIs for ({lat}, {lng}) radius={radius_m}...", flush=True)
-
-    places = _fetch_overpass_category(lat, lng, radius_m, cat_norm)
-    if len(places) < 3 and radius_m < 15000:
-        places = _fetch_overpass_category(lat, lng, 15000, cat_norm)
-
-    if not places:
-        print(f"⚠️ [WORKER OVERPASS EMPTY] Trying Nominatim fallback for {cat_norm}...", flush=True)
-        places = _fetch_nominatim_category(lat, lng, cat_norm)
-
-    places.sort(key=lambda p: p.get("distanceMeters", 0))
-    filtered_places = [p for p in places if p.get("distanceMeters", 0) <= radius_m]
-    if filtered_places:
-        places = filtered_places
-
-    if places:
+    card_match = re.search(r'<<<CARD:(.*?)>>>', raw_text, re.DOTALL)
+    if card_match:
         try:
-            redis_conn.setex(cache_key, 86400, json.dumps(places))
-            print(f">>> [WORKER POI CACHED] Saved {len(places)} items to {cache_key}", flush=True)
-        except Exception as e:
-            print(f"⚠️ [WORKER REDIS WARNING] Failed to write cache: {e}", flush=True)
+            card = json.loads(card_match.group(1))
+        except Exception:
+            card = None
 
-        ck = _cache_key(lat, lng, radius_m, cat_norm)
-        _overpass_cache[ck] = (time.time(), places)
-
-    # Publish Redis PubSub event so active clients know POI discovery completed
+    clean_text = re.sub(r'<<<.*?>>>', '', raw_text, flags=re.DOTALL).strip()
+    return clean_text, chips, card
+def persist_message(user_id: str, role: str, content: str, mode: str, trip_id: Optional[str] = None, metadata: dict = None):
     try:
-        payload = json.dumps({
-            "event": "POI_READY",
-            "category": cat_norm,
-            "latitude": lat,
-            "longitude": lng,
-            "radius_m": radius_m,
-            "count": len(places)
-        })
-        redis_conn.publish("voyageai:events:poi", payload)
-        print(f">>> [WORKER PUB/SUB] Published POI_READY for {cat_norm} at ({lat}, {lng})", flush=True)
+        msg_id = f"msg_{uuid.uuid4().hex[:12]}"
+        meta_json_str = json.dumps(metadata or {})
+        with engine.begin() as conn:
+            conn.execute(
+                text("""
+                    INSERT INTO chat_messages (id, user_id, trip_id, role, content, mode, metadata)
+                    VALUES (:id, :user_id, :trip_id, :role, :content, :mode, CAST(:meta AS JSONB))
+                """),
+                {
+                    "id": msg_id,
+                    "user_id": user_id or "guest_user",
+                    "trip_id": trip_id,
+                    "role": role,
+                    "content": content,
+                    "mode": mode or "local",
+                    "meta": meta_json_str
+                }
+            )
     except Exception as e:
-        print(f"⚠️ [WORKER PUB/SUB WARN] Failed to publish POI event: {e}", flush=True)
+        print(f"[DB LOG ERROR] {e}", flush=True)
+# Alias for backward compatibility
+save_chat_message = persist_message
 
-    return places
-
-
-def search_nearby_pois(
-    lat: float, 
-    lng: float, 
-    radius_m: int = 5000, 
-    radius: Optional[int] = None, 
-    category: Optional[str] = "all"
-) -> List[Dict[str, Any]]:
-    """
-    Search for real nearby POIs with instant sub-3ms Redis Cache-Aside lookup.
-    On cache MISS, enqueues an asynchronous background fetch task to worker.py
-    and returns immediate fallback data with dataReliability='PENDING'.
-    """
-    if radius is not None:
-        radius_m = radius
-
-    cat_norm = normalize_category(category)
-    grid_lat = round(lat, 2)
-    grid_lon = round(lng, 2)
-    cache_key = f"osm:poi:{cat_norm}:{grid_lat}:{grid_lon}:{radius_m}"
-
-    # 1. Read Redis Cache (< 3ms)
+def fetch_chat_history(user_id: str = "guest_user", limit: int = 50, db = None) -> List[Dict[str, Any]]:
     try:
-        cached_result = redis_conn.get(cache_key)
-        if cached_result:
-            print(f">>> [REDIS CACHE HIT] Key: {cache_key}", flush=True)
-            cached_places = json.loads(cached_result)
-            for p in cached_places:
-                plat = p.get("latitude") or p.get("lat", lat)
-                plng = p.get("longitude") or p.get("lng", lng)
-                p["distanceMeters"] = round(haversine_meters(lat, lng, plat, plng))
-            # Discard items outside the user's explicit radius before returning
-            filtered_places = [p for p in cached_places if p.get("distanceMeters", 0) <= radius_m]
-            return filtered_places if filtered_places else cached_places
-    except Exception as e:
-        print(f"⚠️ [REDIS WARNING] Failed to read cache: {e}", flush=True)
-
-    # 2. Check in-memory fallback cache
-    ck = _cache_key(lat, lng, radius_m, cat_norm)
-    if ck in _overpass_cache:
-        cached_time, cached_results = _overpass_cache[ck]
-        if time.time() - cached_time < CACHE_TTL_SECONDS:
-            for p in cached_results:
-                plat = p.get("latitude") or p.get("lat", lat)
-                plng = p.get("longitude") or p.get("lng", lng)
-                p["distanceMeters"] = round(haversine_meters(lat, lng, plat, plng))
-            # Discard items outside the user's explicit radius before returning
-            filtered_places = [p for p in cached_results if p.get("distanceMeters", 0) <= radius_m]
-            return filtered_places if filtered_places else cached_results
-
-    print(f">>> [CACHE MISS] Enqueuing background POI discovery for {cat_norm} at ({lat}, {lng})...", flush=True)
-
-    # 3. Cache MISS: Enqueue background worker task to populate Redis cache asynchronously
-    try:
-        from task_queue import enqueue_poi_fetch
-        enqueue_poi_fetch(lat, lng, radius_m, cat_norm)
-    except Exception as e:
-        print(f"⚠️ [QUEUE WARN] Failed to enqueue POI fetch: {e}", flush=True)
-
-    # 4. Return instant non-blocking fallback data with PENDING reliability
-    fallback_title = "Nearby Discovery Area" if cat_norm == "all" else f"Local {cat_norm.capitalize()} Zone"
-    pending_places = [
-        {
-            "id": f"pending_{cat_norm}_1",
-            "name": f"{fallback_title}",
-            "category": cat_norm,
-            "latitude": lat + 0.001,
-            "longitude": lng + 0.001,
-            "distanceMeters": 150,
-            "address": "Background discovery in progress...",
-            "source": "background_worker",
-            "dataReliability": "PENDING"
-        },
-        {
-            "id": f"pending_{cat_norm}_2",
-            "name": f"Regional Highlights",
-            "category": cat_norm,
-            "latitude": lat - 0.002,
-            "longitude": lng - 0.001,
-            "distanceMeters": 320,
-            "address": "Fetching verified POIs...",
-            "source": "background_worker",
-            "dataReliability": "PENDING"
-        }
-    ]
-    return pending_places
-# ── Place Ranking ──
-
-def rank_places(
-    places: List[Dict[str, Any]],
-    user_prefs: Optional[Dict[str, Any]] = None,
-    limit: int = 10
-) -> List[Dict[str, Any]]:
-    """
-    Rank nearby places by importance × inverse distance.
-    Returns top N places.
-    """
-    if not places:
+        with engine.connect() as conn:
+            result = conn.execute(
+                text("""
+                    SELECT id, role, content, mode, trip_id, metadata, created_at
+                    FROM chat_messages
+                    WHERE user_id = :user_id
+                    ORDER BY created_at ASC
+                    LIMIT :limit
+                """),
+                {"user_id": user_id or "guest_user", "limit": limit}
+            )
+            records = result.mappings().all()
+            history = []
+            for r in records:
+                m_data = r.get("metadata") or {}
+                if isinstance(m_data, str):
+                    try:
+                        m_data = json.loads(m_data)
+                    except Exception:
+                        m_data = {}
+                created_val = r.get("created_at")
+                history.append({
+                    "id": str(r.get("id")),
+                    "role": r.get("role"),
+                    "content": r.get("content"),
+                    "mode": r.get("mode"),
+                    "trip_id": r.get("trip_id"),
+                    "metadata": m_data,
+                    "created_at": created_val.isoformat() if hasattr(created_val, "isoformat") else str(created_val)
+                })
+            return history
+    except Exception as err:
+        print(f"[CHAT HISTORY WARN] History fetch failed: {err}", flush=True)
         return []
 
-    max_dist = max(p["distanceMeters"] for p in places) or 1
-
-    def score(place: Dict[str, Any]) -> float:
-        cat_weight = CATEGORY_WEIGHTS.get(place["category"], 3)
-        # Inverse distance score (closer = higher)
-        dist_score = 1.0 - (place["distanceMeters"] / (max_dist + 1))
-        # Bonus for having Wikipedia/description (likely more notable)
-        notable_bonus = 1.5 if place.get("wikipedia") else 1.0
-        desc_bonus = 1.2 if place.get("description") else 1.0
-        # User preference bonus
-        pref_bonus = 1.0
-        if user_prefs:
-            interests = [i.lower() for i in user_prefs.get("activityInterests", [])]
-            cat_lower = place["category"].lower()
-            if any(cat_lower in i or i in cat_lower for i in interests):
-                pref_bonus = 1.3
-
-        return cat_weight * dist_score * notable_bonus * desc_bonus * pref_bonus
-
-    scored = sorted(places, key=lambda p: score(p), reverse=True)
-    return scored[:limit]
-
-
-# ── Active Place Context Resolver ──
-
-def resolve_active_place(
-    req_place_id: Optional[str],
-    message_text: str,
-    session: Dict[str, Any],
-    nearby_places: List[Dict[str, Any]]
-) -> Optional[Dict[str, Any]]:
-    """
-    Resolves active place context accurately based on request place_id,
-    explicit place name mentions in user message text, or existing session context.
-    """
-    msg_lower = (message_text or "").strip().lower()
-
-    IGNORE_TERMS = {
-        "history", "famous", "worth", "visit", "visiting", "nearby", "around",
-        "story", "facts", "far", "distance", "where", "open", "hours", "price",
-        "cost", "built", "who", "why", "when", "how", "what", "tell", "show",
-        "more", "it", "this", "place", "here", "there", "anything", "else", "food", "ride", "expense"
-    }
-
-    # 1. Direct match in nearby_places by place_id if provided
-    if req_place_id:
-        for p in nearby_places:
-            if p.get("id") == req_place_id:
-                session["current_place_id"] = req_place_id
-                session["current_place"] = p
-                return p
-
-    # 2. Check if user message explicitly names a place from nearby_places
-    if nearby_places:
-        for p in nearby_places:
-            p_name = p.get("name", "").lower()
-            if len(p_name) >= 3 and (p_name in msg_lower or f"about {p_name}" in msg_lower):
-                session["current_place_id"] = p["id"]
-                session["current_place"] = p
-                return p
-
-    # 3. Check regex pattern for "tell me about <Name>" or "what about <Name>"
-    import re
-    match = (
-        re.search(r"(?:tell me about|what about|tell about|info on|where is|details of)\s+(.+)", msg_lower) or
-        re.search(r"^about\s+(.+)", msg_lower)
-    )
-    if match:
-        extracted = match.group(1).strip().strip("?.!\"'")
-        words = [w for w in extracted.split() if w not in IGNORE_TERMS]
-        if words and len(" ".join(words)) >= 3:
-            clean_name = " ".join(words).title()
-            curr_p = session.get("current_place")
-            if curr_p and curr_p.get("name", "").lower() == clean_name.lower():
-                return curr_p
-
-            custom_id = f"tg_custom_{hashlib.md5(clean_name.encode()).hexdigest()[:8]}"
-            custom_place = {
-                "id": custom_id,
-                "name": clean_name,
-                "category": "attraction",
-                "latitude": session.get("last_nearby_lat") or 0.0,
-                "longitude": session.get("last_nearby_lng") or 0.0,
-                "distanceMeters": 0,
-                "source": "user_mention",
-                "dataReliability": "ESTIMATED"
-            }
-            session["current_place_id"] = custom_id
-            session["current_place"] = custom_place
-            return custom_place
-
-    # 4. Retain existing session active place if user is asking a follow-up question
-    curr_id = session.get("current_place_id")
-    if curr_id:
-        for p in nearby_places:
-            if p.get("id") == curr_id:
-                return p
-        if session.get("current_place"):
-            return session["current_place"]
-
-    return None
-
-
-# ── Tour Guide AI (Gemini) ──
-
-TOUR_GUIDE_SYSTEM_PROMPT = """You are a knowledgeable, charismatic local tour guide for VoyageAI. You accompany the traveler in real time.
-
-CORE PERSONA:
-- Concise, engaging, culturally sharp, and conversational.
-- Speak like a seasoned human guide walking beside the traveler. Never sound like a database entry, encyclopedia, or bureaucratic chatbot.
-- Keep standard responses between 2 to 4 sentences unless the user explicitly asks for an in-depth story.
-
-STRICT OPERATING MODES:
-1. LOCAL MODE (Current Real-Time Location Context):
-   - Anchor responses in the user's current physical coordinates and city.
-   - If asked "What is that building?", "What's good to eat here?", or "Tell me the story of this street", answer strictly for their current location.
-   - Do NOT reference their upcoming trip plans unless explicitly asked.
-
-2. TRIP MODE (Upcoming / Selected Itinerary Context):
-   - Anchor responses in the planned destination itinerary.
-   - Discuss planned activities, destinations, and local customs of the journey destination.
-   - Do NOT imply the user is physically there unless their current GPS matches the trip destination.
-
-HALLUCINATION GUARDRAILS:
-- Rely strictly on verified local data and known history.
-- If asked who built a structure, its founding year, or a specific metric that is unverified or obscure, state naturally:
-  "While it's a celebrated local spot, its exact builder and founding date aren't conclusively documented."
-- Never invent dates, dynasties, or fake historical claims.
-"""
-
-
-def _clean_reply_text(raw_text: Any) -> str:
-    """Extract clean conversational reply string from raw text, dict, or stringified JSON."""
-    if not raw_text:
-        return "I'm here to help you explore!"
-    
-    if isinstance(raw_text, dict):
-        val = raw_text.get("reply") or raw_text.get("text") or raw_text.get("message")
-        return str(val) if val else str(raw_text)
-    
-    text = str(raw_text).strip()
-    
-    import re
-    if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
-        text = re.sub(r"\s*```$", "", text).strip()
-        
-    if text.startswith("{") and text.endswith("}"):
+def get_grounded_model(m_name: str, system_prompt: str = JARVIS_SYSTEM_PROMPT):
+    if genai and hasattr(genai, "GenerativeModel"):
         try:
-            data = json.loads(text)
-            if isinstance(data, dict):
-                val = data.get("reply") or data.get("text") or data.get("message")
-                if val:
-                    return str(val).strip()
+            return genai.GenerativeModel(
+                model_name=m_name,
+                tools=[{"google_search": {}}],
+                system_instruction=system_prompt
+            )
         except Exception:
             pass
-            
-    return text
+    return None
 
-
-def generate_poi_story(place_name: str, category: str = "attraction", address: str = "") -> str:
-    """
-    Generates a 2-sentence authentic historical trivia/cultural narrative for a POI using Gemini.
-    Cached in Redis for 7 days to ensure instant 0ms retrieval on repeated calls.
-    """
-    import os
-    import hashlib
-    clean_name = (place_name or "Local Landmark").strip()
-    cache_key = f"story:poi:{hashlib.md5((clean_name + category).encode('utf-8')).hexdigest()[:12]}"
-
-    # 1. Read Redis Cache (< 3ms)
-    try:
-        cached_story = redis_conn.get(cache_key)
-        if cached_story:
-            if isinstance(cached_story, bytes):
-                cached_story = cached_story.decode("utf-8")
-            print(f">>> [REDIS STORY HIT] Key: {cache_key} (0ms latency)", flush=True)
-            return cached_story
-    except Exception as e:
-        print(f"[REDIS STORY WARN] Redis read error: {e}", flush=True)
-
-    # 2. Call Gemini API for dynamic 2-line story
-    api_key = os.getenv("GEMINI_API_KEY")
-    model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
-
-    if api_key and api_key.strip():
-        prompt = f"""You are a warm, engaging Indian tour guide.
-Generate a captivating 2-sentence (~30-35 words) tour guide narrative in Hinglish (Hindi language written using Roman/English script) about:
-Place Name: {clean_name}
-Category: {category}
-Address/Region: {address or 'India'}
-
-Requirements:
-- Share authentic historical trivia, cultural context, or famous local highlight.
-- Keep it warm, natural, and strictly 2 short sentences (~35 words max).
-- Return ONLY the 2-sentence story text with no quotes, formatting, or bullet points."""
-
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "temperature": 0.5,
-                "maxOutputTokens": 150
-            }
-        }
+def get_plain_model(m_name: str, system_prompt: str = JARVIS_SYSTEM_PROMPT):
+    if genai and hasattr(genai, "GenerativeModel"):
         try:
-            import requests
-            res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=5.0)
-            if res.status_code == 200:
-                data = res.json()
-                try:
-                    text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-                    if text:
-                        # Clean quotes if returned
-                        text = text.replace('"', '').replace("'", "")
-                        # Save to Redis with 7-day TTL
-                        try:
-                            redis_conn.setex(cache_key, 604800, text)
-                            print(f">>> [GEMINI STORY CACHED] Key: {cache_key}", flush=True)
-                        except Exception as ce:
-                            print(f"[REDIS STORY WARN] Redis write error: {ce}", flush=True)
-                        return text
-                except (KeyError, IndexError):
-                    pass
-        except Exception as err:
-            print(f"[GEMINI STORY WARN] API call failed: {err}", flush=True)
-
-    # 3. Smart Fallback if Gemini unavailable
-    fallback_story = f"Namaste! Aapka {clean_name} me swagat hai. Yeh {address or 'is kshetra'} ka ek behad khas {category} spot hai, jo apni sanskritik virasat aur anokhi ruchi ke liye jaana jata hai."
-    return fallback_story
-
-def generate_tour_guide_response(
-    messages: List[Dict[str, str]],
-    place_context: Optional[Dict[str, Any]],
-    nearby_places: List[Dict[str, Any]],
-    user_location: Optional[Dict[str, float]],
-    trip_context: Optional[Dict[str, Any]] = None,
-    user_prefs: Optional[Dict[str, Any]] = None,
-    mode: str = "local"
-) -> Dict[str, Any]:
-    """
-    Generate a conversational tour guide AI response using Gemini.
-    Falls back to MockAIProvider if Gemini is unavailable.
-    """
-    import os
-    from dotenv import load_dotenv
-    load_dotenv(override=True)
-
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key or not api_key.strip():
-        return _mock_tour_guide_response(messages, place_context, nearby_places, user_location, trip_context=trip_context, mode=mode)
-
-    model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
-
-    # Build context prompt
-    context_parts = []
-    context_parts.append(f"CURRENT GUIDE MODE: {mode.upper()} MODE")
-
-    if mode == "local":
-        if user_location:
-            context_parts.append(
-                f"USER'S CURRENT PHYSICAL LOCATION: Latitude {user_location.get('latitude', 0):.5f}, "
-                f"Longitude {user_location.get('longitude', 0):.5f}"
+            return genai.GenerativeModel(
+                model_name=m_name,
+                system_instruction=system_prompt
             )
-        if nearby_places:
-            nearby_summary = "\n".join([
-                f"  - {p['name']} ({p['category']}, {p['distanceMeters']}m away)"
-                for p in nearby_places[:8]
-            ])
-            context_parts.append(f"LOCAL NEARBY PLACES (within 5km of user's physical location):\n{nearby_summary}")
-        if trip_context:
-            dest_name = (trip_context.get("destination") or {}).get("name", "")
-            if dest_name:
-                context_parts.append(f"UPCOMING TRIP (Background info only — DO NOT use for local queries unless user explicitly asks about it): Traveling to {dest_name}")
-    else:  # mode == "trip"
-        if trip_context:
-            dest = trip_context.get("destination") or {}
-            dest_name = dest.get("name", "Trip Destination")
-            title = trip_context.get("title", dest_name)
-            context_parts.append(f"SELECTED TRIP CONTEXT:\n- Trip Title: {title}\n- Destination: {dest_name}")
-            days = trip_context.get("days") or []
-            if days:
-                activities_summary = []
-                for day in days[:3]:
-                    acts = [a.get("title", "") for a in day.get("activities", [])[:3]]
-                    if acts:
-                        activities_summary.append(f"  Day {day.get('dayNumber', 1)}: {', '.join(acts)}")
-                if activities_summary:
-                    context_parts.append("TRIP ITINERARY HIGHLIGHTS:\n" + "\n".join(activities_summary))
-        if nearby_places:
-            nearby_summary = "\n".join([
-                f"  - {p['name']} ({p['category']})"
-                for p in nearby_places[:8]
-            ])
-            context_parts.append(f"DESTINATION PLACES:\n{nearby_summary}")
+        except Exception:
+            pass
+    return None
 
-    if user_prefs:
-        interests = user_prefs.get("activityInterests", [])
-        if interests:
-            context_parts.append(f"USER INTERESTS: {', '.join(interests)}")
-
-    context_block = "\n\n".join(context_parts)
-
-    # Format conversation history (last 8 messages)
-    formatted_msgs = "\n".join([
-        f"{'USER' if m.get('role') == 'user' else 'GUIDE'}: {m.get('text', '')}"
-        for m in messages[-8:]
-    ])
-
-    full_prompt = f"""{TOUR_GUIDE_SYSTEM_PROMPT}
-
-{context_block}
-
-CONVERSATION HISTORY:
-{formatted_msgs}
-
-Respond as the tour guide. Return ONLY valid JSON:
-{{
-  "reply": "Your conversational response directly answering the last user message",
-  "suggestedActions": ["Tell me the history", "Why is it famous?", "What else is nearby?"],
-  "mentionedPlaceId": null
-}}
-"""
-
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
-    payload = {
-        "contents": [{"parts": [{"text": full_prompt}]}],
-        "generationConfig": {
-            "response_mime_type": "application/json",
-            "temperature": 0.4,
-            "maxOutputTokens": 1024
-        }
-    }
-
-    try:
-        import requests
-        res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=15)
-        if res.status_code == 200:
-            res_json = res.json()
-            candidates = res_json.get("candidates") or []
-            if candidates:
-                first_cand = candidates[0]
-                content = first_cand.get("content") or {}
-                parts = content.get("parts") or []
-                if parts and isinstance(parts[0], dict) and "text" in parts[0]:
-                    text = parts[0]["text"].strip()
-                    import re
-                    if text.startswith("```"):
-                        text = re.sub(r"^```(?:json)?\n?", "", text, flags=re.IGNORECASE)
-                        text = re.sub(r"\n?```$", "", text)
-                    try:
-                        data = json.loads(text)
-                        if isinstance(data, dict):
-                            raw_rep = data.get("reply") or "I'm here to help you explore!"
-                            cleaned = _clean_reply_text(raw_rep)
-                            return {
-                                "reply": cleaned,
-                                "suggestedActions": data.get("suggestedActions", []),
-                                "mentionedPlaceId": data.get("mentionedPlaceId"),
-                                "source": "gemini"
-                            }
-                    except Exception:
-                        pass
-                    
-                    return {
-                        "reply": _clean_reply_text(text),
-                        "suggestedActions": ["Tell me more", "What's nearby?"],
-                        "mentionedPlaceId": None,
-                        "source": "gemini"
-                    }
-    except Exception:
-        pass
-
-    return _mock_tour_guide_response(messages, place_context, nearby_places, user_location)
-
-
-def _mock_tour_guide_response(
-    messages: List[Dict[str, str]],
-    place_context: Optional[Dict[str, Any]],
-    nearby_places: List[Dict[str, Any]],
-    user_location: Optional[Dict[str, float]],
-    trip_context: Optional[Dict[str, Any]] = None,
-    mode: str = "local"
+def process_concierge_message(
+    user_id: str,
+    message: str,
+    mode: str = "local",
+    trip_id: Optional[str] = None,
+    destination_name: Optional[str] = None,
+    trip_destination: Optional[str] = None,
+    lat: Optional[float] = None,
+    lng: Optional[float] = None,
+    user_lat: Optional[float] = None,
+    user_lng: Optional[float] = None,
+    recent_history: Optional[List[Dict[str, str]]] = None,
+    db = None
 ) -> Dict[str, Any]:
-    """Fallback mock response when Gemini is unavailable."""
-    last_user_msg = ""
-    for m in reversed(messages):
-        if m.get("role") == "user":
-            last_user_msg = m.get("text", "").lower()
-            break
+    dest = destination_name or trip_destination
+    eff_lat = lat if lat is not None else user_lat
+    eff_lng = lng if lng is not None else user_lng
 
-    dest_name = (trip_context.get("destination") or {}).get("name", "your destination") if trip_context else "your destination"
+    # 1. Zero-Cost Shield Evaluation (Gate 0, Gate 1, Gate 1.5, Gate 2)
+    should_call_llm, gate_reason, deflection_reply = evaluate_cost_guards(message)
 
-    # Food & Cuisine handling
-    if any(k in last_user_msg for k in ["food", "cuisine", "eat", "dishes", "dish", "specialty", "specialties", "taste"]):
-        if mode == "trip" or "trip" in last_user_msg or (dest_name.lower() in last_user_msg and dest_name.lower() != "your destination"):
-            if "goa" in dest_name.lower() or "goa" in last_user_msg:
-                return {
-                    "reply": f"On your trip to Goa, key local food specialties to try include Goan Fish Curry with rice, Pork/Chicken Vindaloo, Chicken Xacuti, Bebinca dessert, and fresh seafood at beach shacks!",
-                    "suggestedActions": ["Recommend beach shacks", "What else is on my itinerary?", "Local drinks in Goa"],
-                    "source": "mock"
-                }
-            return {
-                "reply": f"On your trip to {dest_name}, recommended local culinary experiences include authentic regional specialties, popular dining spots, and local street delicacies.",
-                "suggestedActions": [f"Popular restaurants in {dest_name}", "Trip itinerary food spots", "Local dishes to try"],
-                "source": "mock"
-            }
-        else:  # Local Mode food
-            lat = user_location.get("latitude", 0) if user_location else 0
-            lng = user_location.get("longitude", 0) if user_location else 0
-            # Check Bihar / Patna region coordinates (~24.5-27.5, 83.5-88.0)
-            if (24.0 <= lat <= 27.5 and 83.5 <= lng <= 88.0) or "bihar" in last_user_msg or "patna" in last_user_msg:
-                return {
-                    "reply": "In this local area (Bihar region), famous authentic dishes include Litti Chokha served with melted ghee, Sattu Paratha, Tilkut, Khaja sweet, and Malpua. Local street markets and traditional eateries offer these freshly made delicacies!",
-                    "suggestedActions": ["Where to get authentic Litti Chokha?", "Local sweet specialties", "Nearby food spots"],
-                    "source": "mock"
-                }
-            return {
-                "reply": "Around your current local area, authentic culinary options include regional thali meals, famous street snacks, and popular local eateries.",
-                "suggestedActions": ["Find nearby food spots", "Popular local dishes", "Tell me what's nearby"],
-                "source": "mock"
-            }
+    if not should_call_llm:
+        response_payload = {
+            "reply": deflection_reply,
+            "chips": ["Must-try street food", "Top sights today", "Hidden gems"],
+            "card": None,
+            "mode": mode,
+            "gate": gate_reason
+        }
+        persist_message(user_id, "user", message, mode, trip_id)
+        persist_message(user_id, "assistant", deflection_reply, mode, trip_id, response_payload)
+        return response_payload
 
-    # Explicit destination query handling (e.g. "What should I see in Goa?")
-    if "goa" in last_user_msg and not place_context:
+    # 2. Urgent / Essential Need Handling
+    is_essential = (gate_reason == "PASSED_ESSENTIAL_NEED")
+    active_system_prompt = EMERGENCY_SYSTEM_PROMPT if is_essential else JARVIS_SYSTEM_PROMPT
+
+    # 3. Context Anchor & Location Isolation
+    context_anchor = ""
+    if is_essential:
+        emergency_places_info = ""
+        if eff_lat is not None and eff_lng is not None:
+            try:
+                from places import get_progressive_nearby_places
+                nearby_pharmacies = get_progressive_nearby_places(eff_lat, eff_lng, "pharmacy")[:3]
+                if nearby_pharmacies:
+                    names = [p.get("name", "Local Chemist") for p in nearby_pharmacies]
+                    emergency_places_info = f" | Nearby verified stores: {', '.join(names)}"
+            except Exception:
+                pass
+        context_anchor = f"[URGENT MEDICAL/ESSENTIAL MODE | User Location: lat={eff_lat}, lng={eff_lng}{emergency_places_info}]"
+    elif mode == "trip":
+        context_anchor = f"[Active Trip Mode | Destination: {dest or 'Planned Trip'} | STRICT: DO NOT consider current user GPS coordinates]"
+    else:
+        if eff_lat is not None and eff_lng is not None:
+            context_anchor = f"[Local Mode | User Coordinates: lat={eff_lat:.5f}, lng={eff_lng:.5f}]"
+        else:
+            context_anchor = "[Local Mode | Current location unknown, suggest asking destination if broad]"
+
+    # 4. Context Memory Window (Use passed history or fallback to DB)
+    if recent_history is None:
+        db_records = fetch_chat_history(user_id, limit=6)
+        history_items = [{"role": r["role"], "content": r["content"]} for r in db_records]
+    else:
+        history_items = recent_history
+
+    history_lines = []
+    for item in history_items[-5:]:  # Sliding window: last 5 messages
+        role_tag = "Traveler" if item.get("role") == "user" else "Assistant"
+        content_snippet = str(item.get("content", ""))[:250]
+        history_lines.append(f"{role_tag}: {content_snippet}")
+
+    history_block = ""
+    if history_lines:
+        history_block = "Recent Conversation Snippet:\n" + "\n".join(history_lines) + "\n\n"
+
+    augmented_prompt = (
+        f"{context_anchor}\n\n"
+        f"{history_block}"
+        f"Traveler current query: {message}"
+    )
+
+    # 5. Three-Tier Resilient LLM Invocation
+    raw_text = None
+    model_candidates = ["gemini-3.6-flash", "gemini-flash-latest", "gemini-1.5-flash"]
+
+    # Tier A: Real-time grounded search first
+    for m_name in model_candidates:
+        g_model = get_grounded_model(m_name, system_prompt=active_system_prompt)
+        if g_model:
+            try:
+                resp = g_model.generate_content(augmented_prompt)
+                if resp and resp.text:
+                    raw_text = resp.text.strip()
+                    break
+            except Exception as search_err:
+                print(f"[SEARCH TOOL GLITCH] Model {m_name}: {search_err}", flush=True)
+
+    # Tier B: Plain model fallback
+    if not raw_text:
+        for m_name in model_candidates:
+            p_model = get_plain_model(m_name, system_prompt=active_system_prompt)
+            if p_model:
+                try:
+                    resp = p_model.generate_content(augmented_prompt)
+                    if resp and resp.text:
+                        raw_text = resp.text.strip()
+                        break
+                except Exception as plain_err:
+                    print(f"[PLAIN MODEL GLITCH] Model {m_name}: {plain_err}", flush=True)
+
+    # Tier C: Direct REST fallback
+    if not raw_text:
+        api_key_env = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        if api_key_env and api_key_env.strip():
+            full_prompt = f"{active_system_prompt}\n\n{augmented_prompt}"
+            for m_name in model_candidates:
+                try:
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{m_name}:generateContent?key={api_key_env}"
+                    payload = {
+                        "contents": [{"parts": [{"text": full_prompt}]}],
+                        "generationConfig": {"temperature": 0.2 if is_essential else 0.4, "maxOutputTokens": 1024}
+                    }
+                    res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=12.0)
+                    if res.status_code == 200:
+                        res_json = res.json()
+                        candidates = res_json.get("candidates") or []
+                        if candidates and "content" in candidates[0]:
+                            parts = candidates[0]["content"].get("parts") or []
+                            if parts and "text" in parts[0]:
+                                raw_text = parts[0]["text"].strip()
+                                break
+                except Exception as r_err:
+                    print(f"[REST LLM WARN] {m_name}: {r_err}", flush=True)
+
+    # Fatal Safeguard
+    if not raw_text:
+        print("[FATAL LLM FAILURE] All LLM tiers failed", flush=True)
+        fallback_msg = (
+            "Aapke paas ke medical store ya 24x7 pharmacy ke liye Google Maps check karein ya Blinkit/Instamart se order karein."
+            if is_essential else
+            "Connection thoda slow chal raha hai dost. Ek baar query dobara bhej kar dekho!"
+        )
         return {
-            "reply": "For your trip to Goa, top recommended highlights include Baga & Anjuna beaches, Fort Aguada, Basilica of Bom Jesus, Dudhsagar Falls, and vibrant local night markets!",
-            "suggestedActions": ["Goa beaches", "Historic churches in Goa", "Best food on Goa trip"],
-            "source": "mock"
+            "reply": fallback_msg,
+            "chips": ["Locate nearby pharmacy", "Nearest hospital", "Retry"] if is_essential else ["Retry now", "Nearby food", "Top sights"],
+            "card": None,
+            "mode": mode,
+            "gate": gate_reason,
+            "error": "LLM_TOTAL_FAILURE"
         }
 
-    # Trip Mode queries without specific place
-    if mode == "trip" and not place_context:
-        if any(k in last_user_msg for k in ["see", "do", "attraction", "visit", "goa", "itinerary", "places"]):
-            return {
-                "reply": f"For your trip to {dest_name}, great highlights include historic landmarks, scenic viewpoints, local markets, and popular beaches/attractions. Would you like day-by-day itinerary suggestions?",
-                "suggestedActions": [f"Top spots in {dest_name}", "Trip itinerary check", "Best food on trip"],
-                "source": "mock"
-            }
+    # 6. Parse and Clean Response
+    clean_text, chips, card = parse_blocks(raw_text)
 
-    if place_context:
-        name = place_context.get("name", "this place")
-        dist = place_context.get("distanceMeters", "?")
-        cat = place_context.get("category", "attraction")
+    if "```" in clean_text:
+        clean_text = "Safar mein coding chhoriye dost! Main sirf travel, sightseeing aur local experiences mein madad karta hoon. Kahan chalna hai bataiye?"
 
-        # History question
-        if any(k in last_user_msg for k in ["history", "built", "past", "origin", "old", "who"]):
-            desc = place_context.get("description")
-            wiki = place_context.get("wikipedia")
-            if desc:
-                reply_text = f"Here is what is known about {name}: {desc}. From OpenStreetMap records, it is an established {cat} in this area."
-            elif wiki:
-                reply_text = f"{name} has a recorded reference on Wikipedia ({wiki}). It is recognized as a notable {cat} landmark."
-            else:
-                reply_text = f"{name} is an established {cat} in this area, located about {dist} meters from you. I can confirm its location and category, but I don't have a verified historical founding record for its exact origin date."
-            return {
-                "reply": reply_text,
-                "suggestedActions": ["Why is it famous?", "Is it worth visiting?", "What else is nearby?"],
-                "source": "mock"
-            }
-
-        # Famous / significance question
-        if any(k in last_user_msg for k in ["famous", "special", "why", "significance"]):
-            return {
-                "reply": f"{name} is widely visited as a key {cat} landmark in the area. Travelers and locals visit to experience its cultural presence and surroundings.",
-                "suggestedActions": ["Tell me the history", "Is it worth visiting?", "What else is nearby?"],
-                "source": "mock"
-            }
-
-        # Worth visiting question
-        if any(k in last_user_msg for k in ["worth", "visit", "should i", "good"]):
-            return {
-                "reply": f"Yes, {name} is worth visiting if you are exploring nearby! Since it's only {dist} meters away from your location, it's a convenient and rewarding stop.",
-                "suggestedActions": ["Tell me the history", "Why is it famous?", "What else is nearby?"],
-                "source": "mock"
-            }
-
-        # Distance / location question
-        if any(k in last_user_msg for k in ["far", "distance", "where", "how to get"]):
-            return {
-                "reply": f"{name} is located approximately {dist} meters from your current position.",
-                "suggestedActions": ["Tell me the history", "Is it worth visiting?", "What else is nearby?"],
-                "source": "mock"
-            }
-
-        # Nearby question
-        if any(k in last_user_msg for k in ["nearby", "what else", "around"]):
-            if nearby_places:
-                other_spots = [p for p in nearby_places if p.get("name") != name]
-                suggestions = ", ".join([f"{p['name']} ({p['distanceMeters']}m)" for p in other_spots[:3]])
-                return {
-                    "reply": f"Besides {name}, here are other spots nearby: {suggestions}. Would you like details on any of these?",
-                    "suggestedActions": [f"Tell me about {other_spots[0]['name']}" if other_spots else "What's around?"],
-                    "source": "mock"
-                }
-
-        # Default intro for initial inquiry about place
-        return {
-            "reply": f"You're about {dist} meters from {name}, a prominent {cat} landmark in this area. Would you like to know its history, why it's famous, or whether it's worth visiting?",
-            "suggestedActions": ["Tell me the history", "Why is it famous?", "Is it worth visiting?"],
-            "source": "mock"
-        }
-
-    # No place_context selected
-    if nearby_places:
-        top = nearby_places[0]
-        return {
-            "reply": f"Looking at what's around you — the nearest interesting spot is {top['name']}, about {top['distanceMeters']} meters away. It's a {top['category']} site. Want me to tell you about it?",
-            "suggestedActions": [f"Tell me about {top['name']}", "Show me more places", "What's the most historic site?"],
-            "source": "mock"
-        }
-
-    return {
-        "reply": f"I'm your VoyageAI tour guide! Operating in {mode.upper()} mode. Ask me about nearby landmarks, local cuisine, culture, or your trip plans!",
-        "suggestedActions": ["What's nearby?", "What food is famous here?", "Recommend something interesting"],
-        "source": "mock"
+    result_payload = {
+        "reply": clean_text,
+        "chips": chips or (["Locate on Map", "Quick Delivery"] if is_essential else ["Show map", "Nearby food", "Timing tips"]),
+        "card": card,
+        "mode": mode,
+        "gate": gate_reason,
+        "error": None
     }
 
+    # 7. Persist to PostgreSQL
+    persist_message(user_id, "user", message, mode, trip_id)
+    persist_message(user_id, "assistant", clean_text, mode, trip_id, result_payload)
 
-# ── Session Management ──
+    return result_payload
 
-_tour_guide_sessions: Dict[str, Dict[str, Any]] = {}
-SESSION_EXPIRY_SECONDS = 7200  # 2 hours
+# Alias function handle_tour_guide_chat
+async def handle_tour_guide_chat(
+    user_id: str,
+    message: str,
+    mode: str,
+    trip_id: Optional[str] = None,
+    trip_destination: Optional[str] = None,
+    user_lat: Optional[float] = None,
+    user_lng: Optional[float] = None
+) -> Dict[str, Any]:
+    return process_concierge_message(
+        user_id=user_id,
+        message=message,
+        mode=mode,
+        trip_id=trip_id,
+        destination_name=trip_destination,
+        trip_destination=trip_destination,
+        user_lat=user_lat,
+        user_lng=user_lng
+    )
 
+# Legacy helper compatibility functions
+def search_nearby_pois(lat: float, lng: float, radius_m: int = 5000, category: str = "all") -> List[Dict[str, Any]]:
+    try:
+        from places import get_progressive_nearby_places
+        return get_progressive_nearby_places(lat, lng, category)
+    except Exception as e:
+        print(f"[NEARBY POIS ERR] {e}", flush=True)
+        return []
+
+def rank_places(places: List[Dict[str, Any]], user_prefs: Optional[Dict[str, Any]] = None, limit: int = 10) -> List[Dict[str, Any]]:
+    return places
 
 def get_or_create_session(user_id: str) -> Dict[str, Any]:
-    """Get or create a tour guide session for the given user."""
-    now = time.time()
-
-    if user_id in _tour_guide_sessions:
-        session = _tour_guide_sessions[user_id]
-        if now - session.get("created_at", 0) < SESSION_EXPIRY_SECONDS:
-            session["last_active"] = now
-            return session
-        # Expired — create new
-        del _tour_guide_sessions[user_id]
-
-    session = {
-        "user_id": user_id,
-        "current_place_id": None,
-        "messages": [],
-        "nearby_places": [],
-        "last_nearby_lat": None,
-        "last_nearby_lng": None,
-        "last_nearby_refresh": 0,
-        "auto_guide_enabled": False,
-        "notified_place_ids": {},  # place_id -> timestamp (cooldown tracking)
-        "created_at": now,
-        "last_active": now
-    }
-    _tour_guide_sessions[user_id] = session
-    return session
-
-
-def add_message_to_session(session: Dict[str, Any], role: str, text: str, place_id: str = None):
-    """Add a message to the session conversation history. Keep last 20."""
-    session["messages"].append({
-        "role": role,
-        "text": text,
-        "timestamp": time.time(),
-        "placeId": place_id
-    })
-    if len(session["messages"]) > 20:
-        session["messages"] = session["messages"][-20:]
-    session["last_active"] = time.time()
-
+    return {"user_id": user_id, "messages": []}
 
 def should_refresh_nearby(session: Dict[str, Any], lat: float, lng: float) -> bool:
-    """Check if nearby places should be refreshed (moved >200m or 3 min elapsed)."""
-    last_lat = session.get("last_nearby_lat")
-    last_lng = session.get("last_nearby_lng")
-    last_time = session.get("last_nearby_refresh", 0)
+    return False
 
-    if last_lat is None or last_lng is None:
-        return True
+def resolve_active_place(req_place_id: Optional[str], message_text: str, session: Dict[str, Any], nearby_places: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    return None
 
-    dist = haversine_meters(last_lat, last_lng, lat, lng)
-    elapsed = time.time() - last_time
+def add_message_to_session(session: Dict[str, Any], role: str, text: str, place_id: Optional[str] = None):
+    pass
 
-    return dist > 200 or elapsed > 180
+def generate_tour_guide_response(messages: List[Dict[str, str]], place_context: Optional[Dict[str, Any]], nearby_places: List[Dict[str, Any]], user_location: Optional[Dict[str, float]], trip_context: Optional[Dict[str, Any]] = None, user_prefs: Optional[Dict[str, Any]] = None, mode: str = "local") -> Dict[str, Any]:
+    last_msg = messages[-1].get("text", "") if messages else ""
+    user_id = "guest_user"
+    dest_name = (trip_context.get("destination") or {}).get("name") if trip_context else None
+    lat = user_location.get("latitude") if user_location else None
+    lng = user_location.get("longitude") if user_location else None
+    return process_concierge_message(user_id, last_msg, mode, trip_context.get("id") if trip_context else None, dest_name, lat=lat, lng=lng)
 
+def haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    return 0.0
+
+def fetch_nearby_places(lat: float, lng: float, radius: int = 5000) -> List[Dict[str, Any]]:
+    return []
 
 def check_proactive_alert(session: Dict[str, Any], lat: float, lng: float, places: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    """
-    Check if user has entered the 500m radius of an interesting place
-    that hasn't been notified recently (30 min cooldown).
-    Returns the place to alert about, or None.
-    """
-    if not session.get("auto_guide_enabled", False):
-        return None
-
-    now = time.time()
-    cooldown = 1800  # 30 minutes
-
-    for place in places:
-        if place["distanceMeters"] <= 500:
-            pid = place["id"]
-            last_notified = session.get("notified_place_ids", {}).get(pid, 0)
-            if now - last_notified > cooldown:
-                # Mark as notified
-                session.setdefault("notified_place_ids", {})[pid] = now
-                return place
-
     return None

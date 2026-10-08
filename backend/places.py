@@ -132,38 +132,7 @@ def search_nearby_restaurants(query: str, lat: float = None, lon: float = None) 
     except Exception:
         pass
 
-    return [
-        {
-            "id": "rst_dyn_1",
-            "name": f"{query or 'Local'} Heritage Thali & Dining",
-            "rating": 4.8,
-            "cuisine": ["Local Cuisine", "Regional Special"],
-            "priceRange": "₹₹",
-            "location": f"Central {query or 'Location'}",
-            "coordinates": [lat or 25.5941, lon or 85.1376],
-            "latitude": lat or 25.5941,
-            "longitude": lon or 85.1376,
-            "distanceKm": 0.8,
-            "openingHours": "10:00 AM – 10:30 PM",
-            "photos": ["https://images.unsplash.com/photo-1546833999-b9f581a1996d?auto=format&fit=crop&w=800&q=80"],
-            "dietary": ["Vegetarian Friendly", "Local Delicacy"]
-        },
-        {
-            "id": "rst_dyn_2",
-            "name": f"{query or 'Local'} Street Food & Snacks Center",
-            "rating: ": 4.7,
-            "cuisine": ["Street Food", "Regional Delicacy"],
-            "priceRange": "₹",
-            "location": f"Market Square, {query or 'Location'}",
-            "coordinates": [(lat or 25.5941) + 0.003, (lon or 85.1376) + 0.003],
-            "latitude": (lat or 25.5941) + 0.003,
-            "longitude": (lon or 85.1376) + 0.003,
-            "distanceKm": 1.2,
-            "openingHours": "09:00 AM – 10:00 PM",
-            "photos": ["https://images.unsplash.com/photo-1601050690597-df0568f70950?auto=format&fit=crop&w=800&q=80"],
-            "dietary": ["Traditional Recipe", "Quick Bites"]
-        }
-    ]
+    return []
 
 def validate_destination_payload(dest: Dict[str, Any]) -> Tuple[bool, str]:
     if not isinstance(dest, dict):
@@ -289,131 +258,191 @@ def search_local_amenities(query: str, lat: float, lon: float, radius_km: float 
 
     return results
 
-DESTINATION_HIGHLIGHTS_DB = {
-    "goa": {
-        "destination": "Goa",
-        "famous_activities": [
-            {
-                "id": "goa_act_1",
-                "title": "Baga Beach Scuba & Water Sports",
-                "category": "Water Sports",
-                "tag": "Must Try",
-                "price": "₹1,800/person",
-                "location": "Baga, North Goa"
-            },
-            {
-                "id": "goa_act_2",
-                "title": "Mandovi River Sunset Luxury Cruise",
-                "category": "Cruises",
-                "tag": "Top Rated",
-                "price": "₹950/person",
-                "location": "Panaji Jetty, Goa"
-            },
-            {
-                "id": "goa_act_3",
-                "title": "Fontainhas Latin Quarter Heritage Walk",
-                "category": "Heritage",
-                "tag": "Cultural",
-                "price": "₹499/person",
-                "location": "Old Goa, Panaji"
-            },
-            {
-                "id": "goa_act_4",
-                "title": "Dudhsagar Waterfalls & Spice Tour",
-                "category": "Nature",
-                "tag": "Adventure",
-                "price": "₹1,450/person",
-                "location": "Mollem National Park"
-            }
-        ],
-        "upcoming_events": [
-            {
-                "id": "goa_evt_1",
-                "title": "Sunburn EDM Music Festival Live",
-                "date": "Oct 14 - Oct 16",
-                "venue": "Vagator Beach Arena, Goa"
-            }
-        ]
-    },
-    "darbhanga": {
-        "destination": "Darbhanga",
-        "famous_activities": [
-            {
-                "id": "dar_act_1",
-                "title": "Darbhanga Fort & Raj Parisar Walk",
-                "category": "Heritage",
-                "tag": "Historical",
-                "price": "Free Entry",
-                "location": "Raj Parisar, Darbhanga"
-            },
-            {
-                "id": "dar_act_2",
-                "title": "Madhubani Art & Craft Workshop",
-                "category": "Culture",
-                "tag": "Authentic",
-                "price": "₹350/person",
-                "location": "Ranti Village, Madhubani"
-            },
-            {
-                "id": "dar_act_3",
-                "title": "Shyama Kali Temple Evening Aarti",
-                "category": "Spiritual",
-                "tag": "Devotional",
-                "price": "Free Entry",
-                "location": "Kameshwar Nagar"
-            }
-        ],
-        "upcoming_events": [
-            {
-                "id": "dar_evt_1",
-                "title": "Mithila Cultural & Folk Festival",
-                "date": "Oct 20 - Oct 22",
-                "venue": "Town Hall, Darbhanga"
-            }
-        ]
-    }
-}
-
 def get_destination_highlights(destination: str) -> Dict[str, Any]:
-    dest_key = (destination or "Goa").lower().strip()
-    if dest_key in DESTINATION_HIGHLIGHTS_DB:
-        return DESTINATION_HIGHLIGHTS_DB[dest_key]
+    from trips_service import generate_live_destination_highlights
+    return generate_live_destination_highlights(destination)
+
+import requests
+from typing import Optional
+
+RADIUS_TIERS = [5000, 10000, 25000, 50000] # 5km, 10km, 25km, 50km
+
+def haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    R = 6371000.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+def fetch_overpass_places(lat: float, lng: float, radius: int, category: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Queries OpenStreetMap Overpass API for real POIs around coordinates with strict 4s timeout shield."""
+    category_filter = ""
+    if category and category.lower() != "all":
+        cat_l = category.lower()
+        if "food" in cat_l:
+            category_filter = '["amenity"~"restaurant|cafe|fast_food"]'
+        elif "hotel" in cat_l or "stay" in cat_l:
+            category_filter = '["tourism"~"hotel|guest_house|resort"]'
+        elif "culture" in cat_l or "heritage" in cat_l:
+            category_filter = '["historic"]'
+        else:
+            category_filter = '["tourism"]'
+    else:
+        category_filter = '["tourism"~"attraction|viewpoint|museum|artwork|theme_park"]'
+
+    query = f"""
+    [out:json][timeout:4];
+    (
+      node{category_filter}(around:{radius},{lat},{lng});
+      way{category_filter}(around:{radius},{lat},{lng});
+    );
+    out center 25;
+    """
     
-    dest_title = destination.strip().title() if destination else "Upcoming Destination"
-    return {
-        "destination": dest_title,
-        "famous_activities": [
-            {
-                "id": f"{dest_key}_act_1",
-                "title": f"Top Landmarks & Heritage Walk in {dest_title}",
-                "category": "Sightseeing",
-                "tag": "Must See",
-                "price": "₹450/person",
-                "location": f"Central {dest_title}"
-            },
-            {
-                "id": f"{dest_key}_act_2",
-                "title": f"Authentic Local Food & Market Tour",
-                "category": "Food & Dining",
-                "tag": "Top Rated",
-                "price": "₹650/person",
-                "location": f"Main Market, {dest_title}"
-            },
-            {
-                "id": f"{dest_key}_act_3",
-                "title": f"Cultural Performance & Evening Show",
-                "category": "Culture",
-                "tag": "Trending",
-                "price": "₹800/person",
-                "location": f"Cultural Centre, {dest_title}"
-            }
-        ],
-        "upcoming_events": [
-            {
-                "id": f"{dest_key}_evt_1",
-                "title": f"Live Evening Fest & Food Mela in {dest_title}",
-                "date": "Upcoming Weekend",
-                "venue": f"City Centre, {dest_title}"
-            }
-        ]
-    }
+    endpoints = [
+        "https://overpass-api.de/api/interpreter",
+        "https://overpass.kumi.systems/api/interpreter"
+    ]
+
+    for ep in endpoints:
+        try:
+            res = requests.post(ep, data={"data": query}, timeout=4.0)
+            if res.ok:
+                data = res.json()
+                elements = data.get("elements", [])
+                places = []
+                for el in elements:
+                    tags = el.get("tags", {})
+                    name = tags.get("name")
+                    if not name:
+                        continue
+                    p_lat = el.get("lat") or el.get("center", {}).get("lat")
+                    p_lng = el.get("lon") or el.get("center", {}).get("lon")
+                    if p_lat and p_lng:
+                        dist_m = round(haversine_meters(lat, lng, p_lat, p_lng))
+                        places.append({
+                            "id": f"osm-{el['id']}",
+                            "name": name,
+                            "title": name,
+                            "category": tags.get("tourism") or tags.get("amenity") or tags.get("historic") or "sights",
+                            "latitude": p_lat,
+                            "longitude": p_lng,
+                            "distanceMeters": dist_m,
+                            "address": tags.get("addr:street") or tags.get("addr:full") or f"Within {radius//1000}km radius",
+                            "rating": 4.5,
+                            "price_approx": "Free / Public Entry",
+                            "description": tags.get("description") or f"Local landmark in surrounding area ({radius//1000}km range)."
+                        })
+                if places:
+                    return places
+        except Exception as e:
+            print(f"[OVERPASS TIMEOUT/ERROR] Mirror {ep} failed: {e}", flush=True)
+
+    return []
+
+def get_progressive_nearby_places(lat: float, lng: float, category: Optional[str] = "all") -> List[Dict[str, Any]]:
+    """
+    Progressively expands search radius with strict timeout shield.
+    Falls back to explicit loud mock objects if Overpass API is down or barren.
+    """
+    # 1. Fast Tier Expansion: 5km -> 25km
+    for radius in [5000, 25000]:
+        places = fetch_overpass_places(lat, lng, radius, category)
+        if places:
+            print(f"[GEO HIT] Found {len(places)} POIs within {radius // 1000}km of [{lat}, {lng}]", flush=True)
+            return places
+        else:
+            print(f"[EXPAND RADIUS] No POIs at {radius // 1000}km. Expanding search for [{lat}, {lng}]", flush=True)
+
+    # 2. State-Level Dynamic Fallback (If barren within 50km)
+    try:
+        from geo_utils import resolve_administrative_hierarchy
+        hierarchy = resolve_administrative_hierarchy(lat, lng)
+        state_name = hierarchy.get("state")
+        if state_name:
+            print(f"[STATE FALLBACK] Barren 50km zone. Falling back to state-level POIs for: {state_name}", flush=True)
+            state_query = f"""
+            [out:json][timeout:4];
+            area["name"="{state_name}"]["admin_level"~"4|5"]->.searchArea;
+            (
+              node["tourism"~"attraction|museum|viewpoint"](area.searchArea);
+            );
+            out center 20;
+            """
+            res = requests.post("https://overpass-api.de/api/interpreter", data={"data": state_query}, timeout=4.0)
+            if res.ok:
+                elements = res.json().get("elements", [])
+                places = []
+                for el in elements:
+                    tags = el.get("tags", {})
+                    name = tags.get("name")
+                    if name:
+                        p_lat = el.get("lat") or el.get("center", {}).get("lat")
+                        p_lng = el.get("lon") or el.get("center", {}).get("lon")
+                        if p_lat and p_lng:
+                            dist_m = round(haversine_meters(lat, lng, p_lat, p_lng))
+                            places.append({
+                                "id": f"state-osm-{el['id']}",
+                                "name": name,
+                                "category": tags.get("tourism") or "sights",
+                                "latitude": p_lat,
+                                "longitude": p_lng,
+                                "distanceMeters": dist_m,
+                                "address": f"Regional Landmark in {state_name}",
+                                "rating": 4.7,
+                                "price_approx": "State Sight",
+                                "description": f"Top regional attraction in {state_name}."
+                            })
+                if places:
+                    return places
+    except Exception as e:
+        print(f"[STATE QUERY ERR] {e}", flush=True)
+
+    # 3. Guaranteed Resilient Fallback for India Coordinates (Explicit Loud Mock)
+    return [
+        {
+            "id": f"fb_near_1_{int(lat*100)}",
+            "name": "MOCK • Cultural Spot • MOCK",
+            "title": "MOCK • Cultural Spot • MOCK",
+            "category": "Attraction",
+            "latitude": lat + 0.008,
+            "longitude": lng + 0.008,
+            "distanceMeters": 1200,
+            "address": "MOCK LOCATION • NO LIVE DATA",
+            "rating": 4.6,
+            "price_approx": "Free Entry",
+            "is_mock": True,
+            "_isMock": True,
+            "description": "MOCK: Overpass / Google Places returned 0 results for these coordinates."
+        },
+        {
+            "id": f"fb_near_2_{int(lng*100)}",
+            "name": "MOCK • Artisan Market • MOCK",
+            "title": "MOCK • Artisan Market • MOCK",
+            "category": "Market",
+            "latitude": lat - 0.006,
+            "longitude": lng - 0.006,
+            "distanceMeters": 850,
+            "address": "MOCK LOCATION • NO LIVE DATA",
+            "rating": 4.5,
+            "price_approx": "Local Prices",
+            "is_mock": True,
+            "_isMock": True,
+            "description": "MOCK: Overpass / Google Places returned 0 results for these coordinates."
+        },
+        {
+            "id": f"fb_near_3_{int((lat+lng)*100)}",
+            "name": "MOCK • Sunset Viewpoint • MOCK",
+            "title": "MOCK • Sunset Viewpoint • MOCK",
+            "category": "Park",
+            "latitude": lat + 0.012,
+            "longitude": lng - 0.005,
+            "distanceMeters": 1800,
+            "address": "MOCK LOCATION • NO LIVE DATA",
+            "rating": 4.7,
+            "price_approx": "Free",
+            "is_mock": True,
+            "_isMock": True,
+            "description": "MOCK: Overpass / Google Places returned 0 results for these coordinates."
+        }
+    ]
