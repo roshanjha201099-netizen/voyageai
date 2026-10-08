@@ -2,11 +2,16 @@ import React from 'react';
 import { useApp } from '../../context/AppContext';
 import { Sparkles } from 'lucide-react';
 
+import { useLocation } from 'react-router-dom';
+
 export const FloatingAIButton: React.FC = () => {
   const { openAiAssistant, aiContextLabel, isAiOpen, selectedHotel, isCabModalOpen } = useApp();
+  const location = useLocation();
 
-  // Hide when other overlays are open
-  if (isAiOpen || selectedHotel || isCabModalOpen) return null;
+  const isGuidePage = location.pathname === '/guide' || location.pathname === '/tour-guide';
+
+  // Hide when on Guide page or when other overlays/modals are open
+  if (isGuidePage || isAiOpen || selectedHotel || isCabModalOpen) return null;
 
   return (
     <button

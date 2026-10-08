@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../auth/AuthContext';
 import { useTrip } from '../../features/trip/TripContext';
-import { Sparkles, ArrowLeft, MapPin } from 'lucide-react';
+import { Sparkles, ArrowLeft, MapPin, Compass, ChevronDown, Check } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 export const MobileHeader: React.FC = () => {
@@ -10,12 +10,17 @@ export const MobileHeader: React.FC = () => {
     setIsProfileOpen,
     userLocationName,
     setIsLocationModalOpen,
+    activeContextMode,
+    setActiveContextMode,
   } = useApp();
   const { userProfile } = useAuth();
   const { currentTrip } = useTrip();
 
   const navigate = useNavigate();
   const location = useLocation();
+
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const isSubRoute = location.pathname.startsWith('/trip/') && location.pathname !== '/trip';
   const avatarUrl = userProfile?.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=80&q=80';
@@ -29,9 +34,20 @@ export const MobileHeader: React.FC = () => {
     '/trip/guide': 'Guide',
   };
 
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   return (
     <header
-      className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-[#D9DEDA]"
+      className="sticky top-0 z-[2000] bg-white/95 backdrop-blur-md border-b border-[#D9DEDA]"
       style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
     >
       <div className="flex items-center justify-between h-14 px-4 max-w-xl mx-auto gap-2">
@@ -64,16 +80,103 @@ export const MobileHeader: React.FC = () => {
           </div>
         )}
 
-        {/* Center: Human-Readable Location Button */}
-        <button
-          type="button"
-          onClick={() => setIsLocationModalOpen(true)}
-          className="px-3 py-1.5 rounded-full bg-[#F0F2EF] border border-[#D9DEDA] hover:border-[#355F58]/40 text-[#1F2522] text-xs font-bold flex items-center gap-1.5 max-w-[160px] truncate shadow-xs transition-all"
-          title="Tap to view or change location"
-        >
-          <MapPin className="w-3.5 h-3.5 text-[#355F58] shrink-0" />
-          <span className="truncate">{userLocationName || 'Patna, Bihar'}</span>
-        </button>
+        {/* Center: Single Interactive Context Switcher Pill */}
+        <div className="relative" ref={dropdownRef}>
+          <button
+            type="button"
+            onClick={() => setDropdownOpen(prev => !prev)}
+            className="px-3 py-1.5 rounded-full bg-[#F0F2EF] border border-[#D9DEDA] hover:border-[#355F58]/40 text-[#1F2522] text-xs font-bold flex items-center gap-1.5 max-w-[175px] truncate shadow-xs transition-all press-scale"
+            title="Tap to switch active context mode"
+          >
+            {activeContextMode === 'trip' && currentTrip ? (
+              <>
+                <Compass className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span className="truncate">{currentTrip?.destination?.name || 'Trip Mode'}</span>
+              </>
+            ) : (
+              <>
+                <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span className="truncate">{userLocationName || 'Near You'}</span>
+              </>
+            )}
+            <ChevronDown className={`w-3 h-3 text-[#5F6863] shrink-0 transition-transform duration-200 ${dropdownOpen ? 'rotate-180 text-[#355F58]' : ''}`} />
+          </button>
+
+          {/* Context Switcher Dropdown */}
+          {dropdownOpen && (
+            <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 w-64 p-2 rounded-2xl bg-white border border-[#D9DEDA] shadow-2xl z-[2001] animate-fadeIn">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-[#5F6863] px-2.5 py-1 flex items-center justify-between border-b border-[#D9DEDA] mb-1">
+                <span>Active Mode</span>
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              </div>
+
+              {/* Option A: Physical GPS Mode */}
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveContextMode('local');
+                  setDropdownOpen(false);
+                }}
+                className={`w-full flex items-center justify-between p-2.5 rounded-xl text-xs transition-all ${
+                  activeContextMode === 'local'
+                    ? 'bg-[#E8F0EE] text-[#1F2522] font-bold'
+                    : 'hover:bg-[#F0F2EF] text-[#5F6863]'
+                }`}
+              >
+                <div className="flex items-center gap-2.5 text-left min-w-0">
+                  <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                    <MapPin className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-bold text-[#1F2522] truncate">Near Me (GPS)</p>
+                    <p className="text-[10px] text-[#5F6863] truncate">{userLocationName || 'Live Location'}</p>
+                  </div>
+                </div>
+                {activeContextMode === 'local' && <Check className="w-4 h-4 text-[#355F58] shrink-0" />}
+              </button>
+
+              {/* Option B: Trip Mode */}
+              {currentTrip && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveContextMode('trip');
+                    setDropdownOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between p-2.5 rounded-xl text-xs transition-all mt-1 ${
+                    activeContextMode === 'trip'
+                      ? 'bg-[#E8F0EE] text-[#1F2522] font-bold'
+                      : 'hover:bg-[#F0F2EF] text-[#5F6863]'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 text-left min-w-0">
+                    <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                      <Compass className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-bold text-[#1F2522] truncate">Trip Mode</p>
+                      <p className="text-[10px] text-[#5F6863] truncate">{currentTrip.destination.name}</p>
+                    </div>
+                  </div>
+                  {activeContextMode === 'trip' && <Check className="w-4 h-4 text-[#355F58] shrink-0" />}
+                </button>
+              )}
+
+              <div className="pt-1.5 mt-1.5 border-t border-[#D9DEDA]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDropdownOpen(false);
+                    setIsLocationModalOpen(true);
+                  }}
+                  className="w-full text-center text-[11px] font-bold text-[#355F58] hover:underline py-1"
+                >
+                  Change GPS Location...
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Right Side: Profile Action */}
         <button

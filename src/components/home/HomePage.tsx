@@ -1,14 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../auth/AuthContext';
 import { useTrip } from '../../features/trip/TripContext';
 import { useApp } from '../../context/AppContext';
-import { ContextSwitcher } from '../common/ContextSwitcher';
 import { TripSpotlightBanner } from './TripSpotlightBanner';
+import { formatDateRange } from './tripDates';
 import { AskVoyageAICard } from '../ai/AskVoyageAICard';
 import { PlaceDetailSheet, type PlaceDetailItem } from '../common/PlaceDetailSheet';
-import { MapPin, Navigation, Sparkles, Calendar, ArrowRight, Star, RefreshCw } from 'lucide-react';
+import { Navigation, Star } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { fetchNearbyPlaces, formatDistance } from '../../services/tourGuideApi';
+import { isMockPayload } from '../../utils/mockIndicator';
+import { MockCardAlert } from '../common/MockCardAlert';
 
 export const HomePage: React.FC = () => {
   const { userProfile } = useAuth();
@@ -19,15 +21,16 @@ export const HomePage: React.FC = () => {
   const [selectedPlace, setSelectedPlace] = useState<PlaceDetailItem | null>(null);
   const [nearbyPlaces, setNearbyPlaces] = useState<PlaceDetailItem[]>([]);
   const [isLoadingNearby, setIsLoadingNearby] = useState(false);
+  const lastFetchedCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
 
   const firstName = userProfile?.firstName || 'Traveler';
 
   // Greeting based on time of day
   const getGreeting = () => {
     const hour = new Date().getHours();
-    if (hour < 12) return 'Good Morning';
-    if (hour < 18) return 'Good Afternoon';
-    return 'Good Evening';
+    if (hour < 12) return 'Good morning';
+    if (hour < 18) return 'Good afternoon';
+    return 'Good evening';
   };
 
   // Dynamically fetch nearby POIs based on user's live physical GPS location
@@ -35,13 +38,24 @@ export const HomePage: React.FC = () => {
     let isMounted = true;
 
     if (!userLocation && navigator.geolocation) {
-      requestGPSLocation().catch(() => {});
+      requestGPSLocation().catch(() => { });
     }
 
     const loadDynamicNearby = async () => {
-      setIsLoadingNearby(true);
-      const lat = userLocation ? userLocation[0] : 22.5726; // Default to current region if location pending
+      const lat = userLocation ? userLocation[0] : 22.5726;
       const lng = userLocation ? userLocation[1] : 88.3639;
+
+      // Throttle: Skip re-fetching if coordinates haven't moved by > 100 meters
+      if (lastFetchedCoordsRef.current) {
+        const dLat = Math.abs(lastFetchedCoordsRef.current.lat - lat);
+        const dLng = Math.abs(lastFetchedCoordsRef.current.lng - lng);
+        if (dLat < 0.001 && dLng < 0.001) {
+          return;
+        }
+      }
+
+      setIsLoadingNearby(true);
+      lastFetchedCoordsRef.current = { lat, lng };
 
       try {
         const res = await fetchNearbyPlaces(lat, lng, 5000);
@@ -58,6 +72,7 @@ export const HomePage: React.FC = () => {
             description: p.description || `Popular ${p.category || 'attraction'} located near your physical coordinates.`,
             latitude: p.latitude || lat,
             longitude: p.longitude || lng,
+            is_mock: Boolean(p.is_mock || p._isMock),
           }));
           setNearbyPlaces(formatted);
           setIsLoadingNearby(false);
@@ -82,149 +97,146 @@ export const HomePage: React.FC = () => {
     };
   }, [userLocation, userLocationName, requestGPSLocation]);
 
+  const sentenceCase = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s);
+  const tripRange = currentTrip ? formatDateRange(currentTrip.startDate, currentTrip.endDate) : null;
+
   return (
-    <div className="space-y-6 pb-28 max-w-xl mx-auto animate-fadeIn">
-      
-      {/* 1. Calm Personal Greeting */}
+    <div className="w-full max-w-xl mx-auto space-y-6 pb-28 animate-fadeIn overflow-x-hidden">
+      {/* Greeting */}
       <div className="space-y-1 pt-1">
         <h1 className="text-2xl sm:text-3xl font-extrabold text-[#1F2522] tracking-tight">
-          {getGreeting()}, <span className="text-[#355F58]">{firstName}</span>
+          {getGreeting()}, {firstName}
         </h1>
-        <p className="text-sm font-medium text-[#5F6863]">
-          Where would you like to explore today?
-        </p>
+        <p className="text-sm font-medium text-[#5F6863]">Where would you like to explore today?</p>
       </div>
 
-      {/* 2. One-Tap Context Switcher (Near You vs Active Trip) */}
-      <ContextSwitcher />
-
-      {/* 2.5. Dedicated Trip Spotlight Banner (Must-Do Activities & Events) */}
+      {/* Destination and highlights */}
       <TripSpotlightBanner
         destination={currentTrip?.destination?.name || currentTrip?.title || 'Goa'}
-        dates={currentTrip ? `${currentTrip.startDate || 'Oct 12'} - ${currentTrip.endDate || 'Oct 16'}` : 'Oct 12 - Oct 16'}
+        startDate={currentTrip?.startDate}
+        endDate={currentTrip?.endDate}
         isLocalMode={true}
       />
 
-      {/* 3. Prominent Ask VoyageAI Interactive Assistant */}
       <AskVoyageAICard />
 
-      {/* 4. NEAR YOU Section (Physical Location First) */}
-      <div className="space-y-3">
+      {/* Near you */}
+      <section aria-labelledby="near-you-heading" className="space-y-3">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <MapPin className="w-5 h-5 text-[#355F58]" />
-            <h2 className="text-xl font-extrabold text-[#1F2522]">Near You</h2>
-          </div>
+          <h2 id="near-you-heading" className="text-xl font-extrabold text-[#1F2522]">
+            Near you
+          </h2>
           <button
             type="button"
             onClick={() => navigate('/map')}
-            className="text-xs font-extrabold text-[#355F58] hover:underline flex items-center gap-1"
+            className="py-2 text-sm font-semibold text-[#355F58] underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#355F58]"
           >
-            <span>View Full Map</span>
-            <ArrowRight className="w-3.5 h-3.5" />
+            Open map
           </button>
         </div>
 
         {isLoadingNearby ? (
-          <div className="bg-white border border-[#D9DEDA] rounded-3xl p-6 text-center space-y-2 shadow-xs">
-            <RefreshCw className="w-6 h-6 text-[#355F58] animate-spin mx-auto" />
-            <p className="text-xs text-[#5F6863] font-semibold">Finding places near you...</p>
+          <div role="status" className="space-y-3">
+            <span className="sr-only">Finding places near you</span>
+            {[0, 1, 2].map((i) => (
+              <div
+                key={i}
+                className="h-[148px] rounded-3xl bg-white border border-[#D9DEDA] animate-pulse motion-reduce:animate-none"
+              />
+            ))}
+          </div>
+        ) : nearbyPlaces.length === 0 ? (
+          <div className="rounded-3xl border border-dashed border-[#C9D0CC] p-6 text-center">
+            <p className="text-sm font-semibold text-[#1F2522]">No places to show right now</p>
+            <p className="mt-1 text-xs text-[#5F6863]">Open the map to look further out.</p>
           </div>
         ) : (
           <div className="space-y-3">
-            {nearbyPlaces.map((poi) => (
-              <div
-                key={poi.id}
-                className="bg-white border border-[#D9DEDA] hover:border-[#355F58]/40 p-4 space-y-3 transition-all rounded-3xl shadow-xs"
-              >
+            {nearbyPlaces.map((poi) => {
+              if (isMockPayload(poi)) {
+                return (
+                  <MockCardAlert
+                    key={poi.id}
+                    title={poi.name}
+                    location={poi.address || 'MOCK LOCATION • NO LIVE DATA'}
+                    headsUp={poi.description || 'Overpass / Google Places returned 0 results'}
+                  />
+                );
+              }
+
+              return (
+                <article key={poi.id} className="rounded-3xl bg-white border border-[#D9DEDA] p-4">
                 <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 space-y-0.5">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#355F58] block">
-                      {poi.category}
-                    </span>
-                    <h3 className="text-base sm:text-lg font-bold text-[#1F2522] truncate">{poi.name}</h3>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-[#355F58]">{sentenceCase(poi.category || 'Attraction')}</p>
+                    <h3 className="mt-0.5 text-base sm:text-lg font-bold text-[#1F2522] truncate">{poi.name}</h3>
                     <p className="text-xs text-[#5F6863] truncate">{poi.address}</p>
                   </div>
 
-                  <div className="text-right shrink-0">
-                    <span className="text-sm font-extrabold text-[#355F58] block">{poi.distanceText}</span>
-                    {poi.rating && (
-                      <div className="flex items-center gap-1 text-xs font-bold text-amber-700 justify-end">
-                        <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
-                        <span>{poi.rating}</span>
-                      </div>
-                    )}
+                  <div className="shrink-0 text-right">
+                    <p className="text-sm font-bold text-[#1F2522]">{poi.distanceText}</p>
+                    {poi.rating ? (
+                      <p className="mt-0.5 flex items-center justify-end gap-1 text-xs font-semibold text-[#8A5A00]">
+                        <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" aria-hidden="true" />
+                        <span>{Number(poi.rating).toFixed(1)}</span>
+                      </p>
+                    ) : null}
                   </div>
                 </div>
 
-                {/* 1-Tap Touch Buttons (Min 52px high for easy thumb tapping) */}
-                <div className="grid grid-cols-2 gap-2 pt-1">
+                <div className="mt-3 grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={() => openInAppNavigation({
-                      title: poi.name,
-                      locationName: poi.address || poi.name,
-                      coordinates: [poi.latitude || 25.6, poi.longitude || 85.1]
-                    })}
-                    className="py-3 px-3 rounded-2xl bg-[#355F58] hover:bg-[#2C504A] text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-xs press-scale min-h-[48px]"
+                    onClick={() =>
+                      openInAppNavigation({
+                        title: poi.name,
+                        locationName: poi.address || poi.name,
+                        coordinates: [poi.latitude || 25.6, poi.longitude || 85.1],
+                      })
+                    }
+                    className="min-h-[48px] rounded-xl bg-[#E8F0EE] text-[#355F58] hover:bg-[#DCE9E5] text-sm font-bold flex items-center justify-center gap-1.5 transition-colors press-scale focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#355F58]"
                   >
-                    <Navigation className="w-4 h-4 text-white" />
+                    <Navigation className="w-4 h-4" aria-hidden="true" />
                     <span>Directions</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setSelectedPlace(poi)}
-                    className="py-3 px-3 rounded-2xl bg-[#F0F2EF] border border-[#D9DEDA] hover:border-[#355F58]/40 text-[#1F2522] font-bold text-xs flex items-center justify-center gap-1.5 transition-all min-h-[48px]"
+                    className="min-h-[48px] rounded-xl border border-[#D9DEDA] text-[#1F2522] hover:bg-[#F0F2EF] text-sm font-semibold flex items-center justify-center transition-colors press-scale focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#355F58]"
                   >
-                    <Sparkles className="w-4 h-4 text-[#355F58]" />
-                    <span>Tell Me More</span>
+                    Details
                   </button>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+      </section>
 
-      {/* 5. YOUR TRIP Section (Upcoming / Active Trip) */}
+      {/* Current trip */}
       {currentTrip && (
-        <div className="bg-white border border-[#D9DEDA] p-5 space-y-4 rounded-3xl shadow-xs">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-xs font-extrabold text-[#355F58] uppercase tracking-wider">
-              <Calendar className="w-4 h-4" />
-              <span>Upcoming Travel</span>
-            </div>
-
-            <span className="px-3 py-1 rounded-full bg-[#E8F0EE] text-[#355F58] font-bold text-xs border border-[#D9DEDA]">
-              {currentTrip.destination.name}
-            </span>
-          </div>
-
-          <div className="space-y-1">
-            <h3 className="text-xl sm:text-2xl font-extrabold text-[#1F2522]">{currentTrip.title}</h3>
-            <p className="text-xs text-[#5F6863] font-medium">
-              {currentTrip.startDate} → {currentTrip.endDate} ({currentTrip.totalDays} Days)
-            </p>
-          </div>
+        <section className="rounded-3xl bg-white border border-[#D9DEDA] p-5">
+          <p className="text-sm font-semibold text-[#355F58]">{currentTrip.destination.name}</p>
+          <h3 className="mt-1 text-xl sm:text-2xl font-extrabold text-[#1F2522]">{currentTrip.title}</h3>
+          <p className="mt-1 text-sm text-[#5F6863]">
+            {tripRange ?? `${currentTrip.startDate} to ${currentTrip.endDate}`} ({currentTrip.totalDays} days)
+          </p>
 
           <button
             type="button"
             onClick={() => navigate('/trip/itinerary')}
-            className="w-full py-4 rounded-2xl bg-[#355F58] hover:bg-[#2C504A] text-white font-extrabold text-base flex items-center justify-center gap-2 shadow-xs press-scale min-h-[54px]"
+            className="mt-4 w-full min-h-[52px] rounded-2xl bg-[#355F58] hover:bg-[#2C504A] text-white text-base font-bold transition-colors press-scale focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#355F58]"
           >
-            <span>View Trip Plan</span>
-            <ArrowRight className="w-5 h-5 text-white" />
+            View trip plan
           </button>
-        </div>
+        </section>
       )}
 
-      {/* Contextual Place Details Bottom Sheet */}
-      <PlaceDetailSheet
-        item={selectedPlace}
-        onClose={() => setSelectedPlace(null)}
-      />
-
+      {/* Place details bottom sheet */}
+      <PlaceDetailSheet item={selectedPlace} onClose={() => setSelectedPlace(null)} />
     </div>
   );
 };
+

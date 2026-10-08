@@ -14,6 +14,8 @@ export interface PlaceDetailItem {
   address?: string;
   latitude?: number;
   longitude?: number;
+  is_mock?: boolean;
+  _isMock?: boolean;
 }
 
 interface PlaceDetailSheetProps {

@@ -1,50 +1,135 @@
 import React, { useEffect, useState } from 'react';
-import { Sparkles, Calendar, MapPin, Plus, Check, Compass, Loader2 } from 'lucide-react';
+import { Calendar, MapPin, Plus, Check, Loader2, Clock } from 'lucide-react';
 import { getApiBaseUrl, DEFAULT_HEADERS } from '../../config/apiConfig';
+import { MONTHS, formatDateRange, parseISODate, tripStatus } from './tripDates';
+import { isMockPayload } from '../../utils/mockIndicator';
+import { MockCardAlert } from '../common/MockCardAlert';
 
 interface Activity {
   id: string;
   title: string;
   location: string;
   tag: string;
-  price: string;
+  cost: number;
   duration?: string;
+  category?: string;
+  description?: string;
+  coordinates?: [number, number];
+  photos?: string[];
 }
 
 interface UpcomingEvent {
   id: string;
   title: string;
   date: string;
-  venue: string;
-  type?: string;
+  location: string;
+  price: number;
+  tag?: string;
+  category?: string;
+  description?: string;
+  time?: string;
+  image?: string;
 }
+
+interface SpotlightData {
+  destination: string;
+  overview: string;
+  activities: Activity[];
+  events: UpcomingEvent[];
+  region: string;
+}
+
+type AddState = 'idle' | 'adding' | 'added' | 'failed';
+
+const FOCUS =
+  'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#355F58]';
+
+const AddButton: React.FC<{ title: string; state: AddState; onClick: () => void }> = ({ title, state, onClick }) => {
+  const styles: Record<AddState, string> = {
+    idle: 'border border-[#355F58] text-[#355F58] hover:bg-[#E8F0EE]',
+    adding: 'border border-[#355F58] text-[#355F58]',
+    added: 'border border-[#355F58] bg-[#355F58] text-white',
+    failed: 'border border-[#B42318] text-[#B42318] hover:bg-[#FEF3F2]',
+  };
+
+  return (
+    <button
+      type="button"
+      disabled={state === 'added' || state === 'adding'}
+      onClick={onClick}
+      aria-label={
+        state === 'added'
+          ? `${title} added to itinerary`
+          : state === 'failed'
+            ? `Couldn't add ${title}. Try again`
+            : `Add ${title} to itinerary`
+      }
+      className={`min-h-[44px] shrink-0 px-3.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors press-scale ${styles[state]} ${FOCUS}`}
+    >
+      {state === 'adding' ? (
+        <Loader2 className="w-4 h-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+      ) : state === 'added' ? (
+        <>
+          <Check className="w-4 h-4" aria-hidden="true" /> Added
+        </>
+      ) : state === 'failed' ? (
+        <>Try again</>
+      ) : (
+        <>
+          <Plus className="w-4 h-4" aria-hidden="true" /> Add
+        </>
+      )}
+    </button>
+  );
+};
 
 export const TripSpotlightBanner: React.FC<{
   destination: string;
+  startDate?: string;
+  endDate?: string;
+  /** Pre-formatted fallback, shown only when startDate can't be read. */
   dates?: string;
   isLocalMode: boolean;
-}> = ({ destination = "Goa", dates = "Upcoming", isLocalMode }) => {
-  const [data, setData] = useState<{ destination: string; famous_activities: Activity[]; upcoming_events: UpcomingEvent[] } | null>(null);
+}> = ({ destination = 'Goa', startDate, endDate, dates, isLocalMode }) => {
+  const [data, setData] = useState<SpotlightData | null>(null);
   const [loading, setLoading] = useState(true);
   const [addingId, setAddingId] = useState<string | null>(null);
+  const [failedId, setFailedId] = useState<string | null>(null);
   const [addedIds, setAddedIds] = useState<Record<string, boolean>>({});
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
     setLoading(true);
+    setData(null);
+    setExpanded(false);
+
     const targetDest = destination || 'Goa';
     const baseUrl = getApiBaseUrl();
+    const url = `${baseUrl}/api/trips/${encodeURIComponent(targetDest)}/highlights`;
 
-    fetch(`${baseUrl}/api/trips/${encodeURIComponent(targetDest)}/highlights`, {
-      headers: DEFAULT_HEADERS
-    })
-      .then((res) => res.json())
-      .then((json) => {
-        if (isMounted) setData(json);
+    fetch(url, { headers: DEFAULT_HEADERS })
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error(`Highlights API failed with status ${res.status}`);
+        }
+        return res.json();
       })
-      .catch((err) => console.error("Error loading spotlight:", err))
+      .then((json: SpotlightData) => {
+        if (isMounted) {
+          setData(json);
+        }
+      })
+      .catch((err) => {
+        console.error('❌ Error loading spotlight:', err);
+        if (isMounted) {
+          setData(null);
+        }
+      })
       .finally(() => {
-        if (isMounted) setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       });
 
     return () => {
@@ -54,162 +139,241 @@ export const TripSpotlightBanner: React.FC<{
 
   const handleAddToItinerary = async (item: Activity | UpcomingEvent, itemType: 'activity' | 'event') => {
     setAddingId(item.id);
+    setFailedId(null);
     const baseUrl = getApiBaseUrl();
-
     try {
       const payload = {
         destination,
         item_id: item.id,
         item_type: itemType,
         title: item.title,
-        location: 'location' in item ? item.location : item.venue,
-        tag: 'tag' in item ? item.tag : (item.type || 'Event'),
-        price: 'price' in item ? item.price : 'Free',
+        location: 'location' in item ? item.location : '',
+        tag: 'tag' in item ? item.tag : 'Event',
+        price: 'cost' in item ? String(item.cost) : String(item.price),
       };
 
       const res = await fetch(`${baseUrl}/api/trips/itinerary/add`, {
         method: 'POST',
-        headers: DEFAULT_HEADERS,
+        headers: {
+          ...DEFAULT_HEADERS,
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify(payload),
       });
 
-      if (res.ok) {
-        setAddedIds((prev) => ({ ...prev, [item.id]: true }));
+      if (!res.ok) {
+        throw new Error(`Failed to add item. Status: ${res.status}`);
       }
+
+      setAddedIds((prev) => ({ ...prev, [item.id]: true }));
     } catch (err) {
-      console.error("Failed to add to itinerary:", err);
+      console.error('❌ Failed to add to itinerary:', err);
+      setFailedId(item.id);
     } finally {
       setAddingId(null);
     }
   };
 
+  const stateFor = (id: string): AddState =>
+    addedIds[id] ? 'added' : addingId === id ? 'adding' : failedId === id ? 'failed' : 'idle';
+
   if (loading) {
     return (
-      <div className="mb-6 p-4 rounded-2xl bg-slate-900/60 border border-white/5 flex items-center justify-center gap-2 text-slate-400 text-xs">
-        <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
-        Curating real-time spotlight for {destination}...
+      <div role="status">
+        <span className="sr-only">Loading highlights for {destination}</span>
+        <div className="h-44 rounded-3xl bg-[#1F3B37]/90 animate-pulse motion-reduce:animate-none" />
+        <div className="-mt-11 px-3 flex gap-3 overflow-hidden">
+          {[0, 1].map((i) => (
+            <div
+              key={i}
+              className="h-36 w-60 shrink-0 rounded-2xl bg-[#E9ECE8] border border-[#D9DEDA] animate-pulse motion-reduce:animate-none"
+            />
+          ))}
+        </div>
       </div>
     );
   }
 
   if (!data) return null;
 
+  const activities = data.activities || [];
+  const events = data.events || [];
+
+  if (activities.length === 0 && events.length === 0) return null;
+
+  const dateLabel = formatDateRange(startDate, endDate) ?? dates ?? null;
+  const status = tripStatus(startDate, endDate);
+
   return (
-    <div className="mb-6 rounded-2xl bg-gradient-to-b from-slate-900/95 via-slate-900/80 to-slate-950/90 border border-emerald-500/20 p-4 shadow-xl backdrop-blur-xl">
-      {/* Header */}
-      <div className="flex items-center justify-between pb-3 border-b border-white/5">
-        <div className="flex items-center gap-2.5">
-          <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-            <Compass className="w-4 h-4 animate-pulse" />
-          </div>
-          <div>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
-              {isLocalMode ? `Next Stop • ${data.destination}` : `Active Itinerary • ${data.destination}`}
-            </span>
-            <h3 className="text-sm font-bold text-white">Must-Do Highlights & Events</h3>
-          </div>
+    <section aria-label={`Highlights for ${data.destination}`} className="w-full max-w-full">
+      {/* Destination panel */}
+      <div className="relative overflow-hidden rounded-3xl bg-[#1F3B37] text-white px-5 pt-5 pb-16">
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 200 200"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1"
+          className="pointer-events-none absolute -right-20 -top-20 h-72 w-72 text-white/10"
+        >
+          <circle cx="100" cy="100" r="28" />
+          <circle cx="100" cy="100" r="52" />
+          <circle cx="100" cy="100" r="76" />
+          <circle cx="100" cy="100" r="100" />
+        </svg>
+
+        <div className="relative flex items-start justify-between gap-3">
+          <p className="text-sm font-medium text-[#A9C4BE]">{isLocalMode ? 'Next stop' : 'Active itinerary'}</p>
+          {status && (
+            <span className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold">{status}</span>
+          )}
         </div>
-        <span className="text-[11px] font-medium text-slate-300 bg-white/5 px-2.5 py-1 rounded-full border border-white/10 flex items-center gap-1.5">
-          <Calendar className="w-3 h-3 text-emerald-400" /> {dates}
-        </span>
+
+        <h2 className="relative mt-2 text-4xl font-extrabold leading-none tracking-tight">{data.destination}</h2>
+
+        {dateLabel && (
+          <p className="relative mt-3 flex items-center gap-1.5 text-sm font-medium text-[#CFE1DC]">
+            <Calendar className="w-4 h-4" aria-hidden="true" />
+            {dateLabel}
+          </p>
+        )}
+
+        {data.overview && (
+          <div className="relative mt-3 max-w-prose">
+            <p className={`text-sm leading-relaxed text-[#BFD3CE] ${expanded ? '' : 'line-clamp-2'}`}>{data.overview}</p>
+            {data.overview.length > 110 && (
+              <button
+                type="button"
+                onClick={() => setExpanded((v) => !v)}
+                aria-expanded={expanded}
+                className="mt-1 py-1.5 text-xs font-semibold text-white underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+              >
+                {expanded ? 'Show less' : 'Read more'}
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Horizontal Carousel */}
-      <div className="mt-3.5 flex gap-3 overflow-x-auto pb-1 scrollbar-none snap-x snap-mandatory">
-        {data.famous_activities?.map((act) => {
-          const isAdded = !!addedIds[act.id];
-          const isAdding = addingId === act.id;
+      {/* Highlights sit on the panel's lower edge */}
+      <ul className="relative -mt-11 flex list-none gap-3 overflow-x-auto px-3 pb-2 scroll-px-3 snap-x snap-mandatory scrollbar-none">
+        {activities.map((act) => {
+          if (isMockPayload(act)) {
+            return (
+              <li key={act.id} className="w-60 sm:w-64 shrink-0 snap-start">
+                <MockCardAlert
+                  title={act.title}
+                  location={act.location}
+                  className="h-full"
+                />
+              </li>
+            );
+          }
 
           return (
-            <div
-              key={act.id}
-              className="w-56 shrink-0 snap-start p-3 rounded-xl bg-slate-800/40 border border-white/5 hover:border-emerald-500/30 transition-all flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-center justify-between text-[10px] mb-1.5">
-                  <span className="text-emerald-300 font-semibold px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20">
-                    {act.tag}
-                  </span>
-                  <span className="text-slate-300 font-medium">{act.price}</span>
+            <li key={act.id} className="w-60 sm:w-64 shrink-0 snap-start">
+              <article className="h-full flex flex-col gap-3 rounded-2xl bg-white border border-[#D9DEDA] p-4 shadow-[0_2px_8px_rgba(31,37,34,0.06)]">
+                <div>
+                  <p className="text-xs font-semibold text-[#355F58] truncate">{act.tag || 'Must visit'}</p>
+                  <h3 className="mt-1 min-h-[2.75rem] text-base font-bold leading-snug text-[#1F2522] line-clamp-2">
+                    {act.title}
+                  </h3>
                 </div>
-                <h4 className="text-xs font-bold text-slate-100 line-clamp-1">{act.title}</h4>
-                <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-1 line-clamp-1">
-                  <MapPin className="w-3 h-3 text-slate-500 shrink-0" /> {act.location}
+
+                <p className="flex items-center gap-1.5 text-xs text-[#5F6863]">
+                  <MapPin className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                  <span className="line-clamp-1">{act.location}</span>
                 </p>
-              </div>
 
-              {/* Add to Itinerary Button */}
-              <button
-                type="button"
-                disabled={isAdded || isAdding}
-                onClick={() => handleAddToItinerary(act, 'activity')}
-                className={`mt-3 w-full py-1.5 text-[11px] font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-                  isAdded
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                    : 'bg-white/5 hover:bg-emerald-500 hover:text-slate-950 text-slate-200'
-                }`}
-              >
-                {isAdding ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-400" />
-                ) : isAdded ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-400" /> Added to Trip
-                  </>
-                ) : (
-                  <>
-                    <Plus className="w-3.5 h-3.5" /> Add to Itinerary
-                  </>
-                )}
-              </button>
-            </div>
-          );
-        })}
-
-        {/* Live Upcoming Event Card */}
-        {data.upcoming_events?.map((evt) => {
-          const isAdded = !!addedIds[evt.id];
-          const isAdding = addingId === evt.id;
-
-          return (
-            <div
-              key={evt.id}
-              className="w-56 shrink-0 snap-start p-3 rounded-xl bg-gradient-to-br from-amber-500/10 via-slate-900/40 to-transparent border border-amber-500/20 flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-center gap-1 text-[10px] text-amber-400 font-bold uppercase tracking-wider mb-1.5">
-                  <Sparkles className="w-3 h-3" /> Happening Live
+                <div className="mt-auto flex items-end justify-between gap-2 border-t border-[#E7EBE8] pt-3">
+                  <div>
+                    <p className="text-sm font-bold text-[#1F2522]">{act.cost === 0 ? 'Free' : `₹${act.cost}`}</p>
+                    {act.duration && (
+                      <p className="mt-0.5 flex items-center gap-1 text-xs text-[#5F6863]">
+                        <Clock className="w-3 h-3 shrink-0" aria-hidden="true" />
+                        {act.duration}
+                      </p>
+                    )}
+                  </div>
+                  <AddButton
+                    title={act.title}
+                    state={stateFor(act.id)}
+                    onClick={() => handleAddToItinerary(act, 'activity')}
+                  />
                 </div>
-                <h4 className="text-xs font-bold text-slate-100 line-clamp-1">{evt.title}</h4>
-                <p className="text-[11px] text-amber-200/80 font-medium mt-1">{evt.date}</p>
-                <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-1">{evt.venue}</p>
-              </div>
-
-              <button
-                type="button"
-                disabled={isAdded || isAdding}
-                onClick={() => handleAddToItinerary(evt, 'event')}
-                className={`mt-3 w-full py-1.5 text-[11px] font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-                  isAdded
-                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                    : 'bg-amber-500/10 hover:bg-amber-400 hover:text-slate-950 text-amber-300 border border-amber-500/20'
-                }`}
-              >
-                {isAdding ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
-                ) : isAdded ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-amber-400" /> Added to Trip
-                  </>
-                ) : (
-                  <>
-                    <Plus className="w-3.5 h-3.5" /> Add to Itinerary
-                  </>
-                )}
-              </button>
-            </div>
+              </article>
+            </li>
           );
         })}
-      </div>
-    </div>
+
+        {events.map((evt) => {
+          if (isMockPayload(evt)) {
+            return (
+              <li key={evt.id} className="w-60 sm:w-64 shrink-0 snap-start">
+                <MockCardAlert
+                  title={evt.title}
+                  location={evt.location}
+                  className="h-full"
+                />
+              </li>
+            );
+          }
+
+          const when = parseISODate(evt.date);
+          return (
+            <li key={evt.id} className="w-60 sm:w-64 shrink-0 snap-start">
+              <article className="h-full flex flex-col gap-3 rounded-2xl bg-white border border-[#D9DEDA] p-4 shadow-[0_2px_8px_rgba(31,37,34,0.06)]">
+                <div className="flex items-start gap-3">
+                  {when && (
+                    <div
+                      aria-hidden="true"
+                      className="shrink-0 w-11 rounded-lg bg-[#FBF3DF] py-1.5 text-center text-[#5A4210]"
+                    >
+                      <div className="text-[11px] font-semibold leading-none">{MONTHS[when.getMonth()]}</div>
+                      <div className="mt-1 text-lg font-bold leading-none">{when.getDate()}</div>
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-[#8A5A00]">Event</p>
+                    <h3 className="mt-1 text-base font-bold leading-snug text-[#1F2522] line-clamp-2">
+                      {when && <span className="sr-only">{evt.date}: </span>}
+                      {evt.title}
+                    </h3>
+                  </div>
+                </div>
+
+                <div className="space-y-1 text-xs text-[#5F6863]">
+                  {!when && evt.date && (
+                    <p className="flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                      {evt.date}
+                    </p>
+                  )}
+                  {evt.time && (
+                    <p className="flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                      {evt.time}
+                    </p>
+                  )}
+                  <p className="flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                    <span className="line-clamp-1">{evt.location}</span>
+                  </p>
+                </div>
+
+                <div className="mt-auto flex items-center justify-between gap-2 border-t border-[#E7EBE8] pt-3">
+                  <p className="text-sm font-bold text-[#1F2522]">{evt.price === 0 ? 'Free' : `₹${evt.price}`}</p>
+                  <AddButton
+                    title={evt.title}
+                    state={stateFor(evt.id)}
+                    onClick={() => handleAddToItinerary(evt, 'event')}
+                  />
+                </div>
+              </article>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 };

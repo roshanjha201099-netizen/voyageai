@@ -9,24 +9,18 @@ const iconCache = new Map<string, L.DivIcon>();
  * Uses module-level memoization to avoid re-constructing DivIcons.
  */
 export const createUserLocationIcon = (): L.DivIcon => {
-  const cacheKey = 'user-location-radar';
-  if (iconCache.has(cacheKey)) {
-    return iconCache.get(cacheKey)!;
-  }
-
   const icon = L.divIcon({
     className: 'custom-user-marker',
     html: `
-      <div style="position: relative; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;">
+      <div style="position: relative; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;">
         <div class="user-radar-ring"></div>
-        <div style="width: 18px; height: 18px; border-radius: 50%; background: #10b981; border: 3px solid #022c22; box-shadow: 0 0 16px #10b981, 0 0 4px #ffffff;"></div>
+        <div style="width: 20px; height: 20px; border-radius: 50%; background: #1F5A3F; border: 3px solid #ffffff; box-shadow: 0 0 0 4px rgba(31,90,63,0.16), 0 2px 6px rgba(15,23,42,0.25); z-index: 2; position: relative;"></div>
       </div>
     `,
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
+    iconSize: [36, 36],
+    iconAnchor: [18, 18],
   });
 
-  iconCache.set(cacheKey, icon);
   return icon;
 };
 
@@ -43,13 +37,16 @@ export const createCrazyPoiIcon = (category: string, isSelected: boolean): L.Div
   }
 
   const transform = isSelected ? 'transform: scale(1.3); z-index: 999;' : '';
+  const markerBg = isSelected ? config.ring : '#FFFFFF';
   const dotBg = isSelected ? '#FFFFFF' : config.dot;
+  const borderColor = isSelected ? '#FFFFFF' : config.ring;
+  const shadow = isSelected ? '0 4px 14px rgba(15,23,42,0.28)' : config.shadow;
 
   const icon = L.divIcon({
     className: 'custom-poi-marker',
     html: `
-      <div class="poi-marker-glow" style="${transform} display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 14px; background: ${config.bg}; border: 1.5px solid ${config.ring}; backdrop-filter: blur(12px); box-shadow: ${config.shadow}; transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);">
-        <div style="width: 10px; height: 10px; border-radius: 50%; background: ${dotBg}; box-shadow: 0 0 6px ${dotBg};"></div>
+      <div class="poi-marker-glow" style="${transform} display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 14px; background: ${markerBg}; border: 2px solid ${borderColor}; box-shadow: ${shadow}; transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);">
+        <div style="width: 9px; height: 9px; border-radius: 50%; background: ${dotBg};"></div>
       </div>
     `,
     iconSize: [32, 32],
@@ -73,7 +70,7 @@ export const createClusterIcon = (count: number): L.DivIcon => {
   const icon = L.divIcon({
     className: 'custom-cluster-marker',
     html: `
-      <div style="display: flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 50%; background: rgba(15, 23, 42, 0.9); border: 2px solid #10b981; backdrop-filter: blur(12px); color: #34d399; font-weight: 800; font-size: 13px; box-shadow: 0 0 16px rgba(16, 185, 129, 0.6), 0 4px 12px rgba(0,0,0,0.5);">
+      <div style="display: flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 50%; background: #FFFFFF; border: 2px solid #1F5A3F; color: #1F5A3F; font-weight: 700; font-size: 13px; box-shadow: 0 2px 10px rgba(15,23,42,0.2);">
         ${count}
       </div>
     `,
