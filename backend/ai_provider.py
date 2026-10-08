@@ -25,17 +25,9 @@ def _extract_msg_attr(m: Any, attr: str, default: str = "") -> str:
     return default
 
 def _resolve_model_name(requested_model: Optional[str] = None) -> str:
-    """
-    Resolves the Gemini model name.
-    Defaults to the active production alias 'gemini-flash-latest'.
-    Strips leading 'models/' prefix if present.
-    """
-    model = requested_model or os.getenv("GEMINI_MODEL", "gemini-flash-latest")
-    model = model.strip()
-    if model.startswith("models/"):
-        model = model[7:]
-    if not model or model in ("gemini-1.5-flash", "gemini-2.0-flash", "gemini-2.5-flash"):
-        return "gemini-flash-latest"
+    model = requested_model or os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+    if not model or model in ("gemini-flash-latest", "gemini-1.5-flash", "gemini-2.0-flash"):
+        return "gemini-3.6-flash"
     return model
 
 
@@ -828,10 +820,19 @@ class GeminiProvider(AIProviderInterface):
         return key.strip()
 
     def _execute_gemini_request(self, prompt: str, temperature: float = 0.2, timeout: int = 25) -> str:
-        """Centralized executor handling network calls, status logging, and JSON extraction."""
+        """Centralized executor handling network calls, status logging, and JSON extraction with multi-model fallback."""
         api_key = self._get_api_key()
-        model_name = _resolve_model_name(self.model_name)
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+        resolved_primary = _resolve_model_name(self.model_name)
+        
+        # Ordered list of models to try if high demand (503) or rate limits occur
+        candidate_models = [
+            resolved_primary,
+            "gemini-3.5-flash-lite",
+            "gemini-flash-lite-latest",
+            "gemini-3.6-flash"
+        ]
+        # De-duplicate while preserving order
+        candidate_models = list(dict.fromkeys(candidate_models))
 
         headers = {"Content-Type": "application/json"}
         payload = {
@@ -842,51 +843,53 @@ class GeminiProvider(AIProviderInterface):
             }
         }
 
-        max_retries = 2
-        for attempt in range(1, max_retries + 1):
-            try:
-                response = requests.post(url, json=payload, headers=headers, timeout=timeout)
+        last_error = None
 
-                if response.status_code == 200:
-                    res_json = response.json()
-                    candidates = res_json.get("candidates", [])
-                    if not candidates:
-                        raise ValueError("AI_INVALID_OUTPUT: Gemini returned empty candidates.")
+        for model_name in candidate_models:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+            for attempt in range(1, 3):
+                try:
+                    response = requests.post(url, json=payload, headers=headers, timeout=timeout)
 
-                    parts = candidates[0].get("content", {}).get("parts", [])
-                    if not parts or "text" not in parts[0]:
-                        raise ValueError("AI_INVALID_OUTPUT: Gemini returned no text content.")
+                    if response.status_code == 200:
+                        res_json = response.json()
+                        candidates = res_json.get("candidates", [])
+                        if not candidates:
+                            continue
 
-                    raw_text = parts[0]["text"].strip()
-                    if raw_text.startswith("```"):
-                        raw_text = re.sub(r"^```(?:json)?\n?", "", raw_text, flags=re.IGNORECASE)
-                        raw_text = re.sub(r"\n?```$", "", raw_text)
-                    return raw_text
+                        parts = candidates[0].get("content", {}).get("parts", [])
+                        if not parts or "text" not in parts[0]:
+                            continue
 
-                logger.error(f"[GEMINI HTTP {response.status_code}] Details: {response.text}")
+                        raw_text = parts[0]["text"].strip()
+                        if raw_text.startswith("```"):
+                            raw_text = re.sub(r"^```(?:json)?\n?", "", raw_text, flags=re.IGNORECASE)
+                            raw_text = re.sub(r"\n?```$", "", raw_text)
+                        
+                        logger.info(f"[GEMINI SUCCESS] Model '{model_name}' successfully generated response")
+                        return raw_text
 
-                if response.status_code in (401, 403):
-                    raise RuntimeError(f"AI_AUTH_ERROR: Invalid API Key (HTTP {response.status_code})")
-                elif response.status_code == 404:
-                    raise RuntimeError(f"AI_GENERATION_ERROR: Model '{model_name}' not found (HTTP 404). Check GEMINI_MODEL.")
-                elif response.status_code == 429:
-                    raise RuntimeError("AI_QUOTA_ERROR: Gemini rate limit exceeded (HTTP 429)")
-                elif response.status_code in (500, 502, 503, 504) and attempt < max_retries:
-                    time.sleep(1.5)
-                    continue
-                else:
-                    raise RuntimeError(f"AI_GENERATION_ERROR: Gemini API error HTTP {response.status_code}")
+                    logger.warning(f"[GEMINI HTTP {response.status_code}] Model '{model_name}' (Attempt {attempt}): {response.text[:120]}")
 
-            except requests.exceptions.Timeout:
-                if attempt < max_retries:
-                    time.sleep(1.0)
-                    continue
-                raise RuntimeError("AI_TIMEOUT: Gemini API request timed out.")
-            except requests.exceptions.RequestException as net_err:
-                if attempt < max_retries:
-                    time.sleep(1.0)
-                    continue
-                raise RuntimeError(f"AI_GENERATION_ERROR: Network error: {net_err}")
+                    if response.status_code in (401, 403):
+                        raise RuntimeError(f"AI_AUTH_ERROR: Invalid API Key (HTTP {response.status_code})")
+                    
+                    # If 503 (high demand), 429 (rate limit), or 404, break attempt loop to switch to next model immediately
+                    if response.status_code in (404, 429, 500, 502, 503, 504):
+                        last_error = f"Model {model_name} HTTP {response.status_code}"
+                        break
+
+                except requests.exceptions.Timeout:
+                    last_error = f"Model {model_name} timeout"
+                    if attempt < 2:
+                        time.sleep(1.0)
+                        continue
+                    break
+                except Exception as exc:
+                    last_error = str(exc)
+                    break
+
+        raise RuntimeError(f"AI_GENERATION_ERROR: All Gemini candidate models failed. Last error: {last_error}")
 
     def generate_itinerary_json(self, ai_input: Dict[str, Any], prompt: str) -> str:
         raw_text = self._execute_gemini_request(prompt, temperature=0.2, timeout=30)
