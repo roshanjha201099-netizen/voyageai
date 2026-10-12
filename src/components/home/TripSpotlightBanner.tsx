@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Calendar, MapPin, Plus, Check, Loader2, Clock } from 'lucide-react';
 import { getApiBaseUrl, DEFAULT_FETCH_OPTIONS } from '../../config/apiConfig';
 import { MONTHS, formatDateRange, parseISODate, tripStatus } from './tripDates';
@@ -83,6 +83,8 @@ const AddButton: React.FC<{ title: string; state: AddState; onClick: () => void 
   );
 };
 
+const spotlightCache = new Map<string, SpotlightData>();
+
 export const TripSpotlightBanner: React.FC<{
   destination?: string;
   startDate?: string;
@@ -93,18 +95,45 @@ export const TripSpotlightBanner: React.FC<{
   latitude?: number;
   longitude?: number;
 }> = ({ destination, startDate, endDate, dates, isLocalMode = false, latitude, longitude }) => {
-  const [data, setData] = useState<SpotlightData | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Quantize coordinates to ~10km (0.1 deg) so continuous GPS ticks never trigger re-fetching
+  const coarseLat = latitude !== undefined ? Number(latitude.toFixed(1)) : undefined;
+  const coarseLng = longitude !== undefined ? Number(longitude.toFixed(1)) : undefined;
+  const cleanDest = destination?.trim();
+
+  const fetchKey = cleanDest
+    ? `dest:${cleanDest.toLowerCase()}`
+    : (coarseLat !== undefined && coarseLng !== undefined ? `geo:${coarseLat}_${coarseLng}` : 'default');
+
+  const [data, setData] = useState<SpotlightData | null>(() => {
+    return spotlightCache.get(fetchKey) || null;
+  });
+  const [loading, setLoading] = useState<boolean>(!data);
   const [addingId, setAddingId] = useState<string | null>(null);
   const [failedId, setFailedId] = useState<string | null>(null);
   const [addedIds, setAddedIds] = useState<Record<string, boolean>>({});
   const [expanded, setExpanded] = useState(false);
 
+  const lastFetchedKeyRef = useRef<string>('');
+
   useEffect(() => {
+    // If we already fetched for this exact key and have data, skip entirely to eliminate flickering
+    if (fetchKey === lastFetchedKeyRef.current && data) {
+      return;
+    }
+
+    // Instant cache hit: render immediately with zero network delay and zero layout shift
+    if (spotlightCache.has(fetchKey)) {
+      setData(spotlightCache.get(fetchKey)!);
+      setLoading(false);
+      lastFetchedKeyRef.current = fetchKey;
+      return;
+    }
+
     let isMounted = true;
-    setLoading(true);
-    setData(null);
-    setExpanded(false);
+    // Stale-while-revalidate: only show skeleton if we have NO prior data
+    if (!data) {
+      setLoading(true);
+    }
 
     const baseUrl = getApiBaseUrl();
     const queryParams: string[] = [];
@@ -113,7 +142,6 @@ export const TripSpotlightBanner: React.FC<{
       queryParams.push(`lat=${latitude}&lng=${longitude}`);
     }
 
-    const cleanDest = destination?.trim();
     if (cleanDest) {
       queryParams.push(`destination=${encodeURIComponent(cleanDest)}`);
     }
@@ -131,14 +159,13 @@ export const TripSpotlightBanner: React.FC<{
       })
       .then((json: SpotlightData) => {
         if (isMounted) {
+          spotlightCache.set(fetchKey, json);
+          lastFetchedKeyRef.current = fetchKey;
           setData(json);
         }
       })
       .catch((err) => {
         console.error('❌ Error loading spotlight:', err);
-        if (isMounted) {
-          setData(null);
-        }
       })
       .finally(() => {
         if (isMounted) {
@@ -149,7 +176,7 @@ export const TripSpotlightBanner: React.FC<{
     return () => {
       isMounted = false;
     };
-  }, [destination, latitude, longitude]);
+  }, [fetchKey, cleanDest, latitude, longitude]);
 
   const handleAddToItinerary = async (item: Activity | UpcomingEvent, itemType: 'activity' | 'event') => {
     setAddingId(item.id);
