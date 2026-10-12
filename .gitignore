@@ -10,7 +10,7 @@ lerna-debug.log*
 # Environment & Secrets
 .env
 .env.*
-!.env.production
+.env.production
 *.env
 backend/.env
 backend/keys/*.json
