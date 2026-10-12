@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useTrip } from '../../features/trip/TripContext';
-import { getApiBaseUrl, DEFAULT_FETCH_OPTIONS } from '../../config/apiConfig';
+import { getApiBaseUrl, DEFAULT_FETCH_OPTIONS, getAuthHeaders } from '../../config/apiConfig';
 import {
   MapPin, Navigation, Plus, ArrowUp,
   AlertTriangle, Compass, Clock, Check, Loader2
@@ -72,6 +72,7 @@ export const TourGuidePage: React.FC = () => {
         const tripParam = mode === 'trip' && activeTrip?.id ? `?trip_id=${encodeURIComponent(activeTrip.id)}` : '';
         const res = await fetch(`${baseUrl}/api/tour-guide/history${tripParam}`, {
           ...DEFAULT_FETCH_OPTIONS,
+          headers: getAuthHeaders(),
         });
 
         if (res.ok) {
@@ -155,6 +156,7 @@ export const TourGuidePage: React.FC = () => {
       const baseUrl = getApiBaseUrl();
       const res = await fetch(`${baseUrl}/api/tour-guide/chat`, {
         ...DEFAULT_FETCH_OPTIONS,
+        headers: getAuthHeaders(),
         method: 'POST',
         body: JSON.stringify({
           message: textToSend,
@@ -226,6 +228,7 @@ export const TourGuidePage: React.FC = () => {
       const baseUrl = getApiBaseUrl();
       const res = await fetch(`${baseUrl}/api/trips/itinerary/add`, {
         ...DEFAULT_FETCH_OPTIONS,
+        headers: getAuthHeaders(),
         method: 'POST',
         body: JSON.stringify({
           trip_id: activeTrip.id,

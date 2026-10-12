@@ -375,16 +375,30 @@ def get_current_user_or_guest(
 
     guest_id = request.cookies.get(GUEST_COOKIE_NAME)
     if not guest_id or not str(guest_id).startswith("guest_"):
+        guest_id = request.headers.get("x-guest-id") or request.query_params.get("guest_id")
+    if not guest_id or not str(guest_id).startswith("guest_"):
         guest_id = f"guest_{uuid.uuid4().hex[:10]}"
+
+    is_secure = True
+    proto = request.headers.get("x-forwarded-proto", "")
+    scheme = request.url.scheme
+    host = request.headers.get("host", "")
+    if scheme == "http" and "localhost" in host and not proto.startswith("https") and "ngrok" not in host:
+        is_secure = False
+    samesite = "none" if is_secure else "lax"
+
+    try:
         response.set_cookie(
             key=GUEST_COOKIE_NAME,
             value=guest_id,
             httponly=True,
-            secure=COOKIE_SECURE,
-            samesite="lax",
+            secure=is_secure,
+            samesite=samesite,
             max_age=365 * 86400,
             path="/"
         )
+    except Exception:
+        pass
 
     from models import AuthUser
     guest_auth_user = AuthUser(
@@ -401,6 +415,16 @@ def get_current_user_or_guest(
     )
 
     return guest_auth_user, None, None, False
+
+def get_user_or_guest(
+    request: Request,
+    response: Response,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+) -> AuthUser:
+    """Dependency returning authenticated AuthUser if session token valid, or guest AuthUser without throwing 401."""
+    auth_user, _, _, _ = get_current_user_or_guest(request, response, authorization, db)
+    return auth_user
 
 def get_current_user_optional(
     request: Request,
@@ -2618,7 +2642,7 @@ class TourGuideChatRequest(BaseModel):
 @app.post("/api/chat")
 def chat_with_concierge(
     payload: TourGuideChatRequest,
-    current_user: AuthUser = Depends(get_current_user),
+    current_user: AuthUser = Depends(get_user_or_guest),
     db: Session = Depends(get_db)
 ):
     from tour_guide_service import process_concierge_message
@@ -2642,7 +2666,7 @@ def chat_with_concierge(
 def get_tour_guide_history(
     trip_id: Optional[str] = None,
     limit: int = 50,
-    current_user: AuthUser = Depends(get_current_user),
+    current_user: AuthUser = Depends(get_user_or_guest),
     db: Session = Depends(get_db)
 ):
     from tour_guide_service import fetch_chat_history
@@ -3542,7 +3566,7 @@ def tour_guide_nearby(
     lat: float,
     lng: float,
     radius: int = 5000,
-    current_user: AuthUser = Depends(get_current_user),
+    current_user: AuthUser = Depends(get_user_or_guest),
     db: Session = Depends(get_db)
 ):
     """Discover nearby POIs within radius using Overpass API (max 5km)."""
@@ -3588,7 +3612,7 @@ def tour_guide_nearby(
 @app.post("/api/tour-guide/visit", dependencies=[Depends(general_limiter)])
 def tour_guide_visit(
     req: TourGuideVisitRequest,
-    current_user: AuthUser = Depends(get_current_user),
+    current_user: AuthUser = Depends(get_user_or_guest),
     db: Session = Depends(get_db)
 ):
     """Set the current place focus for the tour guide session."""
@@ -3612,7 +3636,7 @@ def tour_guide_visit(
 
 @app.get("/api/tour-guide/session", dependencies=[Depends(general_limiter)])
 def tour_guide_session(
-    current_user: AuthUser = Depends(get_current_user),
+    current_user: AuthUser = Depends(get_user_or_guest),
     db: Session = Depends(get_db)
 ):
     """Get current tour guide session state."""

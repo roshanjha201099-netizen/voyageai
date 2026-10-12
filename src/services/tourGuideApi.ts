@@ -4,7 +4,7 @@
  */
 
 import { wsClient } from './wsClient';
-import { getApiBaseUrl, DEFAULT_FETCH_OPTIONS } from '../config/apiConfig';
+import { getApiBaseUrl, DEFAULT_FETCH_OPTIONS, getAuthHeaders } from '../config/apiConfig';
 
 export interface TourPlace {
   id: string;
@@ -60,7 +60,8 @@ export async function fetchNearbyPlaces(
   try {
     const baseUrl = getApiBaseUrl();
     const res = await fetch(`${baseUrl}/api/tour-guide/nearby?lat=${lat}&lng=${lng}&radius=${Math.min(radius, 5000)}`, {
-      ...DEFAULT_FETCH_OPTIONS
+      ...DEFAULT_FETCH_OPTIONS,
+      headers: getAuthHeaders(),
     });
     if (res.ok) {
       const data = await res.json();

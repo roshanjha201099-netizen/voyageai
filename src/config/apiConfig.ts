@@ -57,14 +57,6 @@ export const DEFAULT_HEADERS: Record<string, string> = {
 };
 
 /**
- * Standard fetch options with credentials: 'include' for HttpOnly cookie session handling.
- */
-export const DEFAULT_FETCH_OPTIONS: RequestInit = {
-  credentials: 'include',
-  headers: DEFAULT_HEADERS,
-};
-
-/**
  * Returns HTTP headers for authenticated requests.
  * User identity is bound to the voyageai_session HttpOnly cookie (credentials: 'include')
  * with Bearer Authorization header as an auxiliary layer for cross-site environments.
@@ -96,3 +88,23 @@ export const getAuthHeaders = (): Record<string, string> => {
   }
   return headers;
 };
+
+/**
+ * Standard fetch options with credentials: 'include' for HttpOnly cookie session handling,
+ * and dynamic headers evaluation ensuring Bearer tokens & ngrok bypass headers are attached.
+ */
+export const DEFAULT_FETCH_OPTIONS: RequestInit = {
+  credentials: 'include',
+  get headers() {
+    return getAuthHeaders();
+  },
+};
+
+/**
+ * Helper to get fresh fetch options with auth headers.
+ */
+export const getDefaultFetchOptions = (): RequestInit => ({
+  credentials: 'include',
+  headers: getAuthHeaders(),
+});
+
