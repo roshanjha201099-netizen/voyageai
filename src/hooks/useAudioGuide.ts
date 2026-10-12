@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { getApiBaseUrl, DEFAULT_HEADERS } from '../config/apiConfig';
+import { getApiBaseUrl, DEFAULT_FETCH_OPTIONS } from '../config/apiConfig';
 
 export const useAudioGuide = () => {
   const [isPlaying, setIsPlaying] = useState(false);
@@ -52,8 +52,8 @@ export const useAudioGuide = () => {
     try {
       const baseUrl = getApiBaseUrl();
       const res = await fetch(`${baseUrl}/api/tts/synthesize`, {
+        ...DEFAULT_FETCH_OPTIONS,
         method: 'POST',
-        headers: DEFAULT_HEADERS,
         body: JSON.stringify({
           text: text.slice(0, 480),
           target_language_code: targetLanguageCode,

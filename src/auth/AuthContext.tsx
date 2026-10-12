@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import type { AuthUser, UserProfile, UserPreferences, LoginPayload, OnboardingUpdatePayload } from './types';
+import type { AuthUser, UserProfile, UserPreferences, LoginPayload, RegisterPayload, OnboardingUpdatePayload } from './types';
 import { authService } from './authService';
 
 interface AuthContextType {
@@ -9,6 +9,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   signIn: (payload: LoginPayload) => Promise<void>;
+  signUp: (payload: RegisterPayload) => Promise<void>;
   signOut: () => Promise<void>;
   updateOnboarding: (payload: OnboardingUpdatePayload) => Promise<void>;
   restoreSession: () => Promise<void>;
@@ -21,6 +22,7 @@ const defaultAuthContext: AuthContextType = {
   isAuthenticated: false,
   isLoading: false,
   signIn: async () => {},
+  signUp: async () => {},
   signOut: async () => {},
   updateOnboarding: async () => {},
   restoreSession: async () => {},
@@ -73,6 +75,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
+  const signUp = useCallback(async (payload: RegisterPayload) => {
+    setIsLoading(true);
+    try {
+      const session = await authService.register(payload);
+      setAuthUser(session.authUser);
+      setUserProfile(session.userProfile);
+      setUserPreferences(session.userPreferences);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   const signOut = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -99,6 +113,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isAuthenticated: !!authUser && !!userProfile,
       isLoading,
       signIn,
+      signUp,
       signOut,
       updateOnboarding,
       restoreSession,

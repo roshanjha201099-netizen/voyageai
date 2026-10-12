@@ -112,10 +112,12 @@ export const HomePage: React.FC = () => {
 
       {/* Destination and highlights */}
       <TripSpotlightBanner
-        destination={currentTrip?.destination?.name || currentTrip?.title || 'Goa'}
+        destination={currentTrip ? (currentTrip.destination?.name || currentTrip.title) : userLocationName}
+        latitude={currentTrip?.destination?.latitude ?? (userLocation ? userLocation[0] : 22.5726)}
+        longitude={currentTrip?.destination?.longitude ?? (userLocation ? userLocation[1] : 88.3639)}
         startDate={currentTrip?.startDate}
         endDate={currentTrip?.endDate}
-        isLocalMode={true}
+        isLocalMode={!currentTrip}
       />
 
       <AskVoyageAICard />

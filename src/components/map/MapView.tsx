@@ -8,9 +8,9 @@ import {
 } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { getApiBaseUrl, DEFAULT_HEADERS } from '../../config/apiConfig';
+import { getApiBaseUrl, DEFAULT_FETCH_OPTIONS } from '../../config/apiConfig';
 import { useAudioGuide } from '../../hooks/useAudioGuide';
-import { createUserLocationIcon, createCrazyPoiIcon } from './mapIcons';
+import { createUserLocationIcon, createPoiIcon } from './mapIcons';
 import { AddToItineraryModal, type AddToItineraryPayload } from '../itinerary/AddToItineraryModal';
 import { sanitizeLocationName } from '../../utils/locationSanitizer';
 
@@ -27,57 +27,39 @@ export interface PlaceItem {
   description?: string;
 }
 
-export type MapStyleKey = 'voyager' | 'dark' | 'light' | 'satellite' | 'osm';
-
-export const MAP_STYLES: Record<MapStyleKey, { name: string; icon: string; url: string; subdomains?: string; maxZoom: number; attribution: string }> = {
-  voyager: {
-    name: 'Vivid Travel',
-    icon: '🎨',
-    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-    subdomains: 'abcd',
-    maxZoom: 19,
-    attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
-  },
-  dark: {
-    name: 'Cyber Dark',
-    icon: '🌙',
-    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    subdomains: 'abcd',
-    maxZoom: 19,
-    attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
-  },
-  light: {
-    name: 'Clean Light',
-    icon: '☀️',
-    url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-    subdomains: 'abcd',
-    maxZoom: 19,
-    attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
-  },
-  satellite: {
-    name: 'Satellite View',
-    icon: '🛰️',
-    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    maxZoom: 19,
-    attribution: '&copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS'
-  },
-  osm: {
-    name: 'Standard OSM',
-    icon: '🗺️',
-    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    maxZoom: 19,
-    attribution: '&copy; OpenStreetMap contributors'
-  }
+// Single basemap: standard OpenStreetMap tiles, no API key required.
+const OSM_TILES = {
+  url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  subdomains: 'abc',
+  maxZoom: 19,
+  attribution: '&copy; OpenStreetMap contributors',
 };
+
+const CATEGORY_FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'sights', label: 'Sights' },
+  { key: 'food', label: 'Food' },
+  { key: 'hotels', label: 'Stays' },
+  { key: 'experiences', label: 'Experiences' },
+] as const;
+
+const sentenceCase = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s);
+
+const formatDistance = (meters?: number) => {
+  if (meters === undefined || meters === null) return 'Nearby';
+  if (meters < 1000) return `${Math.round(meters)} m away`;
+  return `${(meters / 1000).toFixed(1)} km away`;
+};
+
+// Fixed app chrome this page sits between — adjust to match the real header/bottom-nav height.
+const HEADER_HEIGHT = 64;
+const BOTTOM_NAV_HEIGHT = 72;
 
 export const MapView: React.FC = () => {
   const { userLocation, userLocationName, isFollowMode, setIsFollowMode } = useApp();
   const { currentTrip, refetchItinerary } = useTrip();
   const { mapFocusTarget, setMapFocusTarget, navigateToExplore } = useNavigation();
 
-  // Active Map Style (100% Free - Zero API key required!)
-  const [currentMapStyle, setCurrentMapStyle] = useState<MapStyleKey>('voyager');
-  const [isStyleMenuOpen, setIsStyleMenuOpen] = useState(false);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
 
   // Coordinates anchor
@@ -104,8 +86,8 @@ export const MapView: React.FC = () => {
     try {
       const baseUrl = getApiBaseUrl();
       const res = await fetch(`${baseUrl}/api/trips/itinerary/add`, {
+        ...DEFAULT_FETCH_OPTIONS,
         method: 'POST',
-        headers: DEFAULT_HEADERS,
         body: JSON.stringify(payload),
       });
 
@@ -157,8 +139,8 @@ export const MapView: React.FC = () => {
     try {
       const baseUrl = getApiBaseUrl();
       const res = await fetch(`${baseUrl}/api/tts/speak`, {
+        ...DEFAULT_FETCH_OPTIONS,
         method: 'POST',
-        headers: DEFAULT_HEADERS,
         body: JSON.stringify({
           place_name: place.name,
           category: place.category,
@@ -192,7 +174,7 @@ export const MapView: React.FC = () => {
       const categoryParam = category !== 'all' ? `&category=${encodeURIComponent(category)}` : '';
       const url = `${baseUrl}/api/places/nearby?lat=${centerLat}&lng=${centerLng}&radius=5000&limit=40${categoryParam}`;
 
-      const res = await fetch(url, { headers: DEFAULT_HEADERS });
+      const res = await fetch(url, { ...DEFAULT_FETCH_OPTIONS });
 
       if (res.ok) {
         const data = await res.json();
@@ -231,7 +213,7 @@ export const MapView: React.FC = () => {
     fetchMapPlaces(lat, lng, activeCategory);
   }, [userLocation, defaultCoords, fetchMapPlaces]);
 
-  // ── MAP INITIALIZATION & CLEANUP (Rule #2: Full map.remove() cleanup) ──
+  // ── MAP INITIALIZATION & CLEANUP ──
   useEffect(() => {
     if (!mapContainerRef.current) return;
     if (mapInstanceRef.current) return; // Initialize once
@@ -246,11 +228,10 @@ export const MapView: React.FC = () => {
       attributionControl: false,
     });
 
-    const styleConfig = MAP_STYLES.voyager;
-    const tileLayer = L.tileLayer(styleConfig.url, {
-      maxZoom: styleConfig.maxZoom,
-      subdomains: styleConfig.subdomains || 'abc',
-      attribution: styleConfig.attribution,
+    const tileLayer = L.tileLayer(OSM_TILES.url, {
+      maxZoom: OSM_TILES.maxZoom,
+      subdomains: OSM_TILES.subdomains,
+      attribution: OSM_TILES.attribution,
     }).addTo(map);
     tileLayerRef.current = tileLayer;
 
@@ -284,25 +265,6 @@ export const MapView: React.FC = () => {
       tileLayerRef.current = null;
     };
   }, []); // Run once on mount
-
-  // ── DYNAMIC MAP TILE STYLE SWAPPING (Zero API key required!) ──
-  useEffect(() => {
-    const map = mapInstanceRef.current;
-    if (!map) return;
-
-    if (tileLayerRef.current) {
-      map.removeLayer(tileLayerRef.current);
-    }
-
-    const styleConfig = MAP_STYLES[currentMapStyle];
-    const newTileLayer = L.tileLayer(styleConfig.url, {
-      maxZoom: styleConfig.maxZoom,
-      subdomains: styleConfig.subdomains || 'abc',
-      attribution: styleConfig.attribution,
-    }).addTo(map);
-
-    tileLayerRef.current = newTileLayer;
-  }, [currentMapStyle]);
 
   // Update User Radar Marker
   useEffect(() => {
@@ -355,7 +317,7 @@ export const MapView: React.FC = () => {
     // Add or update markers
     filteredPlaces.forEach(place => {
       const isSelected = selectedPlace?.id === place.id;
-      const icon = createCrazyPoiIcon(place.category, isSelected);
+      const icon = createPoiIcon(place.category, isSelected);
 
       let marker = existingMap.get(place.id);
       if (!marker) {
@@ -424,117 +386,77 @@ export const MapView: React.FC = () => {
   };
 
   return (
-    <div className="relative w-full h-[calc(100dvh-64px)] overflow-hidden bg-gray-100 select-none">
-
-      {/* ── 1. Full-Bleed Dark Map Container ── */}
+    <div
+      className="relative w-full overflow-hidden bg-[#EFF1ED] select-none"
+      style={{ height: `calc(100dvh - ${HEADER_HEIGHT}px - ${BOTTOM_NAV_HEIGHT}px)` }}
+    >
+      {/* Map */}
       <div ref={mapContainerRef} className="w-full h-full z-0" />
 
-      {/* ── 2. Top Minimalist HUD ── */}
-      <div className="absolute top-4 left-4 right-4 z-[500] flex items-center justify-between pointer-events-none">
-
-        {/* Back / Open Explore Mode CTA */}
+      {/* Top controls: back + recenter */}
+      <div className="absolute top-3 left-3 right-3 z-[500] flex items-center justify-between pointer-events-none">
         <button
+          type="button"
           onClick={() => navigateToExplore()}
-          className="pointer-events-auto px-3.5 py-2 rounded-2xl bg-white hover:bg-gray-50 text-gray-900 border border-gray-200 shadow-sm font-semibold text-xs flex items-center gap-2 press-scale"
+          className="pointer-events-auto min-h-[40px] px-3.5 rounded-full bg-white hover:bg-gray-50 text-[#1F2522] border border-gray-200 shadow-sm font-semibold text-xs flex items-center gap-1.5 press-scale"
         >
-          <ArrowLeft className="w-4 h-4 text-[#1F5A3F]" />
-          <span>Explore Mode</span>
+          <ArrowLeft className="w-4 h-4 text-[#1F5A3F]" aria-hidden="true" />
+          <span>Explore</span>
         </button>
 
-        {/* Live GPS Telemetry Pill */}
-        <div className="px-3 py-1.5 rounded-full bg-white border border-gray-200 text-[#1F5A3F] shadow-sm flex items-center gap-2 text-[11px] font-semibold tracking-tight">
-          <span className="w-2 h-2 rounded-full bg-[#1F5A3F] animate-ping" />
-          <span>Live Geofence Active (150m Rad)</span>
-        </div>
-
-        {/* Right Controls: Map Style Selector + Recenter Button */}
-        <div className="flex items-center gap-2 pointer-events-auto relative">
-          {/* Map Style Selector Pill Button */}
-          <div className="relative">
-            <button
-              onClick={() => setIsStyleMenuOpen(prev => !prev)}
-              className="px-3 py-2 rounded-2xl bg-white hover:bg-gray-50 text-gray-900 border border-gray-200 shadow-sm text-xs font-bold flex items-center gap-1.5 press-scale"
-              title="Change Map Basemap Style (No API key required)"
-            >
-              <span>{MAP_STYLES[currentMapStyle].icon}</span>
-              <span className="hidden sm:inline">{MAP_STYLES[currentMapStyle].name}</span>
-            </button>
-
-            {/* Map Style Dropdown Menu */}
-            {isStyleMenuOpen && (
-              <div className="absolute top-full mt-2 right-0 w-44 p-1.5 rounded-2xl bg-white border border-gray-200 shadow-2xl z-[600] space-y-1 animate-fadeIn">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400 px-2 py-1 border-b border-gray-100 mb-1">
-                  Map Basemap Style
-                </div>
-                {(Object.keys(MAP_STYLES) as MapStyleKey[]).map(styleKey => (
-                  <button
-                    key={styleKey}
-                    onClick={() => {
-                      setCurrentMapStyle(styleKey);
-                      setIsStyleMenuOpen(false);
-                    }}
-                    className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-xs font-bold transition-all text-left ${currentMapStyle === styleKey
-                        ? 'bg-[#1F5A3F]/10 text-[#1F5A3F] border border-[#1F5A3F]/30'
-                        : 'text-gray-700 hover:bg-gray-100'
-                      }`}
-                  >
-                    <span>{MAP_STYLES[styleKey].icon}</span>
-                    <span className="truncate">{MAP_STYLES[styleKey].name}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Recenter Button */}
-          <button
-            onClick={handleRecenter}
-            className={`p-2.5 rounded-2xl border shadow-sm transition-all press-scale ${isFollowMode
-                ? 'bg-[#1F5A3F] text-white border-[#1F5A3F]'
-                : 'bg-white text-gray-600 border-gray-200 hover:border-[#1F5A3F]/40'
-              }`}
-            title="Recenter to GPS Location"
-          >
-            <Crosshair className="w-4 h-4" />
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={handleRecenter}
+          aria-label="Recenter on my location"
+          title="Recenter on my location"
+          className={`pointer-events-auto w-10 h-10 shrink-0 rounded-full border shadow-sm transition-colors press-scale flex items-center justify-center ${isFollowMode
+            ? 'bg-[#1F5A3F] text-white border-[#1F5A3F]'
+            : 'bg-white text-gray-600 border-gray-200 hover:border-[#1F5A3F]/40'
+            }`}
+        >
+          <Crosshair className="w-4 h-4" aria-hidden="true" />
+        </button>
       </div>
 
-      {/* ── 3. Category Quick Filter Pill Bar ── */}
-      <div className="absolute top-16 left-4 right-4 z-[500] flex items-center gap-2 overflow-x-auto no-scrollbar pointer-events-auto py-1">
-        {(['all', 'sights', 'food', 'hotels', 'experiences'] as const).map(cat => (
+      {/* Category filter row */}
+      <div
+        role="group"
+        aria-label="Filter places by category"
+        className="absolute top-[60px] left-3 right-3 z-[500] flex items-center gap-2 overflow-x-auto no-scrollbar pointer-events-auto py-1"
+      >
+        {CATEGORY_FILTERS.map(({ key, label }) => (
           <button
-            key={cat}
+            key={key}
+            type="button"
             onClick={() => {
-              setActiveCategory(cat);
+              setActiveCategory(key);
               const lat = userLocation ? userLocation[0] : defaultCoords[0];
               const lng = userLocation ? userLocation[1] : defaultCoords[1];
-              fetchMapPlaces(lat, lng, cat);
+              fetchMapPlaces(lat, lng, key);
             }}
-            className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all border shadow-sm ${activeCategory === cat
-                ? 'bg-[#1F5A3F] text-white border-[#1F5A3F]'
-                : 'bg-white text-gray-600 border-gray-200 hover:text-gray-900'
+            aria-pressed={activeCategory === key}
+            className={`shrink-0 min-h-[32px] px-3.5 rounded-full text-xs font-semibold transition-colors border shadow-sm ${activeCategory === key
+              ? 'bg-[#1F5A3F] text-white border-[#1F5A3F]'
+              : 'bg-white text-gray-600 border-gray-200 hover:text-gray-900'
               }`}
           >
-            {cat.toUpperCase()}
+            {label}
           </button>
         ))}
       </div>
 
-      {/* ── 4. Bottom Swipe-Up Glass Mini-Sheet (Only Closest / Selected Spot) ── */}
+      {/* Bottom mini-sheet: closest or selected place */}
       {closestPlace ? (
-        <div className="absolute bottom-4 left-4 right-4 z-[500] pointer-events-auto animate-slideUp">
+        <div className="absolute bottom-3 left-3 right-3 z-[500] pointer-events-auto animate-slideUp">
           <div className="rounded-3xl bg-white border border-gray-200 p-4 shadow-lg space-y-3">
-
-            {/* Spot Header Info */}
-            <div className="flex items-start justify-between">
-              <div className="space-y-0.5 max-w-[70%]">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 space-y-0.5">
                 <div className="flex items-center gap-2">
                   <span className="px-2 py-0.5 rounded-md bg-[#1F5A3F]/10 text-[#1F5A3F] border border-[#1F5A3F]/20 text-[10px] font-semibold uppercase">
-                    {closestPlace.category}
+                    {sentenceCase(closestPlace.category)}
                   </span>
                   <span className="text-[11px] font-medium text-gray-400">
-                    {closestPlace.distanceMeters ? `${closestPlace.distanceMeters}m away` : 'Near Live GPS'}
+                    {formatDistance(closestPlace.distanceMeters)}
                   </span>
                 </div>
                 <h3 className="text-base font-semibold text-gray-900 truncate">
@@ -547,62 +469,61 @@ export const MapView: React.FC = () => {
 
               {/* Audio Narration TTS Control */}
               <button
+                type="button"
                 onClick={(e) => handlePlayNarration(closestPlace, e)}
                 disabled={audioLoadingId === closestPlace.id}
-                className={`p-2.5 rounded-2xl border transition-all press-scale ${playingPlaceId === closestPlace.id
-                    ? 'bg-amber-500 text-white border-amber-500 animate-pulse'
-                    : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-[#1F5A3F]/40'
+                aria-label={playingPlaceId === closestPlace.id ? 'Stop audio guide' : 'Play audio guide'}
+                className={`w-10 h-10 shrink-0 rounded-full border transition-colors press-scale flex items-center justify-center ${playingPlaceId === closestPlace.id
+                  ? 'bg-amber-500 text-white border-amber-500'
+                  : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-[#1F5A3F]/40'
                   }`}
-                title="Audio Guide Narration"
               >
                 {audioLoadingId === closestPlace.id ? (
-                  <Loader2 className="w-5 h-5 animate-spin text-[#1F5A3F]" />
+                  <Loader2 className="w-5 h-5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
                 ) : playingPlaceId === closestPlace.id ? (
-                  <VolumeX className="w-5 h-5" />
+                  <VolumeX className="w-5 h-5" aria-hidden="true" />
                 ) : (
-                  <Volume2 className="w-5 h-5 text-[#1F5A3F]" />
+                  <Volume2 className="w-5 h-5 text-[#1F5A3F]" aria-hidden="true" />
                 )}
               </button>
             </div>
 
-            {/* Action CTAs */}
-            <div className="flex items-center justify-between pt-2 border-t border-gray-100 gap-2">
-
-              {/* Add to Itinerary Button */}
+            <div className="flex items-center justify-between gap-2 pt-2 border-t border-gray-100">
               <button
+                type="button"
                 onClick={() => setSelectedPlaceForModal(closestPlace)}
-                className={`flex-1 py-2.5 px-3 rounded-xl font-semibold text-xs flex items-center justify-center gap-1.5 transition-all press-scale ${addedPlaceDays.has(closestPlace.id)
-                    ? 'bg-[#1F5A3F]/10 text-[#1F5A3F] border border-[#1F5A3F]/30'
-                    : 'bg-[#1F5A3F] hover:bg-[#194B34] text-white shadow-sm'
+                className={`flex-1 min-h-[44px] px-3 rounded-xl font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors press-scale ${addedPlaceDays.has(closestPlace.id)
+                  ? 'bg-[#1F5A3F]/10 text-[#1F5A3F] border border-[#1F5A3F]/30'
+                  : 'bg-[#1F5A3F] hover:bg-[#194B34] text-white shadow-sm'
                   }`}
               >
                 {addedPlaceDays.has(closestPlace.id) ? (
                   <>
-                    <Check className="w-4 h-4 stroke-[3]" /> Added to Day {addedPlaceDays.get(closestPlace.id)}
+                    <Check className="w-4 h-4" aria-hidden="true" /> Added to Day {addedPlaceDays.get(closestPlace.id)}
                   </>
                 ) : (
                   <>
-                    <Plus className="w-4 h-4 stroke-[3]" /> Add to Itinerary
+                    <Plus className="w-4 h-4" aria-hidden="true" /> Add to Itinerary
                   </>
                 )}
               </button>
 
-              {/* Prominent "Open in Explore" CTA Button */}
               <button
+                type="button"
                 onClick={() => navigateToExplore(closestPlace.id, closestPlace.category)}
-                className="py-2.5 px-4 rounded-xl bg-white hover:bg-gray-50 text-gray-900 border border-gray-200 font-semibold text-xs flex items-center gap-1.5 press-scale"
+                className="min-h-[44px] px-4 rounded-xl bg-white hover:bg-gray-50 text-gray-900 border border-gray-200 font-semibold text-xs flex items-center gap-1.5 press-scale"
               >
-                <span>Open in Explore</span>
-                <ExternalLink className="w-3.5 h-3.5 text-[#1F5A3F]" />
+                <span>Details</span>
+                <ExternalLink className="w-3.5 h-3.5 text-[#1F5A3F]" aria-hidden="true" />
               </button>
             </div>
-
           </div>
         </div>
       ) : (
-        <div className="absolute bottom-4 left-4 right-4 z-[500] pointer-events-auto animate-slideUp">
-          <div className="rounded-3xl bg-white border border-gray-200 p-4 shadow-lg text-center text-xs font-medium text-gray-500">
-            No verified landmarks found within 50 km of your live GPS.
+        <div className="absolute bottom-3 left-3 right-3 z-[500] pointer-events-auto animate-slideUp">
+          <div className="rounded-3xl bg-white border border-gray-200 p-4 shadow-lg text-center">
+            <p className="text-sm font-semibold text-gray-900">No places found here yet</p>
+            <p className="mt-0.5 text-xs text-gray-500">Try a different category, or pan the map to explore.</p>
           </div>
         </div>
       )}
@@ -621,7 +542,6 @@ export const MapView: React.FC = () => {
         currentTrip={currentTrip}
         onConfirm={handleConfirmAddToItinerary}
       />
-
     </div>
   );
 };

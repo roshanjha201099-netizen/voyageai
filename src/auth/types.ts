@@ -2,7 +2,7 @@ export type AuthProvider = 'GOOGLE' | 'APPLE' | 'PHONE' | 'EMAIL';
 export type AccountStatus = 'ACTIVE' | 'SUSPENDED' | 'DELETED';
 export type OnboardingStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED' | 'SKIPPED';
 
-export type OnboardingStep = 'welcome' | 'profile' | 'travel_style' | 'transport' | 'food' | 'activities' | 'budget' | 'ready';
+export type OnboardingStep = 'welcome' | 'profile' | 'travel_style' | 'transport' | 'food' | 'activities' | 'budget' | 'ready' | 'preferences' | 'PREFERENCES';
 
 export type TravelStyle = 'RELAXED' | 'ADVENTURE' | 'CULTURE' | 'FOODIE' | 'NATURE' | 'LUXURY' | 'BUDGET' | 'NIGHTLIFE';
 export type TransportPreference = 'WALK' | 'BIKE' | 'AUTO' | 'CAB' | 'PUBLIC_TRANSPORT';
@@ -78,4 +78,10 @@ export interface OnboardingUpdatePayload {
   budgetLevel?: BudgetLevel;
   onboardingStep?: OnboardingStep;
   onboardingStatus?: OnboardingStatus;
+}
+
+export interface RegisterPayload {
+  name: string;
+  email: string;
+  password: string;
 }

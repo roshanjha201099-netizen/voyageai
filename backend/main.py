@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timezone
 
 from database import get_db, SessionLocal, engine, Base, get_db_context, get_db_pool_status
-from models import LoginRequest, OnboardingRequest, SessionResponse
+from models import LoginRequest, RegisterRequest, OnboardingRequest, SessionResponse, AuthUser, UserProfile, UserPreferences
 from models_trip import TripModel
 from models_itinerary import ItineraryModel, ItineraryDayModel, ItineraryActivityModel
 from models_package import TripStayModel, TripTransportModel, TripExpenseModel
@@ -96,8 +96,11 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://tour-guide-v1.netlify.app",
+        "https://98e8-2401-4900-8f64-f3ac-f84f-b19f-1d6f-a085.ngrok-free.app",
         "https://8d4e-2401-4900-8f66-66c7-f943-ebbd-5fdc-c302.ngrok-free.app",
         "https://9f8b-2401-4900-8f64-3c24-c018-4e44-5211-fbf9.ngrok-free.app",
+        "https://a076-2401-4900-8f64-f3ac-15d7-ae54-cd55-7d08.ngrok-free.app",
+        "https://f6d4-2401-4900-8f64-f3ac-c7-79fc-1b00-dd14.ngrok-free.app",
         "http://localhost",
         "http://127.0.0.1",
         "http://localhost:80",
@@ -140,7 +143,45 @@ osm_limiter = RateLimiter(requests=20, window_seconds=60, key_prefix="rl:osm_sea
 general_limiter = RateLimiter(requests=100, window_seconds=60, key_prefix="rl:general")
 
 COOKIE_NAME = "voyageai_session"
+GUEST_COOKIE_NAME = "guest_session_id"
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+
+def set_session_cookie(response: Response, token: str, request: Optional[Request] = None):
+    is_secure = True
+    if request:
+        proto = request.headers.get("x-forwarded-proto", "")
+        scheme = request.url.scheme
+        host = request.headers.get("host", "")
+        if scheme == "http" and "localhost" in host and not proto.startswith("https") and "ngrok" not in host:
+            is_secure = False
+    samesite = "none" if is_secure else "lax"
+    response.set_cookie(
+        key=COOKIE_NAME,
+        value=token,
+        httponly=True,
+        max_age=7 * 24 * 3600,
+        expires=7 * 24 * 3600,
+        samesite=samesite,
+        secure=is_secure,
+        path="/"
+    )
+
+def delete_session_cookie(response: Response, request: Optional[Request] = None):
+    is_secure = True
+    if request:
+        proto = request.headers.get("x-forwarded-proto", "")
+        scheme = request.url.scheme
+        host = request.headers.get("host", "")
+        if scheme == "http" and "localhost" in host and not proto.startswith("https") and "ngrok" not in host:
+            is_secure = False
+    samesite = "none" if is_secure else "lax"
+    response.delete_cookie(
+        key=COOKIE_NAME,
+        path="/",
+        httponly=True,
+        samesite=samesite,
+        secure=is_secure
+    )
 
 def log_event(msg: str):
     pass
@@ -237,12 +278,20 @@ def log_frontend_payload(endpoint: str, payload: Any, user_email: Optional[str] 
     print("=" * 80 + "\n", flush=True)
 
 def extract_token_optional(request: Request, authorization: Optional[str] = Header(None)) -> Optional[str]:
+    # 1. HttpOnly session cookie
     token = request.cookies.get(COOKIE_NAME)
-    if not token and authorization:
-        if authorization.startswith("Bearer "):
-            token = authorization.split(" ")[1]
-        else:
-            token = authorization
+    # 2. Authorization header (Bearer ...) or X-Auth-Token header
+    if not token:
+        auth_hdr = authorization or request.headers.get("authorization") or request.headers.get("x-auth-token")
+        if auth_hdr:
+            auth_hdr = auth_hdr.strip()
+            if auth_hdr.lower().startswith("bearer "):
+                token = auth_hdr[7:].strip()
+            else:
+                token = auth_hdr
+    # 3. Query params fallback
+    if not token and hasattr(request, "query_params"):
+        token = request.query_params.get("token") or request.query_params.get("session_token")
     return token
 
 def extract_token(request: Request, authorization: Optional[str] = Header(None)) -> str:
@@ -261,46 +310,106 @@ def extract_ws_token(websocket: WebSocket, data: Optional[dict] = None) -> Optio
             if part.startswith(f"{COOKIE_NAME}="):
                 token = part.split("=", 1)[1]
                 break
-    # 2. Fallback to payload data for transitional compatibility
+    # 2. Extract from WebSocket headers
+    if not token:
+        auth_hdr = websocket.headers.get("authorization") or websocket.headers.get("x-auth-token")
+        if auth_hdr:
+            auth_hdr = auth_hdr.strip()
+            if auth_hdr.lower().startswith("bearer "):
+                token = auth_hdr[7:].strip()
+            else:
+                token = auth_hdr
+    # 3. Fallback to payload data
     if not token and data and isinstance(data, dict):
         token = data.get("token")
+        if not token and isinstance(data.get("payload"), dict):
+            token = data["payload"].get("token")
+    # 4. Fallback to query params
+    if not token and hasattr(websocket, "query_params"):
+        token = websocket.query_params.get("token")
     return token
 
 def get_current_user(
     request: Request,
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
-):
+) -> AuthUser:
     token = extract_token(request, authorization)
     try:
-        user_tuple = auth.get_session_user(db, token)
-        return user_tuple
+        auth_user, _, _ = auth.get_session_user(db, token)
+        return auth_user
     except Exception as err:
         log_event(f"❌ Session user lookup failed: {str(err)}")
-        raise HTTPException(status_code=401, detail=str(err))
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
 
-def get_current_user_optional(
+def get_current_user_profile(
     request: Request,
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
+    token = extract_token(request, authorization)
     try:
-        token = extract_token(request, authorization)
-        if token:
-            return auth.get_session_user(db, token)
-    except Exception:
-        pass
-    from models_db import AuthUserModel, UserProfileModel, UserPreferencesModel
-    demo_user = db.query(AuthUserModel).first()
-    if demo_user:
-        profile = db.query(UserProfileModel).filter(UserProfileModel.user_id == demo_user.id).first()
-        prefs = db.query(UserPreferencesModel).filter(UserPreferencesModel.user_id == demo_user.id).first()
-        return (
-            auth.to_pydantic_auth_user(demo_user),
-            auth.to_pydantic_user_profile(profile) if profile else None,
-            auth.to_pydantic_user_prefs(prefs) if prefs else None
+        return auth.get_session_user(db, token)
+    except Exception as err:
+        log_event(f"❌ Session user lookup failed: {str(err)}")
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+
+def get_current_user_or_guest(
+    request: Request,
+    response: Response,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Extracts authenticated user session token from HttpOnly cookie or Authorization header.
+    If no valid auth token is present, resolves or creates a unique guest_session_id cookie (guest_<uuid>).
+    Returns (AuthUser, UserProfile, UserPreferences, is_authenticated: bool).
+    """
+    token = extract_token_optional(request, authorization)
+    if token:
+        try:
+            auth_user, user_profile, user_prefs = auth.get_session_user(db, token)
+            return auth_user, user_profile, user_prefs, True
+        except Exception:
+            pass
+
+    guest_id = request.cookies.get(GUEST_COOKIE_NAME)
+    if not guest_id or not str(guest_id).startswith("guest_"):
+        guest_id = f"guest_{uuid.uuid4().hex[:10]}"
+        response.set_cookie(
+            key=GUEST_COOKIE_NAME,
+            value=guest_id,
+            httponly=True,
+            secure=COOKIE_SECURE,
+            samesite="lax",
+            max_age=365 * 86400,
+            path="/"
         )
-    raise HTTPException(status_code=401, detail="Authentication required")
+
+    from models import AuthUser
+    guest_auth_user = AuthUser(
+        id=guest_id,
+        provider="GUEST",
+        providerUserId=guest_id,
+        email=None,
+        phone=None,
+        emailVerified=False,
+        phoneVerified=False,
+        status="GUEST",
+        createdAt=auth.get_current_iso_time(),
+        lastLoginAt=auth.get_current_iso_time()
+    )
+
+    return guest_auth_user, None, None, False
+
+def get_current_user_optional(
+    request: Request,
+    response: Response,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    auth_user, user_profile, user_prefs, _ = get_current_user_or_guest(request, response, authorization, db)
+    return auth_user, user_profile, user_prefs
 
 def verify_trip_ownership(trip_id: str, user_id: str, db: Session) -> TripModel:
     trip = db.query(TripModel).filter(TripModel.id == trip_id, TripModel.user_id == user_id).first()
@@ -356,8 +465,50 @@ class RefinementExecutionRequest(BaseModel):
 def root():
     return {"app": "VoyageAI OS PostgreSQL API", "status": "online"}
 
+@app.post("/api/auth/register", dependencies=[Depends(general_limiter)])
+def register(req: RegisterRequest, request: Request, response: Response, db: Session = Depends(get_db)):
+    log_frontend_payload(
+        endpoint="POST /api/auth/register",
+        payload={"email": req.email, "name": req.name},
+        user_email=req.email,
+        usage_summary={
+            "name, email & password": "User registration credentials. Hashes password with bcrypt and writes records to auth_users, user_profiles, user_preferences."
+        }
+    )
+    clean_email = req.email.strip().lower()
+
+    from models_db import AuthUserModel
+    existing = db.query(AuthUserModel).filter(
+        (AuthUserModel.email == clean_email)
+        | (AuthUserModel.provider_user_id == clean_email)
+        | (AuthUserModel.provider_user_id == f"email_{clean_email}")
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="An account with this email already exists.")
+
+    try:
+        token, auth_user, user_profile, user_prefs = auth.register_user(db, req)
+        set_session_cookie(response, token, request)
+        return {
+            "status": "success",
+            "message": "User registered successfully",
+            "token": token,
+            "authUser": auth_user,
+            "userProfile": user_profile,
+            "userPreferences": user_prefs,
+            "user": {
+                "id": auth_user.id,
+                "email": auth_user.email,
+                "name": f"{user_profile.firstName} {user_profile.lastName or ''}".strip()
+            },
+            "onboardingStep": "PREFERENCES"
+        }
+    except Exception as e:
+        log_event(f"❌ Registration Execution Error: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+
 @app.post("/api/auth/login", dependencies=[Depends(general_limiter)])
-def login(req: LoginRequest, response: Response, db: Session = Depends(get_db)):
+def login(req: LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)):
     log_frontend_payload(
         endpoint="POST /api/auth/login",
         payload=req,
@@ -368,15 +519,7 @@ def login(req: LoginRequest, response: Response, db: Session = Depends(get_db)):
     )
     try:
         token, auth_user, user_profile, user_prefs = auth.authenticate_or_create_user(db, req)
-        response.set_cookie(
-            key=COOKIE_NAME,
-            value=token,
-            httponly=True,
-            max_age=86400 * 7,
-            samesite="none",
-            secure=True,
-            path="/"
-        )
+        set_session_cookie(response, token, request)
         return {
             "token": token,
             "authUser": auth_user,
@@ -387,45 +530,35 @@ def login(req: LoginRequest, response: Response, db: Session = Depends(get_db)):
         log_event(f"❌ Login Execution Error: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
+@app.get("/api/auth/me", dependencies=[Depends(general_limiter)])
 @app.get("/api/auth/session", dependencies=[Depends(general_limiter)])
-def get_session(
+def get_auth_me(
     request: Request,
+    response: Response,
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
+    """
+    Returns active session data for authenticated users, or guest details if unauthenticated.
+    """
+    auth_user, user_profile, user_prefs, is_authenticated = get_current_user_or_guest(request, response, authorization, db)
     token = extract_token_optional(request, authorization)
-    if not token:
+    if is_authenticated:
         return {
-            "token": None,
-            "authUser": None,
-            "userProfile": None,
-            "userPreferences": None
-        }
-
-    try:
-        user_tuple = auth.get_session_user(db, token)
-        if not user_tuple:
-            return {
-                "token": None,
-                "authUser": None,
-                "userProfile": None,
-                "userPreferences": None
-            }
-        auth_user, user_profile, user_prefs = user_tuple
-        return {
+            "authenticated": True,
             "token": token,
             "authUser": auth_user,
             "userProfile": user_profile,
             "userPreferences": user_prefs
         }
-    except Exception as err:
-        log_event(f"[SESSION NOTICE] Session not active: {str(err)}")
-        return {
-            "token": None,
-            "authUser": None,
-            "userProfile": None,
-            "userPreferences": None
-        }
+    return {
+        "authenticated": False,
+        "guestId": auth_user.id,
+        "token": None,
+        "authUser": None,
+        "userProfile": None,
+        "userPreferences": None
+    }
 
 @app.post("/api/auth/logout")
 def logout(
@@ -435,12 +568,13 @@ def logout(
     db: Session = Depends(get_db)
 ):
     try:
-        token = extract_token(request, authorization)
-        auth.revoke_session(db, token)
+        token = extract_token_optional(request, authorization)
+        if token:
+            auth.revoke_session(db, token)
     except Exception:
         pass
 
-    response.delete_cookie(key=COOKIE_NAME, path="/", httponly=True, samesite="none", secure=True)
+    delete_session_cookie(response, request)
     log_event("🚪 POST /api/auth/logout | Cookie Deleted & Session Revoked")
     return {"message": "Logged out successfully"}
 
@@ -448,14 +582,28 @@ def logout(
 @app.post("/api/user/onboarding", dependencies=[Depends(general_limiter)])
 def update_onboarding(
     req: OnboardingRequest,
-    user_data = Depends(get_current_user),
+    request: Request,
+    authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
-    auth_user, user_profile, user_prefs = user_data
+    token = extract_token_optional(request, authorization)
+    if not token and req.token:
+        token = req.token.strip()
+
+    if not token:
+        log_event("❌ update_onboarding: No authentication token found in cookies, headers, or body")
+        raise HTTPException(status_code=401, detail="Authentication token missing")
+
+    try:
+        current_user, _, _ = auth.get_session_user(db, token)
+    except Exception as err:
+        log_event(f"❌ Session user lookup failed: {str(err)}")
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+
     log_frontend_payload(
         endpoint="POST /api/user/onboarding",
         payload=req,
-        user_email=auth_user.email,
+        user_email=current_user.email,
         usage_summary={
             "firstName / lastName": "User profile name saved to PostgreSQL.",
             "travelStyles": "Preferred trip vibes used by AI itinerary generator.",
@@ -463,13 +611,38 @@ def update_onboarding(
         }
     )
     try:
-        updated_profile, updated_prefs = auth.update_user_onboarding(db, auth_user.id, req)
+        updated_profile, updated_prefs = auth.update_user_onboarding(db, current_user.id, req)
         return {
             "userProfile": updated_profile,
-            "userPreferences": updated_prefs}
+            "userPreferences": updated_prefs
+        }
     except Exception as e:
         log_event(f"❌ Onboarding Update Error: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/api/user/preferences", dependencies=[Depends(general_limiter)])
+@app.get("/api/preferences", dependencies=[Depends(general_limiter)])
+def get_user_preferences(
+    current_user: AuthUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    from models_db import UserPreferencesModel
+    prefs = db.query(UserPreferencesModel).filter(UserPreferencesModel.user_id == current_user.id).first()
+    if not prefs:
+        raise HTTPException(status_code=404, detail="Preferences not found")
+    return auth.to_pydantic_user_prefs(prefs)
+
+@app.get("/api/user/profile", dependencies=[Depends(general_limiter)])
+@app.get("/api/profile", dependencies=[Depends(general_limiter)])
+def get_user_profile(
+    current_user: AuthUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    from models_db import UserProfileModel
+    profile = db.query(UserProfileModel).filter(UserProfileModel.user_id == current_user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    return auth.to_pydantic_user_profile(profile)
 
 class SavePlaceRequest(BaseModel):
     place_id: str
@@ -479,11 +652,14 @@ class SavePlaceRequest(BaseModel):
     coordinates: Optional[List[float]] = None
 
 @app.post("/api/user/saved-places")
-def save_place(req: SavePlaceRequest):
+def save_place(
+    req: SavePlaceRequest,
+    current_user: AuthUser = Depends(get_current_user)
+):
     from redis_client import redis_conn
     if redis_conn:
         try:
-            key = "user:saved_places"
+            key = f"user:{current_user.id}:saved_places"
             redis_conn.hset(key, req.place_id, json.dumps(req.dict()))
             return {"status": "success", "message": f"Saved {req.title}"}
         except Exception as e:
@@ -491,11 +667,14 @@ def save_place(req: SavePlaceRequest):
     return {"status": "success", "message": f"Saved {req.title}"}
 
 @app.delete("/api/user/saved-places")
-def unsave_place(req: SavePlaceRequest):
+def unsave_place(
+    req: SavePlaceRequest,
+    current_user: AuthUser = Depends(get_current_user)
+):
     from redis_client import redis_conn
     if redis_conn:
         try:
-            key = "user:saved_places"
+            key = f"user:{current_user.id}:saved_places"
             redis_conn.hdel(key, req.place_id)
             return {"status": "success", "message": f"Unsaved {req.title}"}
         except Exception as e:
@@ -503,11 +682,13 @@ def unsave_place(req: SavePlaceRequest):
     return {"status": "success", "message": f"Unsaved {req.title}"}
 
 @app.get("/api/user/saved-places")
-def get_saved_places():
+def get_saved_places(
+    current_user: AuthUser = Depends(get_current_user)
+):
     from redis_client import redis_conn
     if redis_conn:
         try:
-            key = "user:saved_places"
+            key = f"user:{current_user.id}:saved_places"
             raw = redis_conn.hgetall(key)
             results = []
             for k, v in raw.items():
@@ -529,19 +710,10 @@ class LocationPayload(BaseModel):
 @app.post("/api/user/location")
 def update_user_location(
     payload: LocationPayload,
-    request: Request,
-    authorization: Optional[str] = Header(None),
-    db: Session = Depends(get_db)
+    current_user: AuthUser = Depends(get_current_user)
 ):
     import math
-    user_id = None
-    try:
-        token = extract_token(request, authorization)
-        user_tuple = auth.get_session_user(db, token)
-        if user_tuple:
-            user_id = user_tuple[0].id
-    except Exception:
-        pass
+    user_id = current_user.id
 
     acc = payload.accuracy_meters
     is_accurate = True
@@ -550,7 +722,7 @@ def update_user_location(
 
     # Haversine distance from last known position (meters)
     distance_delta_m = None
-    uid_key = user_id or "guest"
+    uid_key = user_id
     if uid_key in _user_location_history and len(_user_location_history[uid_key]) > 0:
         last = _user_location_history[uid_key][-1]
         lat1, lon1 = math.radians(last["latitude"]), math.radians(last["longitude"])
@@ -1655,22 +1827,10 @@ def get_pool_status():
 
 @app.get("/api/user/location/latest", dependencies=[Depends(general_limiter)])
 def get_latest_user_location(
-    request: Request,
-    authorization: Optional[str] = Header(None),
-    db: Session = Depends(get_db)
+    current_user: AuthUser = Depends(get_current_user)
 ):
     """Get the most recent location for the authenticated user."""
-    user_id = None
-    try:
-        token = extract_token(request, authorization)
-        user_tuple = auth.get_session_user(db, token)
-        if user_tuple:
-            user_id = user_tuple[0].id
-    except Exception:
-        pass
-
-    uid_key = user_id or "guest"
-    history = _user_location_history.get(uid_key, [])
+    history = _user_location_history.get(current_user.id, [])
     if not history:
         return {"status": "no_location", "message": "No location recorded yet."}
 
@@ -2022,7 +2182,11 @@ class AddItineraryItemRequest(BaseModel):
     order_index: Optional[int] = 0
 
 @app.post("/api/trips/itinerary/add")
-def add_to_itinerary(req: AddItineraryItemRequest, db: Session = Depends(get_db)):
+def add_to_itinerary(
+    req: AddItineraryItemRequest,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     from redis_client import redis_conn
     from models_trip import TripModel
     from models_itinerary import ItineraryModel, ItineraryDayModel, ItineraryActivityModel
@@ -2031,12 +2195,15 @@ def add_to_itinerary(req: AddItineraryItemRequest, db: Session = Depends(get_db)
     target_trip = None
 
     if req_trip_id and req_trip_id != "active_trip":
-        target_trip = db.query(TripModel).filter(TripModel.id == req_trip_id).first()
+        target_trip = db.query(TripModel).filter(TripModel.id == req_trip_id, TripModel.user_id == current_user.id).first()
 
     if not target_trip:
-        target_trip = db.query(TripModel).order_by(TripModel.created_at.desc()).first()
+        target_trip = db.query(TripModel).filter(TripModel.user_id == current_user.id).order_by(TripModel.created_at.desc()).first()
 
-    target_trip_id = target_trip.id if target_trip else req_trip_id
+    if not target_trip:
+        raise HTTPException(status_code=404, detail="No trip found for authenticated user")
+
+    target_trip_id = target_trip.id
     day_num = req.day_number or 1
 
     cost_val = 0
@@ -2154,7 +2321,12 @@ def add_to_itinerary(req: AddItineraryItemRequest, db: Session = Depends(get_db)
     }
 
 @app.get("/api/trips/itinerary/{trip_id}")
-def get_trip_itinerary(trip_id: str):
+def get_trip_itinerary(
+    trip_id: str,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    verify_trip_ownership(trip_id, current_user.id, db)
     from redis_client import redis_conn
     grouped_days = {}
     
@@ -2301,7 +2473,11 @@ class ExecuteSwapRequest(BaseModel):
     new_activity: dict
 
 @app.post("/api/trips/itinerary/swap-execute")
-def execute_swap(req: ExecuteSwapRequest, db: Session = Depends(get_db)):
+def execute_swap(
+    req: ExecuteSwapRequest,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     from redis_client import redis_conn
     from models_trip import TripModel
     from models_itinerary import ItineraryModel, ItineraryDayModel, ItineraryActivityModel
@@ -2310,12 +2486,15 @@ def execute_swap(req: ExecuteSwapRequest, db: Session = Depends(get_db)):
     target_trip = None
 
     if req_trip_id and req_trip_id != "active_trip":
-        target_trip = db.query(TripModel).filter(TripModel.id == req_trip_id).first()
+        target_trip = db.query(TripModel).filter(TripModel.id == req_trip_id, TripModel.user_id == current_user.id).first()
 
     if not target_trip:
-        target_trip = db.query(TripModel).order_by(TripModel.created_at.desc()).first()
+        target_trip = db.query(TripModel).filter(TripModel.user_id == current_user.id).order_by(TripModel.created_at.desc()).first()
 
-    target_trip_id = target_trip.id if target_trip else req_trip_id
+    if not target_trip:
+        raise HTTPException(status_code=404, detail="No trip found for authenticated user")
+
+    target_trip_id = target_trip.id
     day_num = req.day_number or 1
 
     new_act = req.new_activity or {}
@@ -2391,9 +2570,8 @@ def execute_swap(req: ExecuteSwapRequest, db: Session = Depends(get_db)):
 # ── TRIP DOMAIN ENDPOINTS ──
 
 @app.get("/api/trips", dependencies=[Depends(general_limiter)])
-def get_trips(user_data = Depends(get_current_user), db: Session = Depends(get_db)):
-    auth_user, _, _ = user_data
-    db_trips = db.query(TripModel).filter(TripModel.user_id == auth_user.id).all()
+def get_trips(current_user: AuthUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    db_trips = db.query(TripModel).filter(TripModel.user_id == current_user.id).order_by(TripModel.created_at.desc()).all()
     result = []
     for t in db_trips:
         result.append({
@@ -2425,7 +2603,6 @@ class HistoryItem(BaseModel):
     content: str
 
 class TourGuideChatRequest(BaseModel):
-    user_id: Optional[str] = "guest_user"
     message: str
     mode: Optional[str] = "local"
     trip_id: Optional[str] = None
@@ -2438,13 +2615,18 @@ class TourGuideChatRequest(BaseModel):
     recent_history: Optional[List[HistoryItem]] = []
 
 @app.post("/api/tour-guide/chat")
-def chat_with_concierge(payload: TourGuideChatRequest, db: Session = Depends(get_db)):
+@app.post("/api/chat")
+def chat_with_concierge(
+    payload: TourGuideChatRequest,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     from tour_guide_service import process_concierge_message
     eff_lat = payload.lat if payload.lat is not None else payload.latitude
     eff_lng = payload.lng if payload.lng is not None else payload.longitude
     recent_hist_dicts = [h.dict() for h in (payload.recent_history or [])]
     return process_concierge_message(
-        user_id=payload.user_id or "guest_user",
+        user_id=current_user.id,
         message=payload.message,
         mode=payload.mode or "local",
         trip_id=payload.trip_id,
@@ -2456,18 +2638,29 @@ def chat_with_concierge(payload: TourGuideChatRequest, db: Session = Depends(get
     )
 
 @app.get("/api/tour-guide/history")
-def get_tour_guide_history(user_id: str = Query("guest_user"), limit: int = 50, db: Session = Depends(get_db)):
+@app.get("/api/chat/history")
+def get_tour_guide_history(
+    trip_id: Optional[str] = None,
+    limit: int = 50,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     from tour_guide_service import fetch_chat_history
-    return fetch_chat_history(user_id=user_id, limit=limit, db=db)
+    return fetch_chat_history(user_id=current_user.id, trip_id=trip_id, limit=limit, db=db)
 
 @app.post("/trips", status_code=status.HTTP_201_CREATED, dependencies=[Depends(ai_limiter)])
 @app.post("/api/trips", status_code=status.HTTP_201_CREATED, dependencies=[Depends(ai_limiter)])
 def create_trip(
     trip_data: dict,
-    user_data = Depends(get_current_user_optional),
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    auth_user, user_profile, user_prefs = user_data
+    from models_db import UserProfileModel, UserPreferencesModel
+    user_profile_db = db.query(UserProfileModel).filter(UserProfileModel.user_id == current_user.id).first()
+    user_prefs_db = db.query(UserPreferencesModel).filter(UserPreferencesModel.user_id == current_user.id).first()
+    user_profile = auth.to_pydantic_user_profile(user_profile_db) if user_profile_db else None
+    user_prefs = auth.to_pydantic_user_prefs(user_prefs_db) if user_prefs_db else UserPreferences(userId=current_user.id)
+
     destination = trip_data.get("destination") or {}
     dest_name = destination.get("name") if isinstance(destination, dict) else "Destination"
 
@@ -2475,7 +2668,7 @@ def create_trip(
     log_frontend_payload(
         endpoint="POST /api/trips (Create Trip Wizard)",
         payload=trip_data,
-        user_email=auth_user.email,
+        user_email=current_user.email,
         usage_summary={
             "destination": f"Destination details ('{dest_name}'). Used for POI search, maps, and AI prompt context.",
             "startDate / endDate": f"Dates ('{trip_data.get('startDate')}' to '{trip_data.get('endDate')}'). Used for computing total days and daily schedule.",
@@ -2490,7 +2683,7 @@ def create_trip(
     client_req_id = trip_data.get("clientRequestId")
     if client_req_id:
         existing_trip = db.query(TripModel).filter(
-            TripModel.user_id == auth_user.id,
+            TripModel.user_id == current_user.id,
             TripModel.client_request_id == client_req_id
         ).first()
         if existing_trip:
@@ -2529,7 +2722,7 @@ def create_trip(
         total_days = 4
 
     print(f"\n==================================================", flush=True)
-    print(f"[TRIP CREATION STARTED] Destination: '{dest_name}' ({total_days} Days) | User: {auth_user.email}", flush=True)
+    print(f"[TRIP CREATION STARTED] Destination: '{dest_name}' ({total_days} Days) | User: {current_user.email}", flush=True)
 
     # 4. Resolve Cover Media
     cover_media = media_service.resolve_cover_media(destination)
@@ -2551,9 +2744,9 @@ def create_trip(
     for idx in range(travelers_count):
         travelers_list.append({
             "id": f"tr_{idx + 1}",
-            "name": user_profile.firstName if idx == 0 else f"Companion {idx + 1}",
+            "name": (user_profile.firstName if user_profile else "Me") if idx == 0 else f"Companion {idx + 1}",
             "type": "ADULT",
-            "avatarUrl": user_profile.avatarUrl if idx == 0 else None
+            "avatarUrl": user_profile.avatarUrl if (user_profile and idx == 0) else None
         })
 
     budget_obj = {
@@ -2567,7 +2760,7 @@ def create_trip(
 
     new_trip = TripModel(
         id=trip_id,
-        user_id=auth_user.id,
+        user_id=current_user.id,
         client_request_id=client_req_id,
         title=f"{dest_name} Tour Package",
         status="PLANNING",
@@ -2612,10 +2805,12 @@ def create_trip(
 
 @app.get("/trips/{trip_id}", dependencies=[Depends(general_limiter)])
 @app.get("/api/trips/{trip_id}", dependencies=[Depends(general_limiter)])
-def get_trip_by_id(trip_id: str, db: Session = Depends(get_db)):
-    trip = db.query(TripModel).filter(TripModel.id == trip_id).first()
-    if not trip:
-        raise HTTPException(status_code=404, detail=f"Trip '{trip_id}' not found")
+def get_trip_by_id(
+    trip_id: str,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    trip = verify_trip_ownership(trip_id, current_user.id, db)
     return {
         "id": trip.id,
         "tripId": trip.id,
@@ -2639,8 +2834,7 @@ def get_trip_by_id(trip_id: str, db: Session = Depends(get_db)):
 @app.get("/api/trips/{trip_id}/itinerary", dependencies=[Depends(general_limiter)])
 def get_itinerary(
     trip_id: str,
-    request: Request,
-    authorization: Optional[str] = Header(None),
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     from redis_client import redis_conn
@@ -2651,12 +2845,14 @@ def get_itinerary(
     trip = None
 
     if req_trip_id != "active_trip":
-        trip = db.query(TripModel).filter(TripModel.id == req_trip_id).first()
+        trip = verify_trip_ownership(req_trip_id, current_user.id, db)
+    else:
+        trip = db.query(TripModel).filter(TripModel.user_id == current_user.id).order_by(TripModel.created_at.desc()).first()
 
     if not trip:
-        trip = db.query(TripModel).order_by(TripModel.created_at.desc()).first()
+        raise HTTPException(status_code=404, detail="Trip not found or unauthorized access")
 
-    target_trip_id = trip.id if trip else req_trip_id
+    target_trip_id = trip.id
 
     itin = db.query(ItineraryModel).filter(ItineraryModel.trip_id == target_trip_id).first() if target_trip_id else None
     days_data = []
@@ -2741,13 +2937,10 @@ def get_itinerary(
 @app.post("/api/trips/{trip_id}/itinerary/regenerate", status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(ai_limiter)])
 def regenerate_itinerary(
     trip_id: str,
-    user_data = Depends(get_current_user),
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    auth_user, _, _ = user_data
-    trip = db.query(TripModel).filter(TripModel.id == trip_id, TripModel.user_id == auth_user.id).first()
-    if not trip:
-        raise HTTPException(status_code=404, detail="Trip not found")
+    trip = verify_trip_ownership(trip_id, current_user.id, db)
 
     trip.itinerary_status = "GENERATING"
     db.commit()
@@ -2756,8 +2949,8 @@ def regenerate_itinerary(
     return {"status": "GENERATING", "tripId": trip_id}
 
 @app.delete("/api/trips/{trip_id}", dependencies=[Depends(general_limiter)])
-def delete_trip(trip_id: str, user_data = Depends(get_current_user), db: Session = Depends(get_db)):
-    auth_user, _, _ = user_data
+def delete_trip(trip_id: str, current_user: AuthUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    verify_trip_ownership(trip_id, current_user.id, db)
     itineraries = db.query(ItineraryModel).filter(ItineraryModel.trip_id == trip_id).all()
     for itin in itineraries:
         days = db.query(ItineraryDayModel).filter(ItineraryDayModel.itinerary_id == itin.id).all()
@@ -2768,7 +2961,7 @@ def delete_trip(trip_id: str, user_data = Depends(get_current_user), db: Session
     db.query(TripStayModel).filter(TripStayModel.trip_id == trip_id).delete()
     db.query(TripTransportModel).filter(TripTransportModel.trip_id == trip_id).delete()
     db.query(TripExpenseModel).filter(TripExpenseModel.trip_id == trip_id).delete()
-    db.query(TripModel).filter(TripModel.id == trip_id, TripModel.user_id == auth_user.id).delete()
+    db.query(TripModel).filter(TripModel.id == trip_id, TripModel.user_id == current_user.id).delete()
     db.commit()
     log_event(f"🗑️ Deleted trip {trip_id} from PostgreSQL")
     return {"message": "Trip deleted successfully"}
@@ -2810,14 +3003,13 @@ class RefinementExecutionRequest(BaseModel):
 @app.post("/api/ai/concierge", dependencies=[Depends(ai_limiter)])
 def ai_concierge(
     req: ConciergeRequest,
-    user_data = Depends(get_current_user),
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    auth_user, user_profile, _ = user_data
     log_frontend_payload(
         endpoint="POST /api/ai/concierge",
         payload=req,
-        user_email=auth_user.email,
+        user_email=current_user.email,
         usage_summary={
             "message": "User query string sent from AI Concierge drawer.",
             "intent": f"Query intent ({req.intent}). Routes query to chat, swap, or search pipeline.",
@@ -2831,7 +3023,7 @@ def ai_concierge(
     trip_context = getattr(req, "tripContext", None) or getattr(req, "trip_context", None) or {}
     itinerary_summary = []
     if req.tripId:
-        trip = verify_trip_ownership(req.tripId, auth_user.id, db)
+        trip = verify_trip_ownership(req.tripId, current_user.id, db)
         destination_info = trip.destination if isinstance(trip.destination, dict) else {"name": "India"}
         trip_context = {
             "destination": destination_info,
@@ -2863,7 +3055,7 @@ def ai_concierge(
     is_swap_intent = req.intent == "SWAP_ACTIVITY" or "Recommend alternatives for activity:" in req.message or "swap" in req.message.lower()
 
     if is_swap_intent:
-        trip = verify_trip_ownership(req.tripId, auth_user.id, db) if req.tripId else None
+        trip = verify_trip_ownership(req.tripId, current_user.id, db) if req.tripId else None
         itin = db.query(ItineraryModel).filter(ItineraryModel.trip_id == trip.id).first() if trip else None
         
         activity = None
@@ -2957,7 +3149,7 @@ def ai_concierge(
             flow_name="AI Concierge Assistant Chat",
             user_sends=req,
             backend_received={
-                "user": auth_user.email,
+                "user": current_user.email,
                 "message": req.message,
                 "intent": req.intent,
                 "tripId": req.tripId
@@ -2979,12 +3171,10 @@ def swap_itinerary_activity(
     trip_id: str,
     activity_id: str,
     req: ActivitySwapRequest,
-    user_data = Depends(get_current_user),
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    auth_user, _, _ = user_data
-
-    trip = verify_trip_ownership(trip_id, auth_user.id, db)
+    trip = verify_trip_ownership(trip_id, current_user.id, db)
 
     activity = db.query(ItineraryActivityModel).filter(ItineraryActivityModel.id == activity_id).first()
     if not activity:
@@ -3051,11 +3241,10 @@ def optimize_day_flow_endpoint(
     trip_id: str,
     day_id: str,
     req: DayOptimizationRequest = DayOptimizationRequest(),
-    user_data = Depends(get_current_user),
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    auth_user, _, _ = user_data
-    verify_trip_ownership(trip_id, auth_user.id, db)
+    verify_trip_ownership(trip_id, current_user.id, db)
     try:
         res = optimize_day_flow_service(db, trip_id, day_id, req.goal or "MINIMIZE_TRAVEL_TIME")
         return res
@@ -3065,11 +3254,10 @@ def optimize_day_flow_endpoint(
 @app.post("/api/trips/{trip_id}/itinerary/optimize-budget", dependencies=[Depends(ai_limiter)])
 def optimize_budget_endpoint(
     trip_id: str,
-    user_data = Depends(get_current_user),
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    auth_user, _, _ = user_data
-    verify_trip_ownership(trip_id, auth_user.id, db)
+    verify_trip_ownership(trip_id, current_user.id, db)
     try:
         res = optimize_budget_service(db, trip_id)
         return res
@@ -3079,11 +3267,10 @@ def optimize_budget_endpoint(
 @app.post("/api/trips/{trip_id}/itinerary/weather-replan", dependencies=[Depends(ai_limiter)])
 def weather_replan_endpoint(
     trip_id: str,
-    user_data = Depends(get_current_user),
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    auth_user, _, _ = user_data
-    verify_trip_ownership(trip_id, auth_user.id, db)
+    verify_trip_ownership(trip_id, current_user.id, db)
     try:
         res = weather_replan_service(db, trip_id)
         return res
@@ -3094,11 +3281,10 @@ def weather_replan_endpoint(
 def execute_refinements_endpoint(
     trip_id: str,
     req: RefinementExecutionRequest,
-    user_data = Depends(get_current_user),
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    auth_user, _, _ = user_data
-    verify_trip_ownership(trip_id, auth_user.id, db)
+    verify_trip_ownership(trip_id, current_user.id, db)
     try:
         res = execute_refinement_actions_service(db, trip_id, req.actions)
         return res
@@ -3112,11 +3298,10 @@ def execute_refinements_endpoint(
 def create_trip_stay(
     trip_id: str,
     stay_data: dict,
-    user_data = Depends(get_current_user),
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    auth_user, _, _ = user_data
-    verify_trip_ownership(trip_id, auth_user.id, db)
+    verify_trip_ownership(trip_id, current_user.id, db)
 
     stay_id = f"stay_{uuid.uuid4().hex[:12]}"
     now = datetime.utcnow().isoformat() + "Z"
@@ -3165,11 +3350,10 @@ def create_trip_stay(
 @app.get("/api/trips/{trip_id}/stays", dependencies=[Depends(general_limiter)])
 def get_trip_stays(
     trip_id: str,
-    user_data = Depends(get_current_user),
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    auth_user, _, _ = user_data
-    verify_trip_ownership(trip_id, auth_user.id, db)
+    verify_trip_ownership(trip_id, current_user.id, db)
 
     stays = db.query(TripStayModel).filter(TripStayModel.trip_id == trip_id).order_by(TripStayModel.created_at.desc()).all()
     return [
@@ -3196,11 +3380,10 @@ def get_trip_stays(
 def create_trip_transport(
     trip_id: str,
     transport_data: dict,
-    user_data = Depends(get_current_user),
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    auth_user, _, _ = user_data
-    verify_trip_ownership(trip_id, auth_user.id, db)
+    verify_trip_ownership(trip_id, current_user.id, db)
 
     transport_id = f"trsp_{uuid.uuid4().hex[:12]}"
     now = datetime.utcnow().isoformat() + "Z"
@@ -3247,11 +3430,10 @@ def create_trip_transport(
 @app.get("/api/trips/{trip_id}/transports", dependencies=[Depends(general_limiter)])
 def get_trip_transports(
     trip_id: str,
-    user_data = Depends(get_current_user),
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    auth_user, _, _ = user_data
-    verify_trip_ownership(trip_id, auth_user.id, db)
+    verify_trip_ownership(trip_id, current_user.id, db)
 
     transports = db.query(TripTransportModel).filter(TripTransportModel.trip_id == trip_id).order_by(TripTransportModel.created_at.desc()).all()
     return [
@@ -3277,11 +3459,10 @@ def get_trip_transports(
 def create_trip_expense(
     trip_id: str,
     expense_data: dict,
-    user_data = Depends(get_current_user),
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    auth_user, user_profile, _ = user_data
-    verify_trip_ownership(trip_id, auth_user.id, db)
+    verify_trip_ownership(trip_id, current_user.id, db)
 
     expense_id = f"exp_{uuid.uuid4().hex[:12]}"
     now = datetime.utcnow().isoformat() + "Z"
@@ -3297,7 +3478,7 @@ def create_trip_expense(
         title=expense_data.get("title", "Expense"),
         amount=float(expense_data.get("amount", 0.0)),
         category=category_val,
-        paid_by=expense_data.get("paidBy", user_profile.firstName if user_profile else "Me"),
+        paid_by=expense_data.get("paidBy", current_user.name or "Me"),
         is_split=bool(expense_data.get("isSplit", False)),
         created_at=now
     )
@@ -3320,11 +3501,10 @@ def create_trip_expense(
 @app.get("/api/trips/{trip_id}/expenses", dependencies=[Depends(general_limiter)])
 def get_trip_expenses(
     trip_id: str,
-    user_data = Depends(get_current_user),
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    auth_user, _, _ = user_data
-    verify_trip_ownership(trip_id, auth_user.id, db)
+    verify_trip_ownership(trip_id, current_user.id, db)
 
     expenses = db.query(TripExpenseModel).filter(TripExpenseModel.trip_id == trip_id).order_by(TripExpenseModel.created_at.desc()).all()
     return [
@@ -3362,28 +3542,21 @@ def tour_guide_nearby(
     lat: float,
     lng: float,
     radius: int = 5000,
-    request: Request = None,
-    authorization: Optional[str] = Header(None),
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Discover nearby POIs within radius using Overpass API (max 5km)."""
     radius = min(radius, 5000)
 
-    # Get user for session + preferences
-    user_id = "guest"
+    user_id = current_user.id
+    from models_db import UserPreferencesModel
+    user_prefs_obj = db.query(UserPreferencesModel).filter(UserPreferencesModel.user_id == user_id).first()
     user_prefs = None
-    try:
-        token = extract_token(request, authorization)
-        user_tuple = auth.get_session_user(db, token)
-        if user_tuple:
-            user_id = user_tuple[0].id
-            if user_tuple[2]:
-                user_prefs = {
-                    "activityInterests": user_tuple[2].activity_interests or [],
-                    "travelStyles": user_tuple[2].travel_styles or [],
-                }
-    except Exception:
-        pass
+    if user_prefs_obj:
+        user_prefs = {
+            "activityInterests": user_prefs_obj.activity_interests or [],
+            "travelStyles": user_prefs_obj.travel_styles or [],
+        }
 
     log_event(f"TOUR GUIDE NEARBY | User: {user_id} | Center: ({lat:.4f}, {lng:.4f}) | Radius: {radius}m")
 
@@ -3415,20 +3588,11 @@ def tour_guide_nearby(
 @app.post("/api/tour-guide/visit", dependencies=[Depends(general_limiter)])
 def tour_guide_visit(
     req: TourGuideVisitRequest,
-    request: Request = None,
-    authorization: Optional[str] = Header(None),
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Set the current place focus for the tour guide session."""
-    user_id = "guest"
-    try:
-        token = extract_token(request, authorization)
-        user_tuple = auth.get_session_user(db, token)
-        if user_tuple:
-            user_id = user_tuple[0].id
-    except Exception:
-        pass
-
+    user_id = current_user.id
     session = get_or_create_session(user_id)
     session["current_place_id"] = req.place_id
 
@@ -3448,20 +3612,11 @@ def tour_guide_visit(
 
 @app.get("/api/tour-guide/session", dependencies=[Depends(general_limiter)])
 def tour_guide_session(
-    request: Request = None,
-    authorization: Optional[str] = Header(None),
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get current tour guide session state."""
-    user_id = "guest"
-    try:
-        token = extract_token(request, authorization)
-        user_tuple = auth.get_session_user(db, token)
-        if user_tuple:
-            user_id = user_tuple[0].id
-    except Exception:
-        pass
-
+    user_id = current_user.id
     session = get_or_create_session(user_id)
     return {
         "currentPlaceId": session.get("current_place_id"),
@@ -3474,3 +3629,4 @@ def tour_guide_session(
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, access_log=True)
+# Reload triggered

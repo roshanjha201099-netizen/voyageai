@@ -4,7 +4,7 @@ import { Sparkles, ShieldCheck, Mail, Lock, User, ArrowRight } from 'lucide-reac
 import { useNavigate } from 'react-router-dom';
 
 export const LoginScreen: React.FC = () => {
-  const { signIn, isLoading } = useAuth();
+  const { signIn, signUp, isLoading } = useAuth();
   const navigate = useNavigate();
 
   const [isRegister, setIsRegister] = useState(false);
@@ -17,18 +17,41 @@ export const LoginScreen: React.FC = () => {
     e.preventDefault();
     setErrorMsg('');
 
-    if (!email || !password) {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !password) {
       setErrorMsg('Please enter both email and password.');
+      return;
+    }
+
+    if (isRegister) {
+      const cleanName = name.trim();
+      if (!cleanName || cleanName.length < 2) {
+        setErrorMsg('Please enter your full name (minimum 2 characters).');
+        return;
+      }
+      if (password.length < 6) {
+        setErrorMsg('Password must be at least 6 characters.');
+        return;
+      }
+
+      try {
+        await signUp({
+          name: cleanName,
+          email: cleanEmail,
+          password,
+        });
+        navigate('/onboarding');
+      } catch (err: any) {
+        setErrorMsg(err?.message || 'Registration failed. Please try again.');
+      }
       return;
     }
 
     try {
       await signIn({
         provider: 'EMAIL',
-        email: email.trim().toLowerCase(),
+        email: cleanEmail,
         password,
-        name: isRegister && name ? name.trim() : (email.split('@')[0].charAt(0).toUpperCase() + email.split('@')[0].slice(1)),
-        isRegister,
       });
       navigate('/onboarding');
     } catch (err: any) {
@@ -50,7 +73,7 @@ export const LoginScreen: React.FC = () => {
             Welcome to Voyage<span className="text-[#355F58]">AI</span>
           </h1>
           <p className="text-sm text-[#5F6863]">
-            {isRegister ? 'Passwordless email auto-registration & server session' : 'Passwordless email login & server session'}
+            {isRegister ? 'Create your VoyageAI account to personalize your journey' : 'Sign in to access your journeys and itineraries'}
           </p>
         </div>
       </div>
@@ -92,6 +115,8 @@ export const LoginScreen: React.FC = () => {
                 <User className="w-4 h-4 text-[#7C8580] absolute left-3.5" />
                 <input
                   type="text"
+                  required
+                  minLength={2}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="e.g. Alex Sharma"
@@ -123,9 +148,10 @@ export const LoginScreen: React.FC = () => {
               <input
                 type="password"
                 required
+                minLength={isRegister ? 6 : 1}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
+                placeholder={isRegister ? "Minimum 6 characters" : "••••••••"}
                 className="w-full bg-[#F6F7F5] border border-[#D9DEDA] focus:border-[#355F58] focus:bg-white rounded-2xl pl-10 pr-4 py-3 text-sm text-[#1F2522] placeholder-[#7C8580] outline-none transition-all"
               />
             </div>

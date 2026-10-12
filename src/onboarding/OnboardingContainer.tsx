@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import type { OnboardingStep } from '../auth/types';
 
@@ -12,14 +13,21 @@ import { BudgetScreen } from './BudgetScreen';
 import { ReadyScreen } from './ReadyScreen';
 
 export const OnboardingContainer: React.FC = () => {
+  const navigate = useNavigate();
   const { userProfile, updateOnboarding } = useAuth();
   const currentStep: OnboardingStep = userProfile?.onboardingStep || 'welcome';
 
   const handleSkipAll = async () => {
-    await updateOnboarding({
-      onboardingStep: 'ready',
-      onboardingStatus: 'SKIPPED',
-    });
+    try {
+      await updateOnboarding({
+        onboardingStep: 'ready',
+        onboardingStatus: 'SKIPPED',
+      });
+    } catch (e) {
+      console.warn('handleSkipAll error:', e);
+    } finally {
+      navigate('/', { replace: true });
+    }
   };
 
   const renderStepComponent = () => {
@@ -28,16 +36,26 @@ export const OnboardingContainer: React.FC = () => {
         return (
           <WelcomeScreen
             onNext={async () => {
-              await updateOnboarding({
-                onboardingStep: 'profile',
-                onboardingStatus: 'IN_PROGRESS',
-              });
+              try {
+                await updateOnboarding({
+                  onboardingStep: 'profile',
+                  onboardingStatus: 'IN_PROGRESS',
+                });
+              } catch (e) {
+                console.warn('onNext error:', e);
+              }
             }}
             onSkip={async () => {
-              await updateOnboarding({
-                onboardingStep: 'ready',
-                onboardingStatus: 'SKIPPED',
-              });
+              try {
+                await updateOnboarding({
+                  onboardingStep: 'ready',
+                  onboardingStatus: 'SKIPPED',
+                });
+              } catch (e) {
+                console.warn('onSkip error:', e);
+              } finally {
+                navigate('/', { replace: true });
+              }
             }}
           />
         );
@@ -52,6 +70,8 @@ export const OnboardingContainer: React.FC = () => {
             }}
           />
         );
+      case 'preferences':
+      case 'PREFERENCES':
       case 'travel_style':
         return <TravelStyleScreen />;
       case 'transport':
@@ -68,16 +88,26 @@ export const OnboardingContainer: React.FC = () => {
         return (
           <WelcomeScreen
             onNext={async () => {
-              await updateOnboarding({
-                onboardingStep: 'profile',
-                onboardingStatus: 'IN_PROGRESS',
-              });
+              try {
+                await updateOnboarding({
+                  onboardingStep: 'profile',
+                  onboardingStatus: 'IN_PROGRESS',
+                });
+              } catch (e) {
+                console.warn('default onNext error:', e);
+              }
             }}
             onSkip={async () => {
-              await updateOnboarding({
-                onboardingStep: 'ready',
-                onboardingStatus: 'SKIPPED',
-              });
+              try {
+                await updateOnboarding({
+                  onboardingStep: 'ready',
+                  onboardingStatus: 'SKIPPED',
+                });
+              } catch (e) {
+                console.warn('default onSkip error:', e);
+              } finally {
+                navigate('/', { replace: true });
+              }
             }}
           />
         );

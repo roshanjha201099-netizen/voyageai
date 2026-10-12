@@ -7,8 +7,20 @@ from typing import Tuple, Optional
 from sqlalchemy.orm import Session
 
 from database import engine, Base
-from models import AuthUser, UserProfile, UserPreferences, LoginRequest, OnboardingRequest
+from models import AuthUser, UserProfile, UserPreferences, LoginRequest, RegisterRequest, OnboardingRequest
 from models_db import AuthUserModel, UserProfileModel, UserPreferencesModel, SessionModel
+from passlib.context import CryptContext
+
+# CryptContext for bcrypt password hashing
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password[:72])
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    if not hashed_password:
+        return False
+    return pwd_context.verify(plain_password[:72], hashed_password)
 
 # Create database tables automatically if they don't exist
 Base.metadata.create_all(bind=engine)
@@ -85,6 +97,82 @@ def create_session_record(db: Session, user_id: str) -> Tuple[str, SessionModel]
     db.add(session_record)
     return raw_token, session_record
 
+def register_user(db: Session, req: RegisterRequest) -> Tuple[str, AuthUser, UserProfile, UserPreferences]:
+    clean_email = req.email.strip().lower()
+    clean_name = req.name.strip()
+
+    # Check duplicate
+    existing = db.query(AuthUserModel).filter(
+        (AuthUserModel.email == clean_email)
+        | (AuthUserModel.provider_user_id == clean_email)
+        | (AuthUserModel.provider_user_id == f"email_{clean_email}")
+    ).first()
+    if existing:
+        raise ValueError("An account with this email already exists.")
+
+    user_id = f"usr_{uuid.uuid4().hex[:10]}"
+    hashed_pw = hash_password(req.password)
+    now = get_current_iso_time()
+
+    name_parts = clean_name.split()
+    first_name = name_parts[0] if name_parts else clean_email.split('@')[0].capitalize()
+    last_name = " ".join(name_parts[1:]) if len(name_parts) > 1 else None
+    avatar = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80"
+
+    db_user = AuthUserModel(
+        id=user_id,
+        provider="EMAIL",
+        provider_user_id=clean_email,
+        email=clean_email,
+        password_hash=hashed_pw,
+        phone=None,
+        email_verified=True,
+        phone_verified=True,
+        status="ACTIVE",
+        created_at=now,
+        last_login_at=now
+    )
+
+    db_profile = UserProfileModel(
+        user_id=user_id,
+        first_name=first_name,
+        last_name=last_name,
+        avatar_url=avatar,
+        preferred_language="en",
+        preferred_currency="INR",
+        timezone="Asia/Kolkata",
+        onboarding_status="PENDING",
+        onboarding_step="PREFERENCES",
+        created_at=now,
+        updated_at=now
+    )
+
+    db_prefs = UserPreferencesModel(
+        user_id=user_id,
+        travel_styles_json=json.dumps([]),
+        transport_preferences_json=json.dumps([]),
+        dietary_preferences_json=json.dumps([]),
+        food_interests_json=json.dumps([]),
+        activity_interests_json=json.dumps([]),
+        budget_level="MODERATE",
+        created_at=now,
+        updated_at=now
+    )
+
+    raw_token, _ = create_session_record(db, user_id)
+
+    db.add(db_user)
+    db.add(db_profile)
+    db.add(db_prefs)
+    db.commit()
+
+    return (
+        raw_token,
+        to_pydantic_auth_user(db_user),
+        to_pydantic_user_profile(db_profile),
+        to_pydantic_user_prefs(db_prefs)
+    )
+
 def authenticate_or_create_user(db: Session, req: LoginRequest) -> Tuple[str, AuthUser, UserProfile, UserPreferences]:
     clean_email = req.email.strip().lower()
 
@@ -97,10 +185,19 @@ def authenticate_or_create_user(db: Session, req: LoginRequest) -> Tuple[str, Au
 
     # Search existing user by email or provider_user_id
     db_user = db.query(AuthUserModel).filter(
-        (AuthUserModel.provider_user_id == provider_id) | (AuthUserModel.email == clean_email)
+        (AuthUserModel.provider_user_id == provider_id)
+        | (AuthUserModel.provider_user_id == clean_email)
+        | (AuthUserModel.email == clean_email)
     ).first()
 
     if db_user:
+        # Check password if user has password_hash
+        if db_user.password_hash:
+            if not req.password:
+                raise ValueError("Password is required for this account.")
+            if not verify_password(req.password, db_user.password_hash):
+                raise ValueError("Invalid password. Please check your credentials.")
+
         db_user.last_login_at = now
         raw_token, _ = create_session_record(db, db_user.id)
 
@@ -292,10 +389,37 @@ def update_user_onboarding(db: Session, user_id: str, req: OnboardingRequest) ->
     db_profile = db.query(UserProfileModel).filter(UserProfileModel.user_id == user_id).first()
     db_prefs = db.query(UserPreferencesModel).filter(UserPreferencesModel.user_id == user_id).first()
 
-    if not db_profile or not db_prefs:
-        raise ValueError("User profile or preferences record not found")
-
     now = get_current_iso_time()
+
+    if not db_profile:
+        first_n = req.firstName or "Traveler"
+        db_profile = UserProfileModel(
+            user_id=user_id,
+            first_name=first_n,
+            last_name=req.lastName,
+            preferred_language="en",
+            preferred_currency="INR",
+            timezone="Asia/Kolkata",
+            onboarding_status="NOT_STARTED",
+            onboarding_step="welcome",
+            created_at=now,
+            updated_at=now
+        )
+        db.add(db_profile)
+
+    if not db_prefs:
+        db_prefs = UserPreferencesModel(
+            user_id=user_id,
+            travel_styles_json=json.dumps(["RELAXED", "FOODIE"]),
+            transport_preferences_json=json.dumps(["CAB"]),
+            dietary_preferences_json=json.dumps(["EVERYTHING"]),
+            food_interests_json=json.dumps(["LOCAL"]),
+            activity_interests_json=json.dumps(["BEACHES"]),
+            budget_level="MODERATE",
+            created_at=now,
+            updated_at=now
+        )
+        db.add(db_prefs)
 
     if req.firstName is not None:
         db_profile.first_name = req.firstName

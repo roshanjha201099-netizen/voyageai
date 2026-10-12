@@ -6,6 +6,7 @@ import { Send, Map, Utensils, Car, Wallet, Sparkles, CheckCircle2, AlertCircle, 
 import { useNavigate } from 'react-router-dom';
 import { wsClient } from '../../services/wsClient';
 import { FormattedText } from '../common/FormattedText';
+import { getApiBaseUrl, DEFAULT_FETCH_OPTIONS } from '../../config/apiConfig';
 
 interface SwapRecommendation {
   id: string;
@@ -142,14 +143,11 @@ export const AIAssistantSheet: React.FC = () => {
       } catch (wsErr) {
         console.warn('WebSocket Concierge request failed, trying HTTP fallback...', wsErr);
         try {
-          const res = await fetch('/api/ai/concierge', {
+          const baseUrl = getApiBaseUrl();
+          const res = await fetch(`${baseUrl}/api/ai/concierge`, {
+            ...DEFAULT_FETCH_OPTIONS,
             method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json',
-              'ngrok-skip-browser-warning': 'true'
-            },
             body: JSON.stringify(payload),
-            credentials: 'include'
           });
           if (res.ok) {
             data = await res.json();

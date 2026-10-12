@@ -5,8 +5,8 @@ import { getCategoryConfig } from './mapCategoryConfig';
 const iconCache = new Map<string, L.DivIcon>();
 
 /**
- * Creates ultra-premium futuristic DivIcon for User Live Location with pulsating radar ring.
- * Uses module-level memoization to avoid re-constructing DivIcons.
+ * DivIcon for the user's live location: a solid dot with a soft pulsing ring.
+ * Memoized at module level since it never changes.
  */
 export const createUserLocationIcon = (): L.DivIcon => {
   const icon = L.divIcon({
@@ -25,10 +25,10 @@ export const createUserLocationIcon = (): L.DivIcon => {
 };
 
 /**
- * Creates glowing DivIcon for POI Landmarks with category-specific color schemes & dynamic badges.
- * Reads color schemes directly from mapCategoryConfig.ts and memoizes instances by key `${config.id}-${isSelected}`.
+ * DivIcon for a place marker, colored by category (see mapCategoryConfig.ts).
+ * Memoized by `${category}-${isSelected}` so repeated renders reuse the same instance.
  */
-export const createCrazyPoiIcon = (category: string, isSelected: boolean): L.DivIcon => {
+export const createPoiIcon = (category: string, isSelected: boolean): L.DivIcon => {
   const config = getCategoryConfig(category);
   const cacheKey = `${config.id}-${isSelected ? 'selected' : 'normal'}`;
 
@@ -45,7 +45,7 @@ export const createCrazyPoiIcon = (category: string, isSelected: boolean): L.Div
   const icon = L.divIcon({
     className: 'custom-poi-marker',
     html: `
-      <div class="poi-marker-glow" style="${transform} display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 14px; background: ${markerBg}; border: 2px solid ${borderColor}; box-shadow: ${shadow}; transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);">
+      <div style="${transform} display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 14px; background: ${markerBg}; border: 2px solid ${borderColor}; box-shadow: ${shadow}; transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);">
         <div style="width: 9px; height: 9px; border-radius: 50%; background: ${dotBg};"></div>
       </div>
     `,
@@ -58,8 +58,8 @@ export const createCrazyPoiIcon = (category: string, isSelected: boolean): L.Div
 };
 
 /**
- * Creates glowing DivIcon for POI Clusters when >20 markers are in view.
- * Memoizes icon instances by count key.
+ * DivIcon for a cluster of markers (used once marker density gets high).
+ * Memoized by count.
  */
 export const createClusterIcon = (count: number): L.DivIcon => {
   const cacheKey = `cluster-${count}`;

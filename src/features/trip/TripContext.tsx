@@ -4,6 +4,7 @@ import { tripRepository } from './tripRepository';
 import { useAuth } from '../../auth/AuthContext';
 import { wsClient } from '../../services/wsClient';
 import { useSyncRevalidation } from '../../utils/useSyncRevalidation';
+import { getApiBaseUrl, DEFAULT_FETCH_OPTIONS } from '../../config/apiConfig';
 
 interface TripContextType {
   trips: Trip[];
@@ -69,9 +70,9 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err) {
       console.warn('WebSocket failed to refetch itinerary, trying HTTP fallback...', err);
       try {
-        const res = await fetch(`/api/trips/${tid}/itinerary`, {
-          headers: { 'ngrok-skip-browser-warning': 'true' },
-          credentials: 'include'
+        const baseUrl = getApiBaseUrl();
+        const res = await fetch(`${baseUrl}/api/trips/${tid}/itinerary`, {
+          ...DEFAULT_FETCH_OPTIONS
         });
         if (res.ok) {
           const data = await res.json();
@@ -491,10 +492,10 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err) {
       console.warn('WebSocket trips:delete failed, trying HTTP fallback...', err);
       try {
-        await fetch(`/api/trips/${tripId}`, {
+        const baseUrl = getApiBaseUrl();
+        await fetch(`${baseUrl}/api/trips/${tripId}`, {
+          ...DEFAULT_FETCH_OPTIONS,
           method: 'DELETE',
-          headers: { 'ngrok-skip-browser-warning': 'true' },
-          credentials: 'include'
         });
       } catch (httpErr) {
         console.error('Failed to delete trip from backend database:', httpErr);
@@ -530,14 +531,11 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (wsErr) {
       console.warn('WebSocket swap_activity failed, trying HTTP PATCH fallback...', wsErr);
       try {
-        await fetch(`/api/trips/${tripId}/itinerary/activities/${activityId}`, {
+        const baseUrl = getApiBaseUrl();
+        await fetch(`${baseUrl}/api/trips/${tripId}/itinerary/activities/${activityId}`, {
+          ...DEFAULT_FETCH_OPTIONS,
           method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            'ngrok-skip-browser-warning': 'true'
-          },
           body: JSON.stringify(payload),
-          credentials: 'include'
         });
       } catch (httpErr) {
         console.error('HTTP swap_activity fallback failed:', httpErr);

@@ -72,6 +72,8 @@ def parse_blocks(raw_text: str):
     clean_text = re.sub(r'<<<.*?>>>', '', raw_text, flags=re.DOTALL).strip()
     return clean_text, chips, card
 def persist_message(user_id: str, role: str, content: str, mode: str, trip_id: Optional[str] = None, metadata: dict = None):
+    if not user_id:
+        raise ValueError("user_id is required to persist messages.")
     try:
         msg_id = f"msg_{uuid.uuid4().hex[:12]}"
         meta_json_str = json.dumps(metadata or {})
@@ -83,7 +85,7 @@ def persist_message(user_id: str, role: str, content: str, mode: str, trip_id: O
                 """),
                 {
                     "id": msg_id,
-                    "user_id": user_id or "guest_user",
+                    "user_id": user_id,
                     "trip_id": trip_id,
                     "role": role,
                     "content": content,
@@ -96,19 +98,23 @@ def persist_message(user_id: str, role: str, content: str, mode: str, trip_id: O
 # Alias for backward compatibility
 save_chat_message = persist_message
 
-def fetch_chat_history(user_id: str = "guest_user", limit: int = 50, db = None) -> List[Dict[str, Any]]:
+def fetch_chat_history(user_id: str, trip_id: Optional[str] = None, limit: int = 50, db = None) -> List[Dict[str, Any]]:
+    if not user_id:
+        return []
     try:
         with engine.connect() as conn:
-            result = conn.execute(
-                text("""
-                    SELECT id, role, content, mode, trip_id, metadata, created_at
-                    FROM chat_messages
-                    WHERE user_id = :user_id
-                    ORDER BY created_at ASC
-                    LIMIT :limit
-                """),
-                {"user_id": user_id or "guest_user", "limit": limit}
-            )
+            query_str = """
+                SELECT id, role, content, mode, trip_id, metadata, created_at
+                FROM chat_messages
+                WHERE user_id = :user_id
+            """
+            params = {"user_id": user_id, "limit": limit}
+            if trip_id:
+                query_str += " AND trip_id = :trip_id"
+                params["trip_id"] = trip_id
+            query_str += " ORDER BY created_at ASC LIMIT :limit"
+
+            result = conn.execute(text(query_str), params)
             records = result.mappings().all()
             history = []
             for r in records:
@@ -374,9 +380,10 @@ def resolve_active_place(req_place_id: Optional[str], message_text: str, session
 def add_message_to_session(session: Dict[str, Any], role: str, text: str, place_id: Optional[str] = None):
     pass
 
-def generate_tour_guide_response(messages: List[Dict[str, str]], place_context: Optional[Dict[str, Any]], nearby_places: List[Dict[str, Any]], user_location: Optional[Dict[str, float]], trip_context: Optional[Dict[str, Any]] = None, user_prefs: Optional[Dict[str, Any]] = None, mode: str = "local") -> Dict[str, Any]:
+def generate_tour_guide_response(messages: List[Dict[str, str]], place_context: Optional[Dict[str, Any]], nearby_places: List[Dict[str, Any]], user_location: Optional[Dict[str, float]], trip_context: Optional[Dict[str, Any]] = None, user_prefs: Optional[Dict[str, Any]] = None, mode: str = "local", user_id: str = "") -> Dict[str, Any]:
+    if not user_id:
+        raise ValueError("user_id is required to generate responses.")
     last_msg = messages[-1].get("text", "") if messages else ""
-    user_id = "guest_user"
     dest_name = (trip_context.get("destination") or {}).get("name") if trip_context else None
     lat = user_location.get("latitude") if user_location else None
     lng = user_location.get("longitude") if user_location else None

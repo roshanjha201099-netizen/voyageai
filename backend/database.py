@@ -93,9 +93,11 @@ def init_db():
 
                 CREATE INDEX IF NOT EXISTS idx_chat_trip 
                 ON chat_messages (trip_id) WHERE trip_id IS NOT NULL;
+
+                ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);
             """))
             conn.commit()
-            print("[DATABASE INIT] Unified single-engine schema verified successfully.")
+            print("[DATABASE INIT] Unified single-engine schema & password_hash migration verified successfully.")
     except Exception as e:
         print(f"[DATABASE INIT WARN] Schema init notice: {e}")
 

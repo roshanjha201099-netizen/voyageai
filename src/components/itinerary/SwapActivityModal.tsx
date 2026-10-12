@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useTrip } from '../../features/trip/TripContext';
-import { getApiBaseUrl, DEFAULT_HEADERS } from '../../config/apiConfig';
+import { getApiBaseUrl, DEFAULT_FETCH_OPTIONS } from '../../config/apiConfig';
 import { Sparkles, RefreshCw, X, Clock, MapPin, Check, AlertCircle } from 'lucide-react';
 import { isMockPayload } from '../../utils/mockIndicator';
 import { MockCardAlert } from '../common/MockCardAlert';
@@ -48,8 +48,8 @@ export const SwapActivityModal: React.FC = () => {
       try {
         const baseUrl = getApiBaseUrl();
         const res = await fetch(`${baseUrl}/api/trips/itinerary/swap-options`, {
+          ...DEFAULT_FETCH_OPTIONS,
           method: 'POST',
-          headers: DEFAULT_HEADERS,
           body: JSON.stringify({
             trip_id: swapContext.tripId || currentTrip?.id || 'active_trip',
             destination: destName,
@@ -95,8 +95,8 @@ export const SwapActivityModal: React.FC = () => {
     try {
       const baseUrl = getApiBaseUrl();
       const res = await fetch(`${baseUrl}/api/trips/itinerary/swap-execute`, {
+        ...DEFAULT_FETCH_OPTIONS,
         method: 'POST',
-        headers: DEFAULT_HEADERS,
         body: JSON.stringify({
           trip_id: swapContext.tripId || currentTrip?.id || 'active_trip',
           day_number: dayNum,

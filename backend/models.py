@@ -1,5 +1,10 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 from typing import List, Optional
+
+class RegisterRequest(BaseModel):
+    name: str = Field(..., min_length=2, description="Full name of the user")
+    email: EmailStr = Field(..., description="Valid unique email address")
+    password: str = Field(..., min_length=6, description="User password (minimum 6 characters)")
 
 class AuthUser(BaseModel):
     id: str
@@ -39,7 +44,7 @@ class UserPreferences(BaseModel):
 
 class LoginRequest(BaseModel):
     email: str
-    password: Optional[str] = "password123"
+    password: Optional[str] = None
     name: Optional[str] = None
     avatarUrl: Optional[str] = None
     provider: str = "EMAIL"
@@ -56,6 +61,7 @@ class OnboardingRequest(BaseModel):
     budgetLevel: Optional[str] = None
     onboardingStep: Optional[str] = None
     onboardingStatus: Optional[str] = None
+    token: Optional[str] = None
 
 class SessionResponse(BaseModel):
     token: str

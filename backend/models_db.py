@@ -13,6 +13,7 @@ class AuthUserModel(Base):
     email_verified = Column(Boolean, default=True)
     phone_verified = Column(Boolean, default=True)
     status = Column(String, default="ACTIVE")
+    password_hash = Column(String, nullable=True)
     created_at = Column(String, nullable=False)
     last_login_at = Column(String, nullable=False)
 

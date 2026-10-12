@@ -4,7 +4,7 @@
  */
 
 import { wsClient } from './wsClient';
-import { getApiBaseUrl, DEFAULT_HEADERS } from '../config/apiConfig';
+import { getApiBaseUrl, DEFAULT_FETCH_OPTIONS } from '../config/apiConfig';
 
 export interface TourPlace {
   id: string;
@@ -60,7 +60,7 @@ export async function fetchNearbyPlaces(
   try {
     const baseUrl = getApiBaseUrl();
     const res = await fetch(`${baseUrl}/api/tour-guide/nearby?lat=${lat}&lng=${lng}&radius=${Math.min(radius, 5000)}`, {
-      headers: DEFAULT_HEADERS
+      ...DEFAULT_FETCH_OPTIONS
     });
     if (res.ok) {
       const data = await res.json();
@@ -180,3 +180,21 @@ export function formatDistance(meters: number): string {
   if (meters < 1000) return `${meters}m`;
   return `${(meters / 1000).toFixed(1)}km`;
 }
+
+export const registerUser = async (data: { name: string; email: string; password: string }) => {
+  const res = await fetch(`${getApiBaseUrl()}/api/auth/register`, {
+    method: 'POST',
+    credentials: 'include', // CRITICAL: Allows browser to receive and store HttpOnly cookie
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || 'Registration failed');
+  }
+
+  return res.json();
+};

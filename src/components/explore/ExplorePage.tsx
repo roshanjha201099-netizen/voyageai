@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useTrip } from '../../features/trip/TripContext';
 import { useNavigation } from '../../context/NavigationContext';
-import { getApiBaseUrl, DEFAULT_HEADERS } from '../../config/apiConfig';
+import { getApiBaseUrl, DEFAULT_FETCH_OPTIONS } from '../../config/apiConfig';
 import {
   Compass, MapPin, Sparkles, Plus, Check, Calendar,
   Clock, Tag, Star, Navigation, Layers, Bookmark
@@ -53,7 +53,7 @@ export const ExplorePage: React.FC = () => {
     const fetchSavedPlaces = async () => {
       try {
         const baseUrl = getApiBaseUrl();
-        const res = await fetch(`${baseUrl}/api/user/saved-places`, { headers: DEFAULT_HEADERS });
+        const res = await fetch(`${baseUrl}/api/user/saved-places`, { ...DEFAULT_FETCH_OPTIONS });
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data)) {
@@ -92,8 +92,8 @@ export const ExplorePage: React.FC = () => {
     try {
       const baseUrl = getApiBaseUrl();
       await fetch(`${baseUrl}/api/user/saved-places`, {
+        ...DEFAULT_FETCH_OPTIONS,
         method: isSaved ? 'DELETE' : 'POST',
-        headers: DEFAULT_HEADERS,
         body: JSON.stringify({
           place_id: item.id,
           title: item.title,
@@ -154,7 +154,7 @@ export const ExplorePage: React.FC = () => {
 
       try {
         const res = await fetch(endpoint, {
-          headers: DEFAULT_HEADERS,
+          ...DEFAULT_FETCH_OPTIONS,
         });
 
         if (res.ok) {
@@ -222,8 +222,8 @@ export const ExplorePage: React.FC = () => {
     try {
       const baseUrl = getApiBaseUrl();
       const res = await fetch(`${baseUrl}/api/trips/itinerary/add`, {
+        ...DEFAULT_FETCH_OPTIONS,
         method: 'POST',
-        headers: DEFAULT_HEADERS,
         body: JSON.stringify(payload),
       });
 

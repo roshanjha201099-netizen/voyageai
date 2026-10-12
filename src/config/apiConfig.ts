@@ -5,25 +5,18 @@
  * Simply update `DEFAULT_BACKEND_URL` below or edit `VITE_API_URL` in `.env` / `.env.production`.
  */
 
-export const DEFAULT_BACKEND_URL = 'https://8d4e-2401-4900-8f66-66c7-f943-ebbd-5fdc-c302.ngrok-free.app';
+export const DEFAULT_BACKEND_URL = 'https://f6d4-2401-4900-8f64-f3ac-c7-79fc-1b00-dd14.ngrok-free.app';
 
 /**
  * Returns the active HTTP/HTTPS API base URL.
  * Order of precedence:
  * 1. Environment variable (VITE_API_URL or VITE_API_BASE_URL)
- * 2. Localhost fallback (if running locally on browser)
- * 3. DEFAULT_BACKEND_URL
+ * 2. DEFAULT_BACKEND_URL
  */
 export const getApiBaseUrl = (): string => {
   const envUrl = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL;
   if (envUrl && envUrl.trim().length > 0) {
-    return envUrl.replace(/\/$/, '');
-  }
-
-  const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-  if (isLocalhost) {
-    const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
-    return `${protocol}//${window.location.hostname}`;
+    return envUrl.trim().replace(/\/$/, '');
   }
 
   return DEFAULT_BACKEND_URL.replace(/\/$/, '');
@@ -64,17 +57,39 @@ export const DEFAULT_HEADERS: Record<string, string> = {
 };
 
 /**
- * Returns HTTP headers enriched with Bearer Authorization token if logged in.
+ * Standard fetch options with credentials: 'include' for HttpOnly cookie session handling.
+ */
+export const DEFAULT_FETCH_OPTIONS: RequestInit = {
+  credentials: 'include',
+  headers: DEFAULT_HEADERS,
+};
+
+/**
+ * Returns HTTP headers for authenticated requests.
+ * User identity is bound to the voyageai_session HttpOnly cookie (credentials: 'include')
+ * with Bearer Authorization header as an auxiliary layer for cross-site environments.
  */
 export const getAuthHeaders = (): Record<string, string> => {
-  const headers = { ...DEFAULT_HEADERS };
+  const headers: Record<string, string> = { ...DEFAULT_HEADERS };
   try {
-    const sessionRaw = localStorage.getItem('voyageai_session_data');
-    if (sessionRaw) {
-      const session = JSON.parse(sessionRaw);
-      if (session?.token) {
-        headers['Authorization'] = `Bearer ${session.token}`;
+    let token: string | null = null;
+    if (typeof window !== 'undefined') {
+      token = localStorage.getItem('voyageai_token');
+      if (!token) {
+        const raw = localStorage.getItem('voyageai_session_data');
+        if (raw) {
+          const data = JSON.parse(raw);
+          token = data?.token || null;
+        }
       }
+      if (!token) {
+        token = sessionStorage.getItem('voyageai_token');
+      }
+    }
+    if (token && token.trim().length > 0) {
+      const cleanToken = token.trim();
+      headers['Authorization'] = `Bearer ${cleanToken}`;
+      headers['X-Auth-Token'] = cleanToken;
     }
   } catch {
     /* fallback silently */

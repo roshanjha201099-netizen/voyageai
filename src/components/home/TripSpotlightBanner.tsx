@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Calendar, MapPin, Plus, Check, Loader2, Clock } from 'lucide-react';
-import { getApiBaseUrl, DEFAULT_HEADERS } from '../../config/apiConfig';
+import { getApiBaseUrl, DEFAULT_FETCH_OPTIONS } from '../../config/apiConfig';
 import { MONTHS, formatDateRange, parseISODate, tripStatus } from './tripDates';
 import { isMockPayload } from '../../utils/mockIndicator';
 import { MockCardAlert } from '../common/MockCardAlert';
@@ -84,13 +84,15 @@ const AddButton: React.FC<{ title: string; state: AddState; onClick: () => void 
 };
 
 export const TripSpotlightBanner: React.FC<{
-  destination: string;
+  destination?: string;
   startDate?: string;
   endDate?: string;
   /** Pre-formatted fallback, shown only when startDate can't be read. */
   dates?: string;
-  isLocalMode: boolean;
-}> = ({ destination = 'Goa', startDate, endDate, dates, isLocalMode }) => {
+  isLocalMode?: boolean;
+  latitude?: number;
+  longitude?: number;
+}> = ({ destination, startDate, endDate, dates, isLocalMode = false, latitude, longitude }) => {
   const [data, setData] = useState<SpotlightData | null>(null);
   const [loading, setLoading] = useState(true);
   const [addingId, setAddingId] = useState<string | null>(null);
@@ -104,11 +106,23 @@ export const TripSpotlightBanner: React.FC<{
     setData(null);
     setExpanded(false);
 
-    const targetDest = destination || 'Goa';
     const baseUrl = getApiBaseUrl();
-    const url = `${baseUrl}/api/trips/${encodeURIComponent(targetDest)}/highlights`;
+    const queryParams: string[] = [];
 
-    fetch(url, { headers: DEFAULT_HEADERS })
+    if (latitude !== undefined && longitude !== undefined) {
+      queryParams.push(`lat=${latitude}&lng=${longitude}`);
+    }
+
+    const cleanDest = destination?.trim();
+    if (cleanDest) {
+      queryParams.push(`destination=${encodeURIComponent(cleanDest)}`);
+    }
+
+    const endpoint = queryParams.length > 0
+      ? `${baseUrl}/api/trips/highlights?${queryParams.join('&')}`
+      : `${baseUrl}/api/trips/highlights`;
+
+    fetch(endpoint, { ...DEFAULT_FETCH_OPTIONS })
       .then((res) => {
         if (!res.ok) {
           throw new Error(`Highlights API failed with status ${res.status}`);
@@ -135,7 +149,7 @@ export const TripSpotlightBanner: React.FC<{
     return () => {
       isMounted = false;
     };
-  }, [destination]);
+  }, [destination, latitude, longitude]);
 
   const handleAddToItinerary = async (item: Activity | UpcomingEvent, itemType: 'activity' | 'event') => {
     setAddingId(item.id);
@@ -143,7 +157,7 @@ export const TripSpotlightBanner: React.FC<{
     const baseUrl = getApiBaseUrl();
     try {
       const payload = {
-        destination,
+        destination: data?.destination || destination || 'Current Location',
         item_id: item.id,
         item_type: itemType,
         title: item.title,
@@ -153,11 +167,8 @@ export const TripSpotlightBanner: React.FC<{
       };
 
       const res = await fetch(`${baseUrl}/api/trips/itinerary/add`, {
+        ...DEFAULT_FETCH_OPTIONS,
         method: 'POST',
-        headers: {
-          ...DEFAULT_HEADERS,
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify(payload),
       });
 
@@ -180,7 +191,7 @@ export const TripSpotlightBanner: React.FC<{
   if (loading) {
     return (
       <div role="status">
-        <span className="sr-only">Loading highlights for {destination}</span>
+        <span className="sr-only">Loading highlights for {destination || 'your location'}</span>
         <div className="h-44 rounded-3xl bg-[#1F3B37]/90 animate-pulse motion-reduce:animate-none" />
         <div className="-mt-11 px-3 flex gap-3 overflow-hidden">
           {[0, 1].map((i) => (
@@ -223,7 +234,7 @@ export const TripSpotlightBanner: React.FC<{
         </svg>
 
         <div className="relative flex items-start justify-between gap-3">
-          <p className="text-sm font-medium text-[#A9C4BE]">{isLocalMode ? 'Next stop' : 'Active itinerary'}</p>
+          <p className="text-sm font-medium text-[#A9C4BE]">{isLocalMode ? 'Local highlights' : 'Active itinerary'}</p>
           {status && (
             <span className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold">{status}</span>
           )}
