@@ -73,8 +73,17 @@ def get_raw_connection():
 # 4. Schema Initialization
 # ----------------------------------------------------------------------------
 def init_db():
-    """Boot-time schema sync and indexing"""
+    """Boot-time schema sync, model registration, and indexing"""
     try:
+        # Explicitly import all ORM models so Base.metadata is completely populated
+        import models_db       # auth_users, user_profiles, user_preferences, sessions
+        import models_trip     # trips
+        import models_itinerary  # itineraries, itinerary_days, itinerary_activities
+        import models_package  # trip_stays, trip_transports, trip_expenses
+        import models_chat     # chat_messages
+
+        Base.metadata.create_all(bind=engine)
+
         with engine.connect() as conn:
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS chat_messages (
@@ -88,16 +97,27 @@ def init_db():
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                 );
 
+                ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
+
                 CREATE INDEX IF NOT EXISTS idx_chat_user_created 
                 ON chat_messages (user_id, created_at ASC);
 
                 CREATE INDEX IF NOT EXISTS idx_chat_trip 
                 ON chat_messages (trip_id) WHERE trip_id IS NOT NULL;
 
+                CREATE INDEX IF NOT EXISTS idx_sessions_token_hash 
+                ON sessions (token_hash);
+
+                CREATE INDEX IF NOT EXISTS idx_sessions_user_id 
+                ON sessions (user_id);
+
+                CREATE INDEX IF NOT EXISTS idx_trips_user_id 
+                ON trips (user_id);
+
                 ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);
             """))
             conn.commit()
-            print("[DATABASE INIT] Unified single-engine schema & password_hash migration verified successfully.")
+            print(f"[DATABASE INIT] Neon schema sync complete. Registered tables: {sorted(Base.metadata.tables.keys())}")
     except Exception as e:
         print(f"[DATABASE INIT WARN] Schema init notice: {e}")
 

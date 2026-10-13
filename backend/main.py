@@ -31,13 +31,16 @@ from starlette.concurrency import run_in_threadpool
 from contextlib import asynccontextmanager
 from events_listener import start_redis_events_listener
 from websocket_manager import ws_manager
-import models_chat  # Ensure ChatMessageModel is registered on Base
+import models_db
+import models_trip
+import models_itinerary
+import models_package
+import models_chat
 
 from database import init_db
 
 # Ensure database tables and indexes are created safely
 try:
-    Base.metadata.create_all(bind=engine)
     init_db()
 except Exception as e:
     print(f"[DATABASE] Table creation notice: {e}")
