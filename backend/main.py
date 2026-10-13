@@ -3517,6 +3517,15 @@ def create_trip_expense(
     if category_val not in ["Transport", "Hotel", "Food", "Activities", "Shopping", "Other"]:
         category_val = "Other"
 
+    paid_by_val = expense_data.get("paidBy")
+    if not paid_by_val:
+        from models_db import UserProfileModel
+        prof = db.query(UserProfileModel).filter(UserProfileModel.user_id == current_user.id).first()
+        if prof and prof.first_name:
+            paid_by_val = f"{prof.first_name} {prof.last_name or ''}".strip()
+        else:
+            paid_by_val = getattr(current_user, "email", "Me") or "Me"
+
     new_expense = TripExpenseModel(
         id=expense_id,
         trip_id=trip_id,
@@ -3524,7 +3533,7 @@ def create_trip_expense(
         title=expense_data.get("title", "Expense"),
         amount=float(expense_data.get("amount", 0.0)),
         category=category_val,
-        paid_by=expense_data.get("paidBy", current_user.name or "Me"),
+        paid_by=paid_by_val,
         is_split=bool(expense_data.get("isSplit", False)),
         created_at=now
     )
