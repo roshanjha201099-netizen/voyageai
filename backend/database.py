@@ -24,11 +24,11 @@ if DATABASE_URL.startswith("postgres://"):
 # ============================================================================
 engine = create_engine(
     DATABASE_URL,
-    pool_pre_ping=True,       # Auto-reconnect drops before checkout
-    pool_size=5,              # 5 persistent connections
-    max_overflow=10,          # Up to 15 during sudden bursts
-    pool_recycle=300,         # Recycle connections every 5 mins (critical for Neon serverless pooler)
-    pool_timeout=10,          # Fail fast instead of hanging forever
+    pool_pre_ping=True,       # Pings Neon before each query; auto-reconnects if dead
+    pool_recycle=300,         # Recycles connections every 5 minutes (before Neon drops them)
+    pool_size=10,             # Keep connection pool clean
+    max_overflow=20,          # Up to 30 connections during bursts
+    pool_timeout=15,          # Fail fast instead of hanging forever
     connect_args={
         "connect_timeout": 10,
         "keepalives": 1,
