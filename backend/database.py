@@ -24,11 +24,18 @@ if DATABASE_URL.startswith("postgres://"):
 # ============================================================================
 engine = create_engine(
     DATABASE_URL,
-    pool_pre_ping=True,       # Auto-reconnect drops
+    pool_pre_ping=True,       # Auto-reconnect drops before checkout
     pool_size=5,              # 5 persistent connections
     max_overflow=10,          # Up to 15 during sudden bursts
-    pool_recycle=1800,        # Recycle connections after 30 mins
-    pool_timeout=10           # Fail fast instead of hanging forever
+    pool_recycle=300,         # Recycle connections every 5 mins (critical for Neon serverless pooler)
+    pool_timeout=10,          # Fail fast instead of hanging forever
+    connect_args={
+        "connect_timeout": 10,
+        "keepalives": 1,
+        "keepalives_idle": 30,
+        "keepalives_interval": 10,
+        "keepalives_count": 5
+    }
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -41,8 +48,23 @@ def get_db():
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            try:
+                db.invalidate()
+            except Exception:
+                pass
+        raise
     finally:
-        db.close()
+        try:
+            db.close()
+        except Exception:
+            try:
+                db.invalidate()
+            except Exception:
+                pass
 
 # ----------------------------------------------------------------------------
 # 2. Context Manager for WebSocket frames / Background tasks
@@ -54,10 +76,22 @@ def get_db_context():
         yield db
         db.commit()
     except Exception:
-        db.rollback()
+        try:
+            db.rollback()
+        except Exception:
+            try:
+                db.invalidate()
+            except Exception:
+                pass
         raise
     finally:
-        db.close()
+        try:
+            db.close()
+        except Exception:
+            try:
+                db.invalidate()
+            except Exception:
+                pass
 
 # ----------------------------------------------------------------------------
 # 3. High-Speed Raw SQL Connection (Replaces psycopg2 ThreadedPool)

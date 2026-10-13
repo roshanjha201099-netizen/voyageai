@@ -138,6 +138,25 @@ async def add_server_identity_header(request: Request, call_next):
     response.headers["X-Backend-Node"] = f"node-{port}"
     return response
 
+from fastapi.responses import JSONResponse
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    import traceback
+    traceback.print_exc()
+    origin = request.headers.get("origin") or "http://localhost:5173"
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error occurred", "error": str(exc)},
+        headers={
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Allow-Methods": "*",
+            "Access-Control-Allow-Headers": "*",
+            "ngrok-skip-browser-warning": "true"
+        }
+    )
+
 from rate_limiter import RateLimiter
 
 # Application-Layer Rate Limiters
