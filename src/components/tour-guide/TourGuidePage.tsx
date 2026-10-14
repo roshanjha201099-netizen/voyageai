@@ -15,6 +15,9 @@ import { FormattedText } from '../common/FormattedText';
 const FONT_STACK = '"Hanken Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif';
 
 
+import { useDispatch } from 'react-redux';
+import { useGetTourGuideHistoryQuery, tourGuideApi } from '../../store/services/tourGuideApi';
+
 export interface ActionCardData {
   id: string;
   title: string;
@@ -39,6 +42,7 @@ export interface ChatMsg {
 }
 
 export const TourGuidePage: React.FC = () => {
+  const dispatch = useDispatch();
   const location = useLocation();
   const { userLocation, userLocationName, activeContextMode, setActiveContextMode } = useApp();
   const { trips, currentTrip, refetchItinerary } = useTrip();
@@ -63,56 +67,35 @@ export const TourGuidePage: React.FC = () => {
     ? (activeTrip?.destination?.name || activeTrip?.title || 'Trip Destination')
     : null;
 
-  // 1. Fetch Lifetime Chat History on Mount from PostgreSQL
-  useEffect(() => {
-    let isMounted = true;
-    const fetchHistory = async () => {
-      try {
-        const baseUrl = getApiBaseUrl();
-        const tripParam = mode === 'trip' && activeTrip?.id ? `?trip_id=${encodeURIComponent(activeTrip.id)}` : '';
-        const res = await fetch(`${baseUrl}/api/tour-guide/history${tripParam}`, {
-          ...DEFAULT_FETCH_OPTIONS,
-          headers: getAuthHeaders(),
-        });
+  // 1. RTK Query: De-duplicated & Cached Tour Guide History (keepUnusedDataFor: 300)
+  const tripParam = mode === 'trip' && activeTrip?.id ? activeTrip.id : undefined;
+  const { data: historyData, isLoading: isHistoryLoading } = useGetTourGuideHistoryQuery(tripParam);
 
-        if (res.ok) {
-          const data = await res.json();
-          if (isMounted && Array.isArray(data) && data.length > 0) {
-            const parsedMsgs: ChatMsg[] = data.map(m => ({
-              id: m.id,
-              role: m.role === 'assistant' || m.role === 'guide' ? 'assistant' : 'user',
-              content: m.content,
-              mode: m.mode,
-              metadata: typeof m.metadata === 'string' ? JSON.parse(m.metadata) : (m.metadata || {})
-            }));
-            setMessages(parsedMsgs);
-            return;
+  // Sync RTK Query history into local messages when query resolves
+  useEffect(() => {
+    if (historyData && Array.isArray(historyData) && historyData.length > 0) {
+      const parsedMsgs: ChatMsg[] = historyData.map((m: any) => ({
+        id: m.id,
+        role: m.role === 'assistant' || m.role === 'guide' ? 'assistant' : 'user',
+        content: m.content,
+        mode: m.mode,
+        metadata: typeof m.metadata === 'string' ? JSON.parse(m.metadata) : (m.metadata || {})
+      }));
+      setMessages(parsedMsgs);
+    } else if (!isHistoryLoading && (!historyData || historyData.length === 0) && messages.length === 0) {
+      // Default Welcome Message if no history found
+      setMessages([
+        {
+          id: 'welcome',
+          role: 'assistant',
+          content: "Namaste! I'm your VoyageAI personal travel concierge. Ask me about authentic spots, street food, hacks, or itinerary planning.",
+          metadata: {
+            chips: ["Top food nearby", "What to see today?", "Hidden gems"]
           }
         }
-      } catch (err) {
-        console.warn('[TOUR GUIDE HISTORY WARN]', err);
-      }
-
-      // Default Welcome Message if no history found
-      if (isMounted) {
-        setMessages([
-          {
-            id: 'welcome',
-            role: 'assistant',
-            content: "Namaste! I'm your VoyageAI personal travel concierge. Ask me about authentic spots, street food, hacks, or itinerary planning.",
-            metadata: {
-              chips: ["Top food nearby", "What to see today?", "Hidden gems"]
-            }
-          }
-        ]);
-      }
-    };
-
-    fetchHistory();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+      ]);
+    }
+  }, [historyData, isHistoryLoading]);
 
   // Sync router navigation state
   useEffect(() => {
@@ -149,6 +132,13 @@ export const TourGuidePage: React.FC = () => {
     };
 
     setMessages(prev => [...prev, userMsg]);
+    dispatch(
+      tourGuideApi.util.updateQueryData('getTourGuideHistory', tripParam, (draft) => {
+        if (Array.isArray(draft)) {
+          draft.push(userMsg);
+        }
+      })
+    );
     if (!queryText) setInput('');
     setLoading(true);
 
@@ -172,20 +162,25 @@ export const TourGuidePage: React.FC = () => {
 
       if (res.ok) {
         const data = await res.json();
-        setMessages(prev => [
-          ...prev,
-          {
-            id: `g_${Date.now()}`,
-            role: 'assistant',
-            content: data.reply || "I'm here to help you explore!",
-            mode: mode,
-            metadata: {
-              chips: data.chips || [],
-              card: data.card || null,
-              error: data.error
-            }
+        const assistantMsg: ChatMsg = {
+          id: `g_${Date.now()}`,
+          role: 'assistant',
+          content: data.reply || "I'm here to help you explore!",
+          mode: mode,
+          metadata: {
+            chips: data.chips || [],
+            card: data.card || null,
+            error: data.error
           }
-        ]);
+        };
+        setMessages(prev => [...prev, assistantMsg]);
+        dispatch(
+          tourGuideApi.util.updateQueryData('getTourGuideHistory', tripParam, (draft) => {
+            if (Array.isArray(draft)) {
+              draft.push(assistantMsg);
+            }
+          })
+        );
       } else {
         setMessages(prev => [
           ...prev,
