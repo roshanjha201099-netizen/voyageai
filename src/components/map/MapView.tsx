@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
+import { type RootState, type AppDispatch } from '../../store';
+import { fetchMapNearbyPlaces } from '../../store/slices/mapPlacesSlice';
 import { useApp } from '../../context/AppContext';
 import { useTrip } from '../../features/trip/TripContext';
 import { useNavigation } from '../../context/NavigationContext';
 import {
   Crosshair, ExternalLink, Volume2, VolumeX, Loader2,
-  Plus, Check, ArrowLeft
+  Plus, Check, ArrowLeft, RefreshCw
 } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -56,6 +59,7 @@ const HEADER_HEIGHT = 64;
 const BOTTOM_NAV_HEIGHT = 72;
 
 export const MapView: React.FC = () => {
+  const dispatch = useDispatch<AppDispatch>();
   const { userLocation, userLocationName, isFollowMode, setIsFollowMode } = useApp();
   const { currentTrip, refetchItinerary } = useTrip();
   const { mapFocusTarget, setMapFocusTarget, navigateToExplore } = useNavigation();
@@ -68,9 +72,34 @@ export const MapView: React.FC = () => {
     userLocation?.[1] || currentTrip?.destination?.longitude || 86.2021
   ], [userLocation, currentTrip]);
 
-  const [places, setPlaces] = useState<PlaceItem[]>([]);
+  // Read places & loading state from Redux store
+  const { places: rawMapPlaces, loading: isMapLoading } = useSelector(
+    (state: RootState) => state.mapPlaces
+  );
+
   const [selectedPlace, setSelectedPlace] = useState<PlaceItem | null>(null);
   const [activeCategory, setActiveCategory] = useState<'hotels' | 'food' | 'sights' | 'experiences' | 'all'>('all');
+  const [showSearchArea, setShowSearchArea] = useState(false);
+
+  // Transform raw cached Redux places to PlaceItem shape with relative distance
+  const places: PlaceItem[] = useMemo(() => {
+    if (!rawMapPlaces || rawMapPlaces.length === 0) return [];
+    const centerLat = userLocation ? userLocation[0] : defaultCoords[0];
+    const centerLng = userLocation ? userLocation[1] : defaultCoords[1];
+
+    return rawMapPlaces.map((p: any) => ({
+      id: p.id || `poi-${p.latitude}-${p.longitude}`,
+      name: p.name || 'Unnamed Spot',
+      category: (p.category || 'sights').toLowerCase(),
+      latitude: p.latitude,
+      longitude: p.longitude,
+      distanceMeters: p.distance_meters || p.distanceMeters || Math.round(calculateDistance(centerLat, centerLng, p.latitude, p.longitude)),
+      address: p.address || p.description || 'Near live location',
+      rating: p.rating || 4.7,
+      price_approx: p.price_approx || '₹500 - ₹1,500',
+      description: p.description || 'Popular local spot on your route.',
+    }));
+  }, [rawMapPlaces, userLocation, defaultCoords]);
 
   // Audio Guide hooks
   const { playBase64Audio, stopAudio } = useAudioGuide();
@@ -163,55 +192,28 @@ export const MapView: React.FC = () => {
     }
   }, [playingPlaceId, playBase64Audio, stopAudio]);
 
-  // Fetch POIs from /api/places/nearby or fallback
-  const fetchMapPlaces = useCallback(async (
-    centerLat: number,
-    centerLng: number,
-    category: string = 'all'
-  ) => {
-    try {
-      const baseUrl = getApiBaseUrl();
-      const categoryParam = category !== 'all' ? `&category=${encodeURIComponent(category)}` : '';
-      const url = `${baseUrl}/api/places/nearby?lat=${centerLat}&lng=${centerLng}&radius=5000&limit=40${categoryParam}`;
-
-      const res = await fetch(url, { ...DEFAULT_FETCH_OPTIONS });
-
-      if (res.ok) {
-        const data = await res.json();
-        const rawItems = Array.isArray(data)
-          ? data
-          : (data.places || data.results || []);
-
-        if (Array.isArray(rawItems) && rawItems.length > 0) {
-          const fetchedPlaces: PlaceItem[] = rawItems.map((p: any) => ({
-            id: p.id || `poi-${p.latitude}-${p.longitude}`,
-            name: p.name || 'Unnamed Spot',
-            category: (p.category || category).toLowerCase(),
-            latitude: p.latitude,
-            longitude: p.longitude,
-            distanceMeters: p.distance_meters || p.distanceMeters || Math.round(calculateDistance(centerLat, centerLng, p.latitude, p.longitude)),
-            address: p.address || p.description || 'Near live location',
-            rating: p.rating || 4.7,
-            price_approx: p.price_approx || '₹500 - ₹1,500',
-            description: p.description || 'Popular local spot on your route.',
-          }));
-          setPlaces(fetchedPlaces);
-          return;
-        }
-      }
-    } catch (err: any) {
-      console.warn('[MAP] Failed to fetch nearby POIs:', err);
-    }
-
-    setPlaces([]);
-  }, []);
-
-  // Initial load
+  // Dispatch Redux fetch on coordinates/category change (guarded by < 500m condition)
   useEffect(() => {
     const lat = userLocation ? userLocation[0] : defaultCoords[0];
     const lng = userLocation ? userLocation[1] : defaultCoords[1];
-    fetchMapPlaces(lat, lng, activeCategory);
-  }, [userLocation, defaultCoords, fetchMapPlaces]);
+    dispatch(fetchMapNearbyPlaces({ lat, lng, radius: 5000, limit: 40, category: activeCategory }));
+  }, [userLocation, defaultCoords, activeCategory, dispatch]);
+
+  // Handler for user clicking "Search this area" after panning
+  const handleSearchThisArea = () => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    const center = map.getCenter();
+    setShowSearchArea(false);
+    dispatch(fetchMapNearbyPlaces({
+      lat: center.lat,
+      lng: center.lng,
+      radius: 5000,
+      limit: 40,
+      category: activeCategory,
+      force: true, // Bypasses condition guard to refresh markers for the new viewport
+    }));
+  };
 
   // ── MAP INITIALIZATION & CLEANUP ──
   useEffect(() => {
@@ -243,6 +245,7 @@ export const MapView: React.FC = () => {
     const handleDragStart = () => {
       if (!isProgrammaticMoveRef.current) {
         hasUserPannedRef.current = true;
+        setShowSearchArea(true);
         if (isFollowModeRef.current) {
           setIsFollowMode(false);
         }
@@ -376,6 +379,7 @@ export const MapView: React.FC = () => {
   const handleRecenter = () => {
     const map = mapInstanceRef.current;
     const targetCoords = userLocation || defaultCoords;
+    setShowSearchArea(false);
     if (map) {
       hasUserPannedRef.current = false;
       setIsFollowMode(true);
@@ -430,9 +434,7 @@ export const MapView: React.FC = () => {
             type="button"
             onClick={() => {
               setActiveCategory(key);
-              const lat = userLocation ? userLocation[0] : defaultCoords[0];
-              const lng = userLocation ? userLocation[1] : defaultCoords[1];
-              fetchMapPlaces(lat, lng, key);
+              setShowSearchArea(false);
             }}
             aria-pressed={activeCategory === key}
             className={`shrink-0 min-h-[32px] px-3.5 rounded-full text-xs font-semibold transition-colors border shadow-sm ${activeCategory === key
@@ -444,6 +446,20 @@ export const MapView: React.FC = () => {
           </button>
         ))}
       </div>
+
+      {/* Floating "Search this area" button */}
+      {showSearchArea && (
+        <div className="absolute top-[106px] left-1/2 -translate-x-1/2 z-[500] pointer-events-auto animate-fadeIn">
+          <button
+            type="button"
+            onClick={handleSearchThisArea}
+            className="px-4 py-1.5 rounded-full bg-white text-[#1F5A3F] border border-gray-200 shadow-md font-semibold text-xs flex items-center gap-1.5 hover:bg-gray-50 press-scale"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isMapLoading ? 'animate-spin' : ''}`} aria-hidden="true" />
+            <span>Search this area</span>
+          </button>
+        </div>
+      )}
 
       {/* Bottom mini-sheet: closest or selected place */}
       {closestPlace ? (
