@@ -139,31 +139,14 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
     wsClient.sendRequest('trips:list', {})
       .then((fetchedTrips: Trip[]) => {
         if (!applyTrips(fetchedTrips)) {
-          const stored = tripRepository.getStoredTrips(userId);
-          const preferredId = tripRepository.getCurrentTripId(userId);
-          if (stored.length > 0) {
-            setTrips(stored);
-            const selectedId = tripRepository.selectCurrentTripId(stored, preferredId);
-            setCurrentTripIdState(selectedId);
-          } else {
-            setTrips([]);
-            setCurrentTripIdState(null);
-            tripRepository.setCurrentTripId(null, userId);
-          }
+          setTrips([]);
+          setCurrentTripIdState(null);
         }
       })
       .catch((err) => {
-        console.warn('WebSocket trips fetch fallback:', err);
-        const stored = tripRepository.getStoredTrips(userId);
-        const preferredId = tripRepository.getCurrentTripId(userId);
-        if (stored.length > 0) {
-          setTrips(stored);
-          const selectedId = tripRepository.selectCurrentTripId(stored, preferredId);
-          setCurrentTripIdState(selectedId);
-        }
+        console.warn('[WS TRIPS] trips:list error:', err);
       })
       .finally(() => {
-        setDraftState(tripRepository.getDraft(userId));
         setIsLoading(false);
       });
   }, [isAuthenticated, userId]);
@@ -174,7 +157,7 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return trips.find(t => t.id === currentTripId) ?? null;
   }, [trips, currentTripId]);
 
-  // Fetch package dimensions (stays, transports, expenses) via WebSocket
+  // Fetch package dimensions (stays, transports, expenses) purely from Backend (WS + REST fallback, ZERO localStorage)
   const fetchPackageData = useCallback(async (tripId: string) => {
     if (!tripId) return;
 
@@ -185,26 +168,33 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
         wsClient.sendRequest('trips:get_expenses', { trip_id: tripId }),
       ]);
 
-      if (fetchedStays) {
+      if (Array.isArray(fetchedStays)) {
         setStays(fetchedStays);
-        localStorage.setItem(`voyageai_stays_${tripId}`, JSON.stringify(fetchedStays));
       }
-      if (fetchedTransports) {
+      if (Array.isArray(fetchedTransports)) {
         setTransports(fetchedTransports);
-        localStorage.setItem(`voyageai_transports_${tripId}`, JSON.stringify(fetchedTransports));
       }
-      if (fetchedExpenses) {
+      if (Array.isArray(fetchedExpenses)) {
         setExpenses(fetchedExpenses);
-        localStorage.setItem(`voyageai_expenses_${tripId}`, JSON.stringify(fetchedExpenses));
       }
     } catch (err) {
-      console.warn('WebSocket package data fetch error, loading from local storage.', err);
-      const localStays = localStorage.getItem(`voyageai_stays_${tripId}`);
-      const localTransports = localStorage.getItem(`voyageai_transports_${tripId}`);
-      const localExpenses = localStorage.getItem(`voyageai_expenses_${tripId}`);
-      if (localStays) setStays(JSON.parse(localStays));
-      if (localTransports) setTransports(JSON.parse(localTransports));
-      if (localExpenses) setExpenses(JSON.parse(localExpenses));
+      console.warn('[PACKAGE DATA] WebSocket fetch error, falling back to HTTP REST:', err);
+      try {
+        const baseUrl = getApiBaseUrl();
+        const res = await fetch(`${baseUrl}/api/trips/${tripId}`, {
+          ...DEFAULT_FETCH_OPTIONS,
+          credentials: 'include',
+          headers: { 'Accept': 'application/json' }
+        });
+        if (res.ok) {
+          const tripDetail = await res.json();
+          if (Array.isArray(tripDetail.stays)) setStays(tripDetail.stays);
+          if (Array.isArray(tripDetail.transports)) setTransports(tripDetail.transports);
+          if (Array.isArray(tripDetail.expenses)) setExpenses(tripDetail.expenses);
+        }
+      } catch (httpErr) {
+        console.error('[PACKAGE DATA] HTTP fallback error:', httpErr);
+      }
     }
   }, []);
 

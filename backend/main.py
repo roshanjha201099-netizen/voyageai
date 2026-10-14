@@ -1488,61 +1488,183 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
 
     elif reqname == "trips:get_stays":
         trip_id = data.get("trip_id")
-        stays = db.query(TripStayModel).filter(TripStayModel.trip_id == trip_id).all()
-        return [{"id": s.id, "name": s.name, "checkIn": s.check_in, "checkOut": s.check_out, "cost": s.cost, "address": s.address} for s in stays]
+        stays = db.query(TripStayModel).filter(TripStayModel.trip_id == trip_id).order_by(TripStayModel.created_at.desc()).all()
+        return [
+            {
+                "id": s.id,
+                "tripId": s.trip_id,
+                "activityId": s.activity_id,
+                "hotelName": s.hotel_name,
+                "locationName": s.location_name,
+                "checkInDate": s.check_in_date,
+                "checkOutDate": s.check_out_date,
+                "nights": s.nights,
+                "pricePerNight": s.price_per_night,
+                "totalPrice": s.total_price,
+                "status": s.status,
+                "confirmationCode": s.confirmation_code,
+                "createdAt": s.created_at,
+                "updatedAt": s.updated_at,
+                "name": s.hotel_name,
+                "address": s.location_name,
+                "checkIn": s.check_in_date,
+                "checkOut": s.check_out_date,
+                "cost": s.total_price
+            }
+            for s in stays
+        ]
 
     elif reqname == "trips:add_stay":
         trip_id = data.get("trip_id")
+        hotel_name = data.get("hotelName") or data.get("name") or "Hotel Stay"
+        location_name = data.get("locationName") or data.get("address") or "City Center"
+        check_in_date = data.get("checkInDate") or data.get("checkIn") or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        check_out_date = data.get("checkOutDate") or data.get("checkOut") or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        total_price = int(data.get("totalPrice") or data.get("cost") or 0)
+        nights = int(data.get("nights") or 1)
+        price_per_night = int(data.get("pricePerNight") or (total_price // max(nights, 1)))
+
         stay = TripStayModel(
             id=f"stay-{uuid.uuid4().hex[:8]}",
             trip_id=trip_id,
-            name=data.get("name", "Hotel Stay"),
-            check_in=data.get("checkIn"),
-            check_out=data.get("checkOut"),
-            cost=data.get("cost", 0),
-            address=data.get("address", "")
+            hotel_name=hotel_name,
+            location_name=location_name,
+            check_in_date=check_in_date,
+            check_out_date=check_out_date,
+            nights=nights,
+            price_per_night=price_per_night,
+            total_price=total_price,
+            status=data.get("status", "SELECTED"),
+            confirmation_code=data.get("confirmationCode"),
+            created_at=datetime.now(timezone.utc).isoformat(),
+            updated_at=datetime.now(timezone.utc).isoformat()
         )
         db.add(stay)
         db.commit()
-        return {"id": stay.id, "name": stay.name, "checkIn": stay.check_in, "checkOut": stay.check_out, "cost": stay.cost, "address": stay.address}
+        return {
+            "id": stay.id,
+            "tripId": stay.trip_id,
+            "hotelName": stay.hotel_name,
+            "locationName": stay.location_name,
+            "checkInDate": stay.check_in_date,
+            "checkOutDate": stay.check_out_date,
+            "nights": stay.nights,
+            "pricePerNight": stay.price_per_night,
+            "totalPrice": stay.total_price,
+            "status": stay.status,
+            "name": stay.hotel_name,
+            "address": stay.location_name,
+            "checkIn": stay.check_in_date,
+            "checkOut": stay.check_out_date,
+            "cost": stay.total_price
+        }
 
     elif reqname == "trips:get_transports":
         trip_id = data.get("trip_id")
-        transports = db.query(TripTransportModel).filter(TripTransportModel.trip_id == trip_id).all()
-        return [{"id": t.id, "mode": t.mode, "details": t.details, "departureTime": t.departure_time, "cost": t.cost} for t in transports]
+        transports = db.query(TripTransportModel).filter(TripTransportModel.trip_id == trip_id).order_by(TripTransportModel.created_at.desc()).all()
+        return [
+            {
+                "id": t.id,
+                "tripId": t.trip_id,
+                "activityId": t.activity_id,
+                "transportType": t.transport_type,
+                "providerName": t.provider_name,
+                "pickupLocation": t.pickup_location,
+                "dropoffLocation": t.dropoff_location,
+                "pickupTime": t.pickup_time,
+                "estimatedFare": t.estimated_fare,
+                "status": t.status,
+                "bookingReference": t.booking_reference,
+                "createdAt": t.created_at,
+                "updatedAt": t.updated_at,
+                "mode": t.transport_type,
+                "details": f"{t.pickup_location} to {t.dropoff_location}",
+                "departureTime": t.pickup_time,
+                "cost": t.estimated_fare
+            }
+            for t in transports
+        ]
 
     elif reqname == "trips:add_transport":
         trip_id = data.get("trip_id")
         transport = TripTransportModel(
             id=f"trans-{uuid.uuid4().hex[:8]}",
             trip_id=trip_id,
-            mode=data.get("mode", "Cab"),
-            details=data.get("details", ""),
-            departure_time=data.get("departureTime"),
-            cost=data.get("cost", 0)
+            transport_type=data.get("transportType") or data.get("mode") or "CAB",
+            provider_name=data.get("providerName") or "VoyageAI Ride",
+            pickup_location=data.get("pickupLocation") or data.get("details") or "Pickup Point",
+            dropoff_location=data.get("dropoffLocation") or "Destination Point",
+            pickup_time=data.get("pickupTime") or data.get("departureTime") or datetime.now(timezone.utc).strftime("%H:%M"),
+            estimated_fare=int(data.get("estimatedFare") or data.get("cost") or 0),
+            status=data.get("status", "SELECTED"),
+            booking_reference=data.get("bookingReference"),
+            created_at=datetime.now(timezone.utc).isoformat(),
+            updated_at=datetime.now(timezone.utc).isoformat()
         )
         db.add(transport)
         db.commit()
-        return {"id": transport.id, "mode": transport.mode, "details": transport.details, "departureTime": transport.departure_time, "cost": transport.cost}
+        return {
+            "id": transport.id,
+            "tripId": transport.trip_id,
+            "transportType": transport.transport_type,
+            "providerName": transport.provider_name,
+            "pickupLocation": transport.pickup_location,
+            "dropoffLocation": transport.dropoff_location,
+            "pickupTime": transport.pickup_time,
+            "estimatedFare": transport.estimated_fare,
+            "status": transport.status,
+            "mode": transport.transport_type,
+            "details": f"{transport.pickup_location} to {transport.dropoff_location}",
+            "departureTime": transport.pickup_time,
+            "cost": transport.estimated_fare
+        }
 
     elif reqname == "trips:get_expenses":
         trip_id = data.get("trip_id")
-        expenses = db.query(TripExpenseModel).filter(TripExpenseModel.trip_id == trip_id).all()
-        return [{"id": e.id, "category": e.category, "amount": e.amount, "description": e.description, "date": e.date} for e in expenses]
+        expenses = db.query(TripExpenseModel).filter(TripExpenseModel.trip_id == trip_id).order_by(TripExpenseModel.created_at.desc()).all()
+        return [
+            {
+                "id": e.id,
+                "tripId": e.trip_id,
+                "activityId": e.activity_id,
+                "title": e.title,
+                "amount": e.amount,
+                "category": e.category,
+                "paidBy": e.paid_by,
+                "isSplit": e.is_split,
+                "createdAt": e.created_at,
+                "description": e.title,
+                "date": e.created_at
+            }
+            for e in expenses
+        ]
 
     elif reqname == "trips:add_expense":
         trip_id = data.get("trip_id")
         expense = TripExpenseModel(
             id=f"exp-{uuid.uuid4().hex[:8]}",
             trip_id=trip_id,
-            category=data.get("category", "General"),
-            amount=data.get("amount", 0),
-            description=data.get("description", ""),
-            date=data.get("date", datetime.utcnow().isoformat())
+            title=data.get("title") or data.get("description") or "Expense",
+            amount=float(data.get("amount") or 0.0),
+            category=data.get("category") or "Other",
+            paid_by=data.get("paidBy") or data.get("paid_by") or "Me",
+            is_split=bool(data.get("isSplit") or False),
+            created_at=data.get("createdAt") or data.get("date") or datetime.now(timezone.utc).isoformat()
         )
         db.add(expense)
         db.commit()
-        return {"id": expense.id, "category": expense.category, "amount": expense.amount, "description": expense.description, "date": expense.date}
+        return {
+            "id": expense.id,
+            "tripId": expense.trip_id,
+            "title": expense.title,
+            "amount": expense.amount,
+            "category": expense.category,
+            "paidBy": expense.paid_by,
+            "isSplit": expense.is_split,
+            "createdAt": expense.created_at,
+            "description": expense.title,
+            "date": expense.created_at
+        }
 
     # 5. AI Concierge
     elif reqname == "ai:concierge":
