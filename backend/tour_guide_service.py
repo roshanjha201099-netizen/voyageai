@@ -382,7 +382,7 @@ def add_message_to_session(session: Dict[str, Any], role: str, text: str, place_
 
 def generate_tour_guide_response(messages: List[Dict[str, str]], place_context: Optional[Dict[str, Any]], nearby_places: List[Dict[str, Any]], user_location: Optional[Dict[str, float]], trip_context: Optional[Dict[str, Any]] = None, user_prefs: Optional[Dict[str, Any]] = None, mode: str = "local", user_id: str = "") -> Dict[str, Any]:
     if not user_id:
-        raise ValueError("user_id is required to generate responses.")
+        user_id = f"guest_{uuid.uuid4().hex[:8]}"
     last_msg = messages[-1].get("text", "") if messages else ""
     dest_name = (trip_context.get("destination") or {}).get("name") if trip_context else None
     lat = user_location.get("latitude") if user_location else None

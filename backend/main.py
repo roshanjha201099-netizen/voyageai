@@ -2068,9 +2068,18 @@ def text_to_speech_endpoint(req: SpeakRequest):
 class ConciergeRequest(BaseModel):
     message: Optional[str] = None
     query: Optional[str] = None
+    intent: Optional[str] = "CHAT"
     mode: Optional[str] = "local"
     tripId: Optional[str] = None
     trip_id: Optional[str] = None
+    activityId: Optional[str] = None
+    activity_id: Optional[str] = None
+    dayId: Optional[str] = None
+    day_id: Optional[str] = None
+    itineraryId: Optional[str] = None
+    itinerary_id: Optional[str] = None
+    userId: Optional[str] = None
+    user_id: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     lat: Optional[float] = None
@@ -2083,48 +2092,6 @@ class ConciergeRequest(BaseModel):
     class Config:
         extra = "allow"
         populate_by_name = True
-
-@app.post("/api/ai/concierge")
-async def ai_concierge_endpoint(req: ConciergeRequest):
-    user_msg = req.message or req.query or ""
-    if not user_msg or not user_msg.strip():
-        raise HTTPException(status_code=400, detail="Message cannot be empty.")
-    
-    from tour_guide_service import generate_tour_guide_response, rank_places, search_nearby_pois
-    
-    ctx = req.context or {}
-    user_lat = req.latitude or req.lat or (ctx.get("user_location") or {}).get("latitude")
-    user_lng = req.longitude or req.lng or (ctx.get("user_location") or {}).get("longitude")
-    
-    user_location = None
-    nearby_places = []
-    if user_lat is not None and user_lng is not None:
-        user_location = {"latitude": float(user_lat), "longitude": float(user_lng)}
-        raw_pois = await run_in_threadpool(search_nearby_pois, float(user_lat), float(user_lng), 5000)
-        nearby_places = rank_places(raw_pois, limit=8)
-
-    history_msgs = []
-    if req.messages:
-        for m in req.messages:
-            history_msgs.append({"role": m.get("role", "user"), "text": m.get("text", "")})
-    else:
-        history_msgs = [{"role": "user", "text": user_msg}]
-
-    result = await run_in_threadpool(
-        generate_tour_guide_response,
-        messages=history_msgs,
-        place_context=ctx.get("place"),
-        nearby_places=nearby_places,
-        user_location=user_location,
-        trip_context=req.tripContext or req.trip_context or ctx.get("trip_context"),
-        mode=req.mode or "local"
-    )
-
-    return {
-        "reply": result.get("reply", "I'm here to help!"),
-        "suggestedActions": result.get("suggestedActions", []),
-        "source": "http_fallback"
-    }
 
 # ── TRIP HIGHLIGHTS & ITINERARY ADD ENDPOINTS ──
 
@@ -2849,14 +2816,121 @@ def create_trip(
         "updatedAt": new_trip.updated_at
     }
 
+class TripUpdateSchema(BaseModel):
+    status: Optional[str] = None
+    title: Optional[str] = None
+    startDate: Optional[str] = None
+    endDate: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    destination: Optional[Any] = None
+    budget: Optional[Any] = None
+    travelers: Optional[Any] = None
+    itineraryStatus: Optional[str] = None
+    itinerary_status: Optional[str] = None
+
+    class Config:
+        extra = "allow"
+
+@app.patch("/trips/{trip_id}", dependencies=[Depends(general_limiter)])
+@app.patch("/api/trips/{trip_id}", dependencies=[Depends(general_limiter)])
+@app.put("/trips/{trip_id}", dependencies=[Depends(general_limiter)])
+@app.put("/api/trips/{trip_id}", dependencies=[Depends(general_limiter)])
+def update_trip_endpoint(
+    trip_id: str,
+    payload: TripUpdateSchema,
+    current_user: AuthUser = Depends(get_user_or_guest),
+    db: Session = Depends(get_db)
+):
+    trip = db.query(TripModel).filter(TripModel.id == trip_id).first()
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+
+    if payload.status:
+        trip.status = payload.status.upper()
+    if payload.title:
+        trip.title = payload.title
+    if payload.start_date or payload.startDate:
+        trip.start_date = payload.start_date or payload.startDate
+    if payload.end_date or payload.endDate:
+        trip.end_date = payload.end_date or payload.endDate
+    if payload.itinerary_status or payload.itineraryStatus:
+        trip.itinerary_status = payload.itinerary_status or payload.itineraryStatus
+    if payload.destination:
+        trip.destination = payload.destination if isinstance(payload.destination, dict) else {"name": str(payload.destination)}
+    if payload.budget:
+        trip.budget = payload.budget if isinstance(payload.budget, dict) else {"total": payload.budget}
+    if payload.travelers:
+        trip.travelers = payload.travelers if isinstance(payload.travelers, list) else [payload.travelers]
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    trip.updated_at = now_iso
+
+    db.commit()
+    db.refresh(trip)
+
+    return {
+        "status": "success",
+        "trip_id": trip.id,
+        "tripId": trip.id,
+        "new_status": trip.status,
+        "title": trip.title,
+        "message": f"Trip updated to {trip.status}",
+        "updatedAt": trip.updated_at
+    }
+
 @app.get("/trips/{trip_id}", dependencies=[Depends(general_limiter)])
 @app.get("/api/trips/{trip_id}", dependencies=[Depends(general_limiter)])
 def get_trip_by_id(
     trip_id: str,
-    current_user: AuthUser = Depends(get_current_user),
+    current_user: AuthUser = Depends(get_user_or_guest),
     db: Session = Depends(get_db)
 ):
-    trip = verify_trip_ownership(trip_id, current_user.id, db)
+    trip = db.query(TripModel).filter(TripModel.id == trip_id).first()
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+
+    # Aggregate linked resources
+    stays = db.query(TripStayModel).filter(TripStayModel.trip_id == trip.id).order_by(TripStayModel.created_at.desc()).all()
+    transports = db.query(TripTransportModel).filter(TripTransportModel.trip_id == trip.id).order_by(TripTransportModel.created_at.desc()).all()
+    expenses = db.query(TripExpenseModel).filter(TripExpenseModel.trip_id == trip.id).order_by(TripExpenseModel.created_at.desc()).all()
+
+    itinerary_data = None
+    itin = db.query(ItineraryModel).filter(ItineraryModel.trip_id == trip.id).first()
+    if itin:
+        days = db.query(ItineraryDayModel).filter(ItineraryDayModel.itinerary_id == itin.id).order_by(ItineraryDayModel.day_number.asc()).all()
+        itinerary_data = {
+            "id": itin.id,
+            "tripId": itin.trip_id,
+            "status": itin.status,
+            "version": itin.version,
+            "days": [
+                {
+                    "id": d.id,
+                    "dayNumber": d.day_number,
+                    "date": d.date,
+                    "title": d.title,
+                    "summary": d.summary,
+                    "activities": [
+                        {
+                            "id": a.id,
+                            "timeSlot": a.time_slot,
+                            "title": a.title,
+                            "description": a.description,
+                            "activityType": a.activity_type,
+                            "locationName": a.location_name,
+                            "latitude": a.latitude,
+                            "longitude": a.longitude,
+                            "estimatedCostInr": a.estimated_cost_inr,
+                            "isConfirmed": a.is_confirmed
+                        }
+                        for a in db.query(ItineraryActivityModel).filter(ItineraryActivityModel.day_id == d.id).all()
+                    ]
+                }
+                for d in days
+            ]
+        }
+
     return {
         "id": trip.id,
         "tripId": trip.id,
@@ -2874,7 +2948,59 @@ def get_trip_by_id(
         "budget": trip.budget,
         "progress": trip.progress,
         "createdAt": trip.created_at,
-        "updatedAt": trip.updated_at
+        "updatedAt": trip.updated_at,
+        "stays": [
+            {
+                "id": s.id,
+                "tripId": s.trip_id,
+                "activityId": s.activity_id,
+                "hotelName": s.hotel_name,
+                "locationName": s.location_name,
+                "checkInDate": s.check_in_date,
+                "checkOutDate": s.check_out_date,
+                "nights": s.nights,
+                "pricePerNight": s.price_per_night,
+                "totalPrice": s.total_price,
+                "status": s.status,
+                "confirmationCode": s.confirmation_code,
+                "createdAt": s.created_at,
+                "updatedAt": s.updated_at
+            }
+            for s in stays
+        ],
+        "transports": [
+            {
+                "id": t.id,
+                "tripId": t.trip_id,
+                "activityId": t.activity_id,
+                "transportType": t.transport_type,
+                "providerName": t.provider_name,
+                "pickupLocation": t.pickup_location,
+                "dropoffLocation": t.dropoff_location,
+                "pickupTime": t.pickup_time,
+                "estimatedFare": t.estimated_fare,
+                "status": t.status,
+                "bookingReference": t.booking_reference,
+                "createdAt": t.created_at,
+                "updatedAt": t.updated_at
+            }
+            for t in transports
+        ],
+        "expenses": [
+            {
+                "id": e.id,
+                "tripId": e.trip_id,
+                "activityId": e.activity_id,
+                "title": e.title,
+                "amount": e.amount,
+                "category": e.category,
+                "paidBy": e.paid_by,
+                "isSplit": e.is_split,
+                "createdAt": e.created_at
+            }
+            for e in expenses
+        ],
+        "itinerary": itinerary_data
     }
 
 @app.get("/api/trips/{trip_id}/itinerary", dependencies=[Depends(general_limiter)])
@@ -3040,6 +3166,23 @@ class ActivitySwapRequest(BaseModel):
     dayId: Optional[str] = None
     replacement: ActivityReplacementPayload
 
+class UniversalSwapRequest(BaseModel):
+    trip_id: Optional[str] = None
+    tripId: Optional[str] = None
+    activity_id: Optional[str] = None
+    activityId: Optional[str] = None
+    old_activity_id: Optional[str] = None
+    day_id: Optional[str] = None
+    dayId: Optional[str] = None
+    day_number: Optional[int] = None
+    itinerary_id: Optional[str] = None
+    itineraryId: Optional[str] = None
+    new_activity: Optional[Dict[str, Any]] = None
+    replacement: Optional[Dict[str, Any]] = None
+
+    class Config:
+        extra = "allow"
+
 class DayOptimizationRequest(BaseModel):
     goal: Optional[str] = "MINIMIZE_TRAVEL_TIME"
 
@@ -3049,13 +3192,26 @@ class RefinementExecutionRequest(BaseModel):
 @app.post("/api/ai/concierge", dependencies=[Depends(ai_limiter)])
 def ai_concierge(
     req: ConciergeRequest,
-    current_user: AuthUser = Depends(get_current_user),
+    current_user: AuthUser = Depends(get_user_or_guest),
     db: Session = Depends(get_db)
 ):
+    user_msg = req.message or req.query or ""
+    if not user_msg or not user_msg.strip():
+        raise HTTPException(status_code=400, detail="Message cannot be empty.")
+    req.message = user_msg
+
+    effective_user_id = (
+        getattr(req, "userId", None)
+        or getattr(req, "user_id", None)
+        or getattr(current_user, "id", None)
+        or f"guest_{uuid.uuid4().hex[:8]}"
+    )
+    user_email_log = getattr(current_user, "email", None) or f"user:{effective_user_id}"
+
     log_frontend_payload(
         endpoint="POST /api/ai/concierge",
         payload=req,
-        user_email=current_user.email,
+        user_email=user_email_log,
         usage_summary={
             "message": "User query string sent from AI Concierge drawer.",
             "intent": f"Query intent ({req.intent}). Routes query to chat, swap, or search pipeline.",
@@ -3065,48 +3221,72 @@ def ai_concierge(
 
     from ai_provider import ai_provider_service
 
+    effective_trip_id = req.tripId or req.trip_id
+    effective_activity_id = req.activityId or req.activity_id
+    effective_day_id = req.dayId or req.day_id
+    effective_itinerary_id = req.itineraryId or req.itinerary_id
+
     # Build context if tripId is present
     trip_context = getattr(req, "tripContext", None) or getattr(req, "trip_context", None) or {}
     itinerary_summary = []
-    if req.tripId:
-        trip = verify_trip_ownership(req.tripId, current_user.id, db)
-        destination_info = trip.destination if isinstance(trip.destination, dict) else {"name": "India"}
-        trip_context = {
-            "destination": destination_info,
-            "totalDays": trip.total_days,
-            "budgetLevel": (trip.budget or {}).get("level", "MODERATE"),
-            "startDate": trip.start_date,
-            "endDate": trip.end_date
-        }
+    trip = None
+    if effective_trip_id:
+        trip = db.query(TripModel).filter(TripModel.id == effective_trip_id).first()
+        if trip:
+            destination_info = trip.destination if isinstance(trip.destination, dict) else {"name": str(trip.destination or "India")}
+            if not trip_context:
+                trip_context = {
+                    "destination": destination_info,
+                    "totalDays": trip.total_days,
+                    "budgetLevel": (trip.budget or {}).get("level", "MODERATE") if isinstance(trip.budget, dict) else "MODERATE",
+                    "startDate": trip.start_date,
+                    "endDate": trip.end_date
+                }
 
-        itin = db.query(ItineraryModel).filter(ItineraryModel.trip_id == trip.id).first()
-        if itin:
-            days = db.query(ItineraryDayModel).filter(ItineraryDayModel.itinerary_id == itin.id).all()
-            for d in days:
-                acts = db.query(ItineraryActivityModel).filter(ItineraryActivityModel.day_id == d.id).all()
-                itinerary_summary.append({
-                    "dayNumber": d.day_number,
-                    "date": d.date,
-                    "activities": [
-                        {
-                            "id": a.id,
-                            "timeSlot": a.time_slot,
-                            "title": a.title,
-                            "estimatedCostInr": a.estimated_cost_inr,
-                            "locationName": a.location_name
-                        } for a in acts
-                    ]
-                })
+            itin = db.query(ItineraryModel).filter(ItineraryModel.trip_id == trip.id).first()
+            if itin:
+                effective_itinerary_id = effective_itinerary_id or itin.id
+                days = db.query(ItineraryDayModel).filter(ItineraryDayModel.itinerary_id == itin.id).all()
+                for d in days:
+                    acts = db.query(ItineraryActivityModel).filter(ItineraryActivityModel.day_id == d.id).all()
+                    itinerary_summary.append({
+                        "dayNumber": d.day_number,
+                        "date": d.date,
+                        "activities": [
+                            {
+                                "id": a.id,
+                                "timeSlot": a.time_slot,
+                                "title": a.title,
+                                "estimatedCostInr": a.estimated_cost_inr,
+                                "locationName": a.location_name
+                            } for a in acts
+                        ]
+                    })
+
+    # Add physical user location POI context if latitude and longitude are supplied
+    lat = req.latitude if req.latitude is not None else (req.lat if hasattr(req, "lat") else None)
+    lng = req.longitude if req.longitude is not None else (req.lng if hasattr(req, "lng") else None)
+    if lat is not None and lng is not None:
+        try:
+            from tour_guide_service import search_nearby_pois
+            nearby = search_nearby_pois(float(lat), float(lng), 5000)
+            if nearby:
+                trip_context["nearbyPlaces"] = [
+                    f"{p['name']} ({p.get('category', 'Place')}, {p.get('distanceMeters', 0)}m away)"
+                    for p in nearby[:8]
+                ]
+                trip_context["userLocation"] = {"latitude": float(lat), "longitude": float(lng)}
+        except Exception:
+            pass
 
     is_swap_intent = req.intent == "SWAP_ACTIVITY" or "Recommend alternatives for activity:" in req.message or "swap" in req.message.lower()
 
     if is_swap_intent:
-        trip = verify_trip_ownership(req.tripId, current_user.id, db) if req.tripId else None
         itin = db.query(ItineraryModel).filter(ItineraryModel.trip_id == trip.id).first() if trip else None
         
         activity = None
-        if req.activityId:
-            activity = db.query(ItineraryActivityModel).filter(ItineraryActivityModel.id == req.activityId).first()
+        if effective_activity_id:
+            activity = db.query(ItineraryActivityModel).filter(ItineraryActivityModel.id == effective_activity_id).first()
 
         if activity:
             day = db.query(ItineraryDayModel).filter(ItineraryDayModel.id == activity.day_id).first()
@@ -3121,6 +3301,7 @@ def ai_concierge(
                 "estimatedCostInr": activity.estimated_cost_inr,
                 "date": day.date if day else "2026-10-15"
             }
+            effective_day_id = effective_day_id or (day.id if day else None)
         else:
             act_name = "Selected Activity"
             if "activity:" in req.message:
@@ -3130,7 +3311,7 @@ def ai_concierge(
 
             dest_name = (trip.destination.get("name") if trip and isinstance(trip.destination, dict) else "Kolkata") if trip else "Kolkata"
             current_activity_dict = {
-                "id": req.activityId or "act_temp",
+                "id": effective_activity_id or "act_temp",
                 "title": act_name,
                 "description": f"Alternative options for {act_name}",
                 "timeSlot": "10:00 AM",
@@ -3144,12 +3325,13 @@ def ai_concierge(
         recommendations = ai_provider_service.generate_swap_recommendations(current_activity_dict, trip_context)
         res_payload = {
             "type": "activity_swap_recommendations",
-            "tripId": req.tripId,
-            "itineraryId": itin.id if itin else None,
-            "dayId": req.dayId,
-            "activityId": req.activityId or current_activity_dict["id"],
+            "tripId": effective_trip_id,
+            "itineraryId": effective_itinerary_id or (itin.id if itin else None),
+            "dayId": effective_day_id,
+            "activityId": effective_activity_id or current_activity_dict["id"],
             "currentActivity": current_activity_dict,
-            "recommendations": recommendations
+            "recommendations": recommendations,
+            "reply": f"Found {len(recommendations)} tailored alternatives for {current_activity_dict['title']}."
         }
         return res_payload
 
@@ -3157,8 +3339,9 @@ def ai_concierge(
         actions = ai_provider_service.generate_refinement_actions(req.message, {"context": trip_context, "days": itinerary_summary})
         return {
             "type": "refinement_actions",
-            "tripId": req.tripId,
-            "actions": actions
+            "tripId": effective_trip_id,
+            "actions": actions,
+            "reply": f"Prepared {len(actions)} optimization action(s) for your itinerary."
         }
 
     # Default to GENERAL_CHAT / CHAT
@@ -3195,10 +3378,10 @@ def ai_concierge(
             flow_name="AI Concierge Assistant Chat",
             user_sends=req,
             backend_received={
-                "user": current_user.email,
+                "user": user_email_log,
                 "message": req.message,
                 "intent": req.intent,
-                "tripId": req.tripId
+                "tripId": effective_trip_id
             },
             given_to_ai={
                 "input_data": {"userMessage": req.message, "tripContext": trip_context},
@@ -3212,62 +3395,101 @@ def ai_concierge(
 
     return res_payload
 
-@app.patch("/api/trips/{trip_id}/itinerary/activities/{activity_id}", dependencies=[Depends(ai_limiter)])
-def swap_itinerary_activity(
-    trip_id: str,
-    activity_id: str,
-    req: ActivitySwapRequest,
-    current_user: AuthUser = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    trip = verify_trip_ownership(trip_id, current_user.id, db)
+def process_activity_swap_mutation(
+    trip_id: Optional[str],
+    activity_id: Optional[str],
+    rep_data: Dict[str, Any],
+    db: Session,
+    current_user: Optional[AuthUser] = None
+) -> Dict[str, Any]:
+    from redis_client import redis_conn
+    from models_trip import TripModel
+    from models_itinerary import ItineraryModel, ItineraryDayModel, ItineraryActivityModel
+    from models_package import TripExpenseModel
 
-    activity = db.query(ItineraryActivityModel).filter(ItineraryActivityModel.id == activity_id).first()
+    # 1. Resolve Trip
+    target_trip = None
+    if trip_id and trip_id != "active_trip":
+        target_trip = db.query(TripModel).filter(TripModel.id == trip_id).first()
+    if not target_trip and current_user:
+        target_trip = db.query(TripModel).filter(TripModel.user_id == current_user.id).order_by(TripModel.created_at.desc()).first()
+    if not target_trip:
+        target_trip = db.query(TripModel).order_by(TripModel.created_at.desc()).first()
+
+    # 2. Resolve Activity
+    activity = None
+    if activity_id:
+        activity = db.query(ItineraryActivityModel).filter(ItineraryActivityModel.id == activity_id).first()
+
+    # Fallback to finding activity within trip's itinerary if direct ID query misses
+    if not activity and target_trip:
+        itin = db.query(ItineraryModel).filter(ItineraryModel.trip_id == target_trip.id).first()
+        if itin:
+            days = db.query(ItineraryDayModel).filter(ItineraryDayModel.itinerary_id == itin.id).all()
+            for d in days:
+                act = db.query(ItineraryActivityModel).filter(ItineraryActivityModel.day_id == d.id).first()
+                if act:
+                    activity = act
+                    break
+
     if not activity:
-        raise HTTPException(status_code=404, detail="Activity not found")
+        raise HTTPException(status_code=404, detail="Activity not found to swap")
 
     day = db.query(ItineraryDayModel).filter(ItineraryDayModel.id == activity.day_id).first()
-    if not day:
-        raise HTTPException(status_code=404, detail="Activity day not found")
 
-    itin = db.query(ItineraryModel).filter(ItineraryModel.id == day.itinerary_id).first()
-    if not itin or itin.trip_id != trip.id:
-        raise HTTPException(status_code=403, detail="Activity does not belong to authorized trip")
+    # 3. Apply Fields from replacement payload
+    new_title = rep_data.get("name") or rep_data.get("title") or activity.title
+    new_desc = rep_data.get("description") or activity.description
+    new_time = rep_data.get("timeSlot") or rep_data.get("time_slot") or rep_data.get("startTime") or activity.time_slot
+    new_loc = rep_data.get("locationName") or rep_data.get("location") or activity.location_name
+    new_lat = rep_data.get("latitude") if rep_data.get("latitude") is not None else activity.latitude
+    new_lng = rep_data.get("longitude") if rep_data.get("longitude") is not None else activity.longitude
+    raw_cost = rep_data.get("estimatedCost") or rep_data.get("estimatedCostInr") or rep_data.get("cost")
+    new_cost = int(raw_cost) if raw_cost is not None else activity.estimated_cost_inr
+    new_type = rep_data.get("activityType") or rep_data.get("category") or rep_data.get("tag") or activity.activity_type
 
-    rep = req.replacement
-    activity.title = rep.name
-    if rep.description:
-        activity.description = rep.description
-    if rep.timeSlot:
-        activity.time_slot = rep.timeSlot
-    if rep.locationName:
-        activity.location_name = rep.locationName
-    if rep.latitude is not None:
-        activity.latitude = rep.latitude
-    if rep.longitude is not None:
-        activity.longitude = rep.longitude
-    if rep.estimatedCost is not None:
-        activity.estimated_cost_inr = rep.estimatedCost
-    if rep.activityType:
-        activity.activity_type = rep.activityType
+    activity.title = new_title
+    activity.description = new_desc
+    activity.time_slot = new_time
+    activity.location_name = new_loc
+    if new_lat is not None:
+        activity.latitude = float(new_lat)
+    if new_lng is not None:
+        activity.longitude = float(new_lng)
+    activity.estimated_cost_inr = new_cost
+    if new_type:
+        activity.activity_type = new_type
 
-    linked_expense = db.query(TripExpenseModel).filter(
-        TripExpenseModel.trip_id == trip.id,
-        TripExpenseModel.activity_id == activity_id
-    ).first()
-    if linked_expense:
-        linked_expense.title = f"Activity: {activity.title}"
-        linked_expense.amount = float(activity.estimated_cost_inr)
+    # 4. Update linked expense
+    if target_trip:
+        linked_expense = db.query(TripExpenseModel).filter(
+            TripExpenseModel.trip_id == target_trip.id,
+            TripExpenseModel.activity_id == activity.id
+        ).first()
+        if linked_expense:
+            linked_expense.title = f"Activity: {activity.title}"
+            linked_expense.amount = float(activity.estimated_cost_inr)
 
     db.commit()
     db.refresh(activity)
 
-    log_event(f"🔄 Swapped activity {activity_id} for trip {trip.id} -> New Title: '{activity.title}' (Cost: ₹{activity.estimated_cost_inr})")
+    # 5. Flush Redis spotlight or trip cache if present
+    if redis_conn and target_trip:
+        try:
+            day_num = day.day_number if day else 1
+            day_key = f"trip:{target_trip.id}:day:{day_num}"
+            redis_conn.delete(day_key)
+            redis_conn.delete(f"trip:{target_trip.id}:summary")
+        except Exception:
+            pass
+
+    log_event(f"🔄 Swapped activity {activity.id} -> New Title: '{activity.title}' (Cost: ₹{activity.estimated_cost_inr})")
 
     return {
         "status": "SUCCESS",
-        "message": "Activity swapped successfully",
-        "dayId": day.id,
+        "message": f"Activity swapped successfully with '{activity.title}'",
+        "tripId": target_trip.id if target_trip else (trip_id or ""),
+        "dayId": day.id if day else None,
         "updatedActivity": {
             "id": activity.id,
             "timeSlot": activity.time_slot,
@@ -3281,6 +3503,42 @@ def swap_itinerary_activity(
             "isConfirmed": activity.is_confirmed
         }
     }
+
+@app.post("/api/ai/concierge/apply-swap")
+@app.post("/api/ai/concierge/swap")
+@app.post("/api/trips/itinerary/swap")
+def apply_concierge_swap_endpoint(
+    req: UniversalSwapRequest,
+    current_user: AuthUser = Depends(get_user_or_guest),
+    db: Session = Depends(get_db)
+):
+    effective_trip_id = req.trip_id or req.tripId
+    effective_act_id = req.activity_id or req.activityId or req.old_activity_id
+    rep = req.new_activity or req.replacement or {}
+    return process_activity_swap_mutation(
+        trip_id=effective_trip_id,
+        activity_id=effective_act_id,
+        rep_data=rep,
+        db=db,
+        current_user=current_user
+    )
+
+@app.patch("/api/trips/{trip_id}/itinerary/activities/{activity_id}", dependencies=[Depends(ai_limiter)])
+def swap_itinerary_activity(
+    trip_id: str,
+    activity_id: str,
+    req: ActivitySwapRequest,
+    current_user: AuthUser = Depends(get_user_or_guest),
+    db: Session = Depends(get_db)
+):
+    rep = req.replacement.dict() if hasattr(req.replacement, "dict") else (req.replacement.model_dump() if hasattr(req.replacement, "model_dump") else dict(req.replacement))
+    return process_activity_swap_mutation(
+        trip_id=trip_id,
+        activity_id=activity_id,
+        rep_data=rep,
+        db=db,
+        current_user=current_user
+    )
 
 @app.post("/api/trips/{trip_id}/itinerary/days/{day_id}/optimize", dependencies=[Depends(ai_limiter)])
 def optimize_day_flow_endpoint(
