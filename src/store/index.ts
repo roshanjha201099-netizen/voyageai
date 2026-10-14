@@ -1,9 +1,11 @@
 import { configureStore } from '@reduxjs/toolkit';
 import { tourGuideApi } from './services/tourGuideApi';
+import nearbyReducer from './slices/nearbySlice';
 
 export const store = configureStore({
   reducer: {
     [tourGuideApi.reducerPath]: tourGuideApi.reducer,
+    nearby: nearbyReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().concat(tourGuideApi.middleware),

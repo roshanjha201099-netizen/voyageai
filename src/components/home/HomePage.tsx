@@ -1,4 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
+import { type RootState, type AppDispatch } from '../../store';
+import { fetchNearbyPlaces } from '../../store/slices/nearbySlice';
 import { useAuth } from '../../auth/AuthContext';
 import { useTrip } from '../../features/trip/TripContext';
 import { useApp } from '../../context/AppContext';
@@ -8,20 +11,22 @@ import { AskVoyageAICard } from '../ai/AskVoyageAICard';
 import { PlaceDetailSheet, type PlaceDetailItem } from '../common/PlaceDetailSheet';
 import { Navigation, Star } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { fetchNearbyPlaces, formatDistance } from '../../services/tourGuideApi';
+import { formatDistance } from '../../services/tourGuideApi';
 import { isMockPayload } from '../../utils/mockIndicator';
-import { MockCardAlert } from '../common/MockCardAlert';
 
 export const HomePage: React.FC = () => {
+  const dispatch = useDispatch<AppDispatch>();
   const { userProfile } = useAuth();
   const { currentTrip } = useTrip();
   const { userLocation, userLocationName, openInAppNavigation, requestGPSLocation } = useApp();
   const navigate = useNavigate();
 
   const [selectedPlace, setSelectedPlace] = useState<PlaceDetailItem | null>(null);
-  const [nearbyPlaces, setNearbyPlaces] = useState<PlaceDetailItem[]>([]);
-  const [isLoadingNearby, setIsLoadingNearby] = useState(false);
-  const lastFetchedCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
+
+  // Redux-cached nearby places and loading state
+  const { places: rawNearbyPlaces, loading: isLoadingNearby } = useSelector(
+    (state: RootState) => state.nearby
+  );
 
   const firstName = userProfile?.firstName || 'Traveler';
 
@@ -33,69 +38,36 @@ export const HomePage: React.FC = () => {
     return 'Good evening';
   };
 
-  // Dynamically fetch nearby POIs based on user's live physical GPS location
+  // Dispatch Redux fetch on coordinates available (thunk condition automatically guards against <500m refetches)
   useEffect(() => {
-    let isMounted = true;
-
     if (!userLocation && navigator.geolocation) {
       requestGPSLocation().catch(() => { });
     }
 
-    const loadDynamicNearby = async () => {
-      const lat = userLocation ? userLocation[0] : 22.5726;
-      const lng = userLocation ? userLocation[1] : 88.3639;
+    const lat = userLocation ? userLocation[0] : 22.5726;
+    const lng = userLocation ? userLocation[1] : 88.3639;
 
-      // Throttle: Skip re-fetching if coordinates haven't moved by > 100 meters
-      if (lastFetchedCoordsRef.current) {
-        const dLat = Math.abs(lastFetchedCoordsRef.current.lat - lat);
-        const dLng = Math.abs(lastFetchedCoordsRef.current.lng - lng);
-        if (dLat < 0.001 && dLng < 0.001) {
-          return;
-        }
-      }
+    dispatch(fetchNearbyPlaces({ lat, lng, radius: 5000 }));
+  }, [userLocation, requestGPSLocation, dispatch]);
 
-      setIsLoadingNearby(true);
-      lastFetchedCoordsRef.current = { lat, lng };
-
-      try {
-        const res = await fetchNearbyPlaces(lat, lng, 5000);
-        if (isMounted && res && res.places && res.places.length > 0) {
-          const formatted: PlaceDetailItem[] = res.places.slice(0, 6).map((p, idx) => ({
-            id: p.id || `poi-${idx}`,
-            name: p.name,
-            category: (p.category || 'ATTRACTION').toUpperCase().replace('_', ' '),
-            rating: 4.5 + (idx % 4) * 0.1,
-            distanceText: p.distanceMeters ? formatDistance(p.distanceMeters) : 'Near you',
-            durationText: '45 mins',
-            estimatedCost: 0,
-            address: p.address || p.description || `${p.category || 'POI'} in ${userLocationName || 'Current Location'}`,
-            description: p.description || `Popular ${p.category || 'attraction'} located near your physical coordinates.`,
-            latitude: p.latitude || lat,
-            longitude: p.longitude || lng,
-            is_mock: Boolean(p.is_mock || p._isMock),
-          }));
-          setNearbyPlaces(formatted);
-          setIsLoadingNearby(false);
-          return;
-        }
-      } catch (err: any) {
-        if (err?.message?.includes('Superceded') || err?.message?.includes('superceded')) {
-          return;
-        }
-        console.warn('Failed to fetch dynamic nearby places:', err);
-      }
-
-      if (isMounted) {
-        setIsLoadingNearby(false);
-      }
-    };
-
-    loadDynamicNearby();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [userLocation, userLocationName, requestGPSLocation]);
+  // Transform raw Redux places to UI PlaceDetailItem shape
+  const nearbyPlaces: PlaceDetailItem[] = useMemo(() => {
+    if (!rawNearbyPlaces || rawNearbyPlaces.length === 0) return [];
+    return rawNearbyPlaces.slice(0, 6).map((p, idx) => ({
+      id: p.id || `poi-${idx}`,
+      name: p.name,
+      category: (p.category || 'ATTRACTION').toUpperCase().replace('_', ' '),
+      rating: 4.5 + (idx % 4) * 0.1,
+      distanceText: p.distanceMeters ? formatDistance(p.distanceMeters) : 'Near you',
+      durationText: '45 mins',
+      estimatedCost: 0,
+      address: p.address || p.description || `${p.category || 'POI'} in ${userLocationName || 'Current Location'}`,
+      description: p.description || `Popular ${p.category || 'attraction'} located near your physical coordinates.`,
+      latitude: p.latitude || (userLocation ? userLocation[0] : 22.5726),
+      longitude: p.longitude || (userLocation ? userLocation[1] : 88.3639),
+      is_mock: Boolean(p.is_mock || p._isMock),
+    }));
+  }, [rawNearbyPlaces, userLocation, userLocationName]);
 
   const sentenceCase = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s);
   const tripRange = currentTrip ? formatDateRange(currentTrip.startDate, currentTrip.endDate) : null;
@@ -155,36 +127,33 @@ export const HomePage: React.FC = () => {
         ) : (
           <div className="space-y-3">
             {nearbyPlaces.map((poi) => {
-              if (isMockPayload(poi)) {
-                return (
-                  <MockCardAlert
-                    key={poi.id}
-                    title={poi.name}
-                    location={poi.address || 'MOCK LOCATION • NO LIVE DATA'}
-                    headsUp={poi.description || 'Overpass / Google Places returned 0 results'}
-                  />
-                );
-              }
-
+              const isMock = isMockPayload(poi);
               return (
                 <article key={poi.id} className="rounded-3xl bg-white border border-[#D9DEDA] p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-[#355F58]">{sentenceCase(poi.category || 'Attraction')}</p>
-                    <h3 className="mt-0.5 text-base sm:text-lg font-bold text-[#1F2522] truncate">{poi.name}</h3>
-                    <p className="text-xs text-[#5F6863] truncate">{poi.address}</p>
-                  </div>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs font-semibold text-[#355F58]">{sentenceCase(poi.category || 'Attraction')}</p>
+                        {isMock && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                            Demo Spot
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="mt-0.5 text-base sm:text-lg font-bold text-[#1F2522] truncate">{poi.name}</h3>
+                      <p className="text-xs text-[#5F6863] truncate">{poi.address}</p>
+                    </div>
 
-                  <div className="shrink-0 text-right">
-                    <p className="text-sm font-bold text-[#1F2522]">{poi.distanceText}</p>
-                    {poi.rating ? (
-                      <p className="mt-0.5 flex items-center justify-end gap-1 text-xs font-semibold text-[#8A5A00]">
-                        <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" aria-hidden="true" />
-                        <span>{Number(poi.rating).toFixed(1)}</span>
-                      </p>
-                    ) : null}
+                    <div className="shrink-0 text-right">
+                      <p className="text-sm font-bold text-[#1F2522]">{poi.distanceText}</p>
+                      {poi.rating ? (
+                        <p className="mt-0.5 flex items-center justify-end gap-1 text-xs font-semibold text-[#8A5A00]">
+                          <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" aria-hidden="true" />
+                          <span>{Number(poi.rating).toFixed(1)}</span>
+                        </p>
+                      ) : null}
+                    </div>
                   </div>
-                </div>
 
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <button
