@@ -67,7 +67,7 @@ export const tripRepository = {
     if (activeTrip) return activeTrip.id;
 
     // Rule 3: Select nearest UPCOMING trip
-    const upcomingTrip = trips.find(t => t.status === 'UPCOMING');
+    const upcomingTrip = trips.find(t => t.status === 'UPCOMING' || (t.status as any) === 'CONFIRMED');
     if (upcomingTrip) return upcomingTrip.id;
 
     // Rule 4: Select first non-archived trip or null

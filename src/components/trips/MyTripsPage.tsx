@@ -27,10 +27,11 @@ export const MyTripsPage: React.FC = () => {
   });
 
   const filteredTrips = trips.filter(trip => {
-    if (activeTab === 'ACTIVE') return trip.status === 'ACTIVE' || trip.status === 'PLANNING';
-    if (activeTab === 'UPCOMING') return trip.status === 'UPCOMING';
-    if (activeTab === 'COMPLETED') return trip.status === 'COMPLETED';
-    if (activeTab === 'ARCHIVED') return trip.status === 'ARCHIVED' || trip.status === 'CANCELLED';
+    const status = (trip.status || '').toUpperCase();
+    if (activeTab === 'ACTIVE') return status === 'ACTIVE' || status === 'PLANNING';
+    if (activeTab === 'UPCOMING') return status === 'UPCOMING' || status === 'CONFIRMED';
+    if (activeTab === 'COMPLETED') return status === 'COMPLETED';
+    if (activeTab === 'ARCHIVED') return status === 'ARCHIVED' || status === 'CANCELLED';
     return true;
   });
 
@@ -172,7 +173,7 @@ export const MyTripsPage: React.FC = () => {
                     <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider backdrop-blur-md ${
                       trip.status === 'ACTIVE'
                         ? 'bg-[#355F58] text-white'
-                        : trip.status === 'UPCOMING'
+                        : trip.status === 'UPCOMING' || (trip.status as any) === 'CONFIRMED'
                         ? 'bg-[#487C74] text-white'
                         : trip.status === 'COMPLETED'
                         ? 'bg-emerald-700 text-white'

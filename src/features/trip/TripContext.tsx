@@ -103,15 +103,42 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     setIsLoading(true);
 
-    // Fetch user trips over WebSocket
+    const applyTrips = (fetchedTrips: Trip[]) => {
+      if (fetchedTrips && Array.isArray(fetchedTrips) && fetchedTrips.length > 0) {
+        setTrips(fetchedTrips);
+        const preferredId = tripRepository.getCurrentTripId(userId);
+        const selectedId = tripRepository.selectCurrentTripId(fetchedTrips, preferredId);
+        setCurrentTripIdState(selectedId);
+        return true;
+      }
+      return false;
+    };
+
+    // 1. Immediately request trips via HTTP REST API (/api/trips)
+    const baseUrl = getApiBaseUrl();
+    fetch(`${baseUrl}/api/trips`, {
+      ...DEFAULT_FETCH_OPTIONS,
+      credentials: 'include',
+      headers: {
+        'Accept': 'application/json',
+      }
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          const restTrips = await res.json();
+          if (applyTrips(restTrips)) {
+            setIsLoading(false);
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn('[HTTP TRIPS] REST fetch /api/trips error:', err);
+      });
+
+    // 2. Fetch and synchronize user trips over WebSocket
     wsClient.sendRequest('trips:list', {})
       .then((fetchedTrips: Trip[]) => {
-        if (fetchedTrips && Array.isArray(fetchedTrips) && fetchedTrips.length > 0) {
-          setTrips(fetchedTrips);
-          const preferredId = tripRepository.getCurrentTripId(userId);
-          const selectedId = tripRepository.selectCurrentTripId(fetchedTrips, preferredId);
-          setCurrentTripIdState(selectedId);
-        } else {
+        if (!applyTrips(fetchedTrips)) {
           const stored = tripRepository.getStoredTrips(userId);
           const preferredId = tripRepository.getCurrentTripId(userId);
           if (stored.length > 0) {
@@ -129,8 +156,8 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.warn('WebSocket trips fetch fallback:', err);
         const stored = tripRepository.getStoredTrips(userId);
         const preferredId = tripRepository.getCurrentTripId(userId);
-        setTrips(stored);
         if (stored.length > 0) {
+          setTrips(stored);
           const selectedId = tripRepository.selectCurrentTripId(stored, preferredId);
           setCurrentTripIdState(selectedId);
         }
@@ -250,6 +277,23 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
     onFocus: useCallback(() => {
       if (!isAuthenticated || !userId) return;
       console.log('[REVALIDATION] Window focused, refreshing trips & active itinerary...');
+      
+      const baseUrl = getApiBaseUrl();
+      fetch(`${baseUrl}/api/trips`, {
+        ...DEFAULT_FETCH_OPTIONS,
+        credentials: 'include',
+        headers: { 'Accept': 'application/json' }
+      })
+        .then(async (res) => {
+          if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data) && data.length > 0) {
+              setTrips(data);
+            }
+          }
+        })
+        .catch(() => {});
+
       wsClient.sendRequest('trips:list', {})
         .then((fetchedTrips: Trip[]) => {
           if (fetchedTrips && Array.isArray(fetchedTrips) && fetchedTrips.length > 0) {
