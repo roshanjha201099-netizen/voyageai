@@ -330,3 +330,41 @@ h1, h2, h3, h4, h5, h6 {
 .poi-marker-glow:hover {
   transform: scale(1.18) translateY(-4px);
 }
+
+/* ── Print Stylesheet for Itinerary Export ── */
+@media print {
+  /* Hide navigation, bottom bar, drawer toggles, modals, floating action buttons */
+  header,
+  nav,
+  .no-print,
+  button,
+  .press-scale,
+  [role="dialog"] {
+    display: none !important;
+  }
+
+  body, html {
+    background: #FFFFFF !important;
+    color: #1F2522 !important;
+    font-size: 11pt !important;
+    overflow: visible !important;
+  }
+
+  /* Prevent awkward page splits */
+  .surface-card,
+  .day-card,
+  article,
+  section {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    box-shadow: none !important;
+    border: 1px solid #D9DEDA !important;
+  }
+
+  /* Force high contrast and color printing */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+

@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, Header, Depends, Response, Request, BackgroundTasks, status, WebSocket, WebSocketDisconnect, Query
+from fastapi.responses import HTMLResponse
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional, List, Dict, Any
@@ -3003,6 +3004,394 @@ def get_trip_by_id(
         "itinerary": itinerary_data
     }
 
+def build_trip_export_payload(trip_id: str, db: Session) -> dict:
+    from models_trip import TripModel
+    from models_itinerary import ItineraryModel, ItineraryDayModel, ItineraryActivityModel
+    from models_package import TripStayModel, TripTransportModel, TripExpenseModel
+
+    trip = db.query(TripModel).filter(TripModel.id == trip_id).first()
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+
+    dest_dict = trip.destination if isinstance(trip.destination, dict) else {}
+    if not dest_dict:
+        dest_dict = {"name": getattr(trip, "title", "Destination")}
+
+    budget_dict = trip.budget if isinstance(trip.budget, dict) else {}
+    travelers_list = trip.travelers if isinstance(trip.travelers, list) else []
+
+    stays = db.query(TripStayModel).filter(TripStayModel.trip_id == trip.id).all()
+    transports = db.query(TripTransportModel).filter(TripTransportModel.trip_id == trip.id).all()
+    expenses = db.query(TripExpenseModel).filter(TripExpenseModel.trip_id == trip.id).all()
+
+    itin = db.query(ItineraryModel).filter(ItineraryModel.trip_id == trip.id).first()
+    days_data = []
+    total_activities = 0
+    total_est_cost = 0
+
+    if itin:
+        days = db.query(ItineraryDayModel).filter(ItineraryDayModel.itinerary_id == itin.id).order_by(ItineraryDayModel.day_number).all()
+        for d in days:
+            acts = db.query(ItineraryActivityModel).filter(ItineraryActivityModel.day_id == d.id).all()
+            total_activities += len(acts)
+            act_list = []
+            for a in acts:
+                cost = a.estimated_cost_inr or 0
+                total_est_cost += cost
+                act_list.append({
+                    "id": a.id,
+                    "timeSlot": a.time_slot,
+                    "title": a.title,
+                    "description": a.description,
+                    "activityType": a.activity_type,
+                    "locationName": a.location_name,
+                    "latitude": a.latitude,
+                    "longitude": a.longitude,
+                    "estimatedCostInr": cost,
+                    "isConfirmed": a.is_confirmed,
+                    "bookingRequired": a.booking_required,
+                    "bookingReferenceId": a.booking_reference_id
+                })
+            days_data.append({
+                "id": d.id,
+                "dayNumber": d.day_number,
+                "date": str(d.date) if d.date else None,
+                "title": d.title,
+                "summary": d.summary,
+                "activities": act_list
+            })
+
+    total_spend_all = total_est_cost + sum(s.total_price or 0 for s in stays) + sum(t.estimated_fare or 0 for t in transports)
+
+    return {
+        "exportVersion": "1.0",
+        "exportedAt": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        "trip": {
+            "id": trip.id,
+            "title": trip.title or f"{dest_dict.get('name', 'Destination')} Tour Package",
+            "status": trip.status,
+            "destination": dest_dict,
+            "dates": {
+                "startDate": str(trip.start_date) if trip.start_date else None,
+                "endDate": str(trip.end_date) if trip.end_date else None,
+                "totalDays": trip.total_days or len(days_data)
+            },
+            "budget": {
+                "level": budget_dict.get("level") or "STANDARD",
+                "targetAmount": budget_dict.get("targetAmount") or budget_dict.get("target_amount") or 0,
+                "currency": budget_dict.get("currency") or "INR"
+            },
+            "summary": {
+                "totalDays": trip.total_days or len(days_data),
+                "totalActivities": total_activities,
+                "totalStays": len(stays),
+                "totalTransports": len(transports),
+                "totalEstimatedCostInr": total_spend_all
+            },
+            "stays": [
+                {
+                    "id": s.id,
+                    "hotelName": s.hotel_name,
+                    "locationName": s.location_name,
+                    "checkInDate": str(s.check_in_date) if s.check_in_date else None,
+                    "checkOutDate": str(s.check_out_date) if s.check_out_date else None,
+                    "nights": s.nights,
+                    "totalPrice": s.total_price,
+                    "status": s.status,
+                    "confirmationCode": s.confirmation_code
+                }
+                for s in stays
+            ],
+            "transports": [
+                {
+                    "id": t.id,
+                    "transportType": t.transport_type,
+                    "providerName": t.provider_name,
+                    "pickupLocation": t.pickup_location,
+                    "dropoffLocation": t.dropoff_location,
+                    "pickupTime": str(t.pickup_time) if t.pickup_time else None,
+                    "estimatedFare": t.estimated_fare,
+                    "status": t.status,
+                    "bookingReference": t.booking_reference
+                }
+                for t in transports
+            ],
+            "expenses": [
+                {
+                    "id": e.id,
+                    "title": e.title,
+                    "amount": e.amount,
+                    "category": e.category,
+                    "paidBy": e.paid_by
+                }
+                for e in expenses
+            ],
+            "days": days_data
+        }
+    }
+
+def render_itinerary_print_template(data: dict) -> str:
+    trip = data.get("trip", {})
+    dest = trip.get("destination", {})
+    dest_name = dest.get("name") or dest.get("city") or "Destination"
+    dates = trip.get("dates", {})
+    summary = trip.get("summary", {})
+    days = trip.get("days", [])
+    stays = trip.get("stays", [])
+    transports = trip.get("transports", [])
+
+    days_html = ""
+    for day in days:
+        acts_html = ""
+        for act in day.get("activities", []):
+            cost_str = f"₹{act.get('estimatedCostInr', 0)}" if act.get('estimatedCostInr') is not None else ""
+            status_badge = '<span style="background: #E8F0EE; color: #355F58; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700;">✓ Confirmed</span>' if act.get("isConfirmed") else '<span style="background: #F1F5F9; color: #64748B; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600;">Planned</span>'
+            acts_html += f"""
+            <div style="display: flex; gap: 16px; padding: 12px 0; border-bottom: 1px dashed #E2E8F0;">
+                <div style="min-width: 90px; font-weight: 700; color: #355F58; font-size: 13px;">{act.get('timeSlot', 'Flexible')}</div>
+                <div style="flex: 1;">
+                    <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px;">
+                        <h4 style="margin: 0; font-size: 15px; color: #1E293B; font-weight: 700;">{act.get('title', 'Activity')}</h4>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            {f'<span style="font-weight: 700; color: #0F172A; font-size: 13px;">{cost_str}</span>' if cost_str else ''}
+                            {status_badge}
+                        </div>
+                    </div>
+                    {f'<p style="margin: 4px 0 0 0; font-size: 12px; color: #64748B;">📍 {act.get("locationName")}</p>' if act.get("locationName") else ''}
+                    {f'<p style="margin: 6px 0 0 0; font-size: 13px; color: #475569; line-height: 1.4;">{act.get("description")}</p>' if act.get("description") else ''}
+                </div>
+            </div>
+            """
+
+        days_html += f"""
+        <div class="day-section" style="margin-top: 24px; padding: 20px; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; break-inside: avoid; page-break-inside: avoid;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #F1F5F9; padding-bottom: 12px; margin-bottom: 12px;">
+                <div>
+                    <span style="background: #355F58; color: #FFFFFF; padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 800; text-transform: uppercase;">Day {day.get('dayNumber')}</span>
+                    <span style="font-size: 13px; color: #64748B; margin-left: 8px; font-weight: 600;">{day.get('date', '')}</span>
+                </div>
+                <h3 style="margin: 0; font-size: 16px; color: #0F172A; font-weight: 800;">{day.get('title', '')}</h3>
+            </div>
+            {f'<p style="margin: 0 0 12px 0; font-size: 13px; color: #64748B; font-style: italic;">{day.get("summary")}</p>' if day.get("summary") else ''}
+            <div>{acts_html if acts_html else '<p style="font-size: 13px; color: #94A3B8;">No activities scheduled.</p>'}</div>
+        </div>
+        """
+
+    stays_html = ""
+    if stays:
+        for s in stays:
+            stays_html += f"""
+            <div style="padding: 12px 16px; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 12px; margin-top: 8px;">
+                <div style="display: flex; justify-content: space-between; font-weight: 700;">
+                    <span style="color: #0F172A;">🏨 {s.get('hotelName', 'Hotel')}</span>
+                    <span style="color: #355F58;">₹{s.get('totalPrice', 0)} ({s.get('nights', 1)} nights)</span>
+                </div>
+                <div style="font-size: 12px; color: #64748B; margin-top: 4px;">📍 {s.get('locationName', '')} · Check-in: {s.get('checkInDate')} to {s.get('checkOutDate')} · Conf Code: {s.get('confirmationCode', 'N/A')}</div>
+            </div>
+            """
+
+    transports_html = ""
+    if transports:
+        for t in transports:
+            transports_html += f"""
+            <div style="padding: 12px 16px; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 12px; margin-top: 8px;">
+                <div style="display: flex; justify-content: space-between; font-weight: 700;">
+                    <span style="color: #0F172A;">🚗 {t.get('providerName', 'Transport')} ({t.get('transportType', 'CAB')})</span>
+                    <span style="color: #355F58;">₹{t.get('estimatedFare', 0)}</span>
+                </div>
+                <div style="font-size: 12px; color: #64748B; margin-top: 4px;">From: {t.get('pickupLocation', '')} ➔ To: {t.get('dropoffLocation', '')} · Pickup: {t.get('pickupTime', 'Scheduled')} · Ref: {t.get('bookingReference', 'N/A')}</div>
+            </div>
+            """
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{trip.get('title', 'VoyageAI Itinerary')}</title>
+<style>
+  @page {{
+    margin: 12mm 15mm;
+    size: A4 portrait;
+  }}
+  * {{
+    box-sizing: border-box;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }}
+  body {{
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #1E293B;
+    background: #F8FAFC;
+    margin: 0;
+    padding: 0;
+  }}
+  .container {{
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 24px;
+    background: #FFFFFF;
+    min-height: 100vh;
+  }}
+  .no-print-bar {{
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: #0F172A;
+    color: #FFFFFF;
+    padding: 12px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  }}
+  .btn-print {{
+    background: #355F58;
+    color: #FFFFFF;
+    border: none;
+    padding: 8px 18px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: background 0.2s;
+  }}
+  .btn-print:hover {{
+    background: #2C504A;
+  }}
+  .btn-link {{
+    color: #94A3B8;
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 600;
+  }}
+  .btn-link:hover {{
+    color: #FFFFFF;
+  }}
+  @media print {{
+    .no-print, .no-print-bar {{
+      display: none !important;
+    }}
+    body {{
+      background: #FFFFFF !important;
+    }}
+    .container {{
+      padding: 0 !important;
+      max-width: 100% !important;
+    }}
+    .day-section {{
+      border: 1px solid #CBD5E1 !important;
+      break-inside: avoid !important;
+      page-break-inside: avoid !important;
+    }}
+  }}
+</style>
+</head>
+<body>
+
+<div class="no-print-bar">
+  <div style="display: flex; align-items: center; gap: 8px;">
+    <span style="font-weight: 800; color: #E8F0EE; letter-spacing: 0.5px;">VoyageAI</span>
+    <span style="color: #64748B;">|</span>
+    <span style="font-size: 13px; color: #CBD5E1;">Trip Itinerary Export</span>
+  </div>
+  <div style="display: flex; align-items: center; gap: 16px;">
+    <a href="/api/trips/{trip.get('id')}/export?format=json" class="btn-link" target="_blank">📥 Export JSON</a>
+    <button onclick="window.print()" class="btn-print">🖨️ Print / Save as PDF</button>
+  </div>
+</div>
+
+<div class="container">
+  <!-- HEADER -->
+  <div style="border-bottom: 2px solid #E2E8F0; padding-bottom: 20px;">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+      <div>
+        <span style="background: #E8F0EE; color: #355F58; padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 800; letter-spacing: 0.5px;">{dest_name.upper()}</span>
+        <h1 style="margin: 8px 0 4px 0; font-size: 26px; color: #0F172A; font-weight: 900;">{trip.get('title', 'Tour Package')}</h1>
+        <p style="margin: 0; color: #64748B; font-size: 14px; font-weight: 500;">📅 {dates.get('startDate')} to {dates.get('endDate')} · {dates.get('totalDays', len(days))} Days Planned</p>
+      </div>
+      <div style="text-align: right;">
+        <span style="display: inline-block; background: #355F58; color: #FFFFFF; padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 800;">STATUS: {trip.get('status', 'CONFIRMED')}</span>
+        <p style="margin: 6px 0 0 0; font-size: 11px; color: #94A3B8;">Trip ID: {trip.get('id', '')}</p>
+      </div>
+    </div>
+
+    <!-- STATS ROW -->
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 20px;">
+      <div style="background: #F8FAFC; border: 1px solid #E2E8F0; padding: 12px; border-radius: 12px; text-align: center;">
+        <div style="font-size: 11px; color: #64748B; font-weight: 700; text-transform: uppercase;">Duration</div>
+        <div style="font-size: 18px; color: #0F172A; font-weight: 800; margin-top: 2px;">{dates.get('totalDays', len(days))} Days</div>
+      </div>
+      <div style="background: #F8FAFC; border: 1px solid #E2E8F0; padding: 12px; border-radius: 12px; text-align: center;">
+        <div style="font-size: 11px; color: #64748B; font-weight: 700; text-transform: uppercase;">Activities</div>
+        <div style="font-size: 18px; color: #0F172A; font-weight: 800; margin-top: 2px;">{summary.get('totalActivities', 0)} Spots</div>
+      </div>
+      <div style="background: #F8FAFC; border: 1px solid #E2E8F0; padding: 12px; border-radius: 12px; text-align: center;">
+        <div style="font-size: 11px; color: #64748B; font-weight: 700; text-transform: uppercase;">Accommodations</div>
+        <div style="font-size: 18px; color: #0F172A; font-weight: 800; margin-top: 2px;">{len(stays)} Confirmed</div>
+      </div>
+      <div style="background: #F8FAFC; border: 1px solid #E2E8F0; padding: 12px; border-radius: 12px; text-align: center;">
+        <div style="font-size: 11px; color: #64748B; font-weight: 700; text-transform: uppercase;">Est. Spend</div>
+        <div style="font-size: 18px; color: #355F58; font-weight: 800; margin-top: 2px;">₹{summary.get('totalEstimatedCostInr', 0)}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BOOKINGS SECTION -->
+  {f'<div style="margin-top: 20px;"><h3 style="margin: 0 0 8px 0; font-size: 15px; color: #0F172A; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;">🏨 Accommodations</h3>{stays_html}</div>' if stays_html else ''}
+  {f'<div style="margin-top: 20px;"><h3 style="margin: 0 0 8px 0; font-size: 15px; color: #0F172A; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;">🚗 Rides & Transfers</h3>{transports_html}</div>' if transports_html else ''}
+
+  <!-- DAY BY DAY ITINERARY -->
+  <div style="margin-top: 24px;">
+    <h2 style="margin: 0; font-size: 18px; color: #0F172A; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px;">📅 Day-by-Day Itinerary</h2>
+    {days_html}
+  </div>
+
+  <!-- FOOTER -->
+  <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #E2E8F0; display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #94A3B8;">
+    <div>Generated by <strong>VoyageAI Smart Concierge</strong> · {data.get('exportedAt')}</div>
+    <div>Have a safe and wonderful trip! ✈️</div>
+  </div>
+</div>
+
+<script>
+  if (window.location.search.includes('autoprint=true')) {{
+    window.addEventListener('load', () => window.print());
+  }}
+</script>
+</body>
+</html>"""
+
+@app.get("/trips/{trip_id}/export", dependencies=[Depends(general_limiter)])
+@app.get("/api/trips/{trip_id}/export", dependencies=[Depends(general_limiter)])
+@app.get("/trips/{trip_id}/pdf", dependencies=[Depends(general_limiter)])
+@app.get("/api/trips/{trip_id}/pdf", dependencies=[Depends(general_limiter)])
+@app.get("/trips/{trip_id}/download", dependencies=[Depends(general_limiter)])
+@app.get("/api/trips/{trip_id}/download", dependencies=[Depends(general_limiter)])
+def export_trip_itinerary_endpoint(
+    trip_id: str,
+    request: Request,
+    format: str = Query("json", enum=["json", "html", "pdf", "print", "html_print"]),
+    current_user: AuthUser = Depends(get_user_or_guest),
+    db: Session = Depends(get_db)
+):
+    export_data = build_trip_export_payload(trip_id=trip_id, db=db)
+    path = request.url.path.lower()
+
+    is_html_or_pdf = (
+        format.lower() in ["html", "pdf", "print", "html_print"]
+        or path.endswith("/pdf")
+    )
+
+    if is_html_or_pdf:
+        html_content = render_itinerary_print_template(export_data)
+        return HTMLResponse(content=html_content, status_code=200)
+
+    return export_data
+
 @app.get("/api/trips/{trip_id}/itinerary", dependencies=[Depends(general_limiter)])
 def get_itinerary(
     trip_id: str,
@@ -3161,10 +3550,38 @@ class ActivityReplacementPayload(BaseModel):
     estimatedCost: Optional[int] = 0
     activityType: Optional[str] = "SIGHTSEEING"
 
+class ActivityPatchRequest(BaseModel):
+    isConfirmed: Optional[bool] = None
+    is_confirmed: Optional[bool] = None
+    status: Optional[str] = None
+    title: Optional[str] = None
+    name: Optional[str] = None
+    description: Optional[str] = None
+    timeSlot: Optional[str] = None
+    time_slot: Optional[str] = None
+    startTime: Optional[str] = None
+    locationName: Optional[str] = None
+    location: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    estimatedCost: Optional[int] = None
+    estimatedCostInr: Optional[int] = None
+    activityType: Optional[str] = None
+    bookingRequired: Optional[bool] = None
+    bookingReferenceId: Optional[str] = None
+    booking_reference_id: Optional[str] = None
+    itineraryId: Optional[str] = None
+    dayId: Optional[str] = None
+    replacement: Optional[Dict[str, Any]] = None
+    new_activity: Optional[Dict[str, Any]] = None
+
+    class Config:
+        extra = "allow"
+
 class ActivitySwapRequest(BaseModel):
     itineraryId: Optional[str] = None
     dayId: Optional[str] = None
-    replacement: ActivityReplacementPayload
+    replacement: Optional[ActivityReplacementPayload] = None
 
 class UniversalSwapRequest(BaseModel):
     trip_id: Optional[str] = None
@@ -3460,6 +3877,13 @@ def process_activity_swap_mutation(
     if new_type:
         activity.activity_type = new_type
 
+    if "isConfirmed" in rep_data:
+        activity.is_confirmed = bool(rep_data["isConfirmed"])
+    elif "is_confirmed" in rep_data:
+        activity.is_confirmed = bool(rep_data["is_confirmed"])
+    elif "status" in rep_data and isinstance(rep_data["status"], str):
+        activity.is_confirmed = rep_data["status"].upper() in ["COMPLETED", "CONFIRMED", "DONE", "TRUE"]
+
     # 4. Update linked expense
     if target_trip:
         linked_expense = db.query(TripExpenseModel).filter(
@@ -3524,21 +3948,164 @@ def apply_concierge_swap_endpoint(
     )
 
 @app.patch("/api/trips/{trip_id}/itinerary/activities/{activity_id}", dependencies=[Depends(ai_limiter)])
-def swap_itinerary_activity(
+@app.put("/api/trips/{trip_id}/itinerary/activities/{activity_id}", dependencies=[Depends(ai_limiter)])
+@app.patch("/api/trips/{trip_id}/activities/{activity_id}", dependencies=[Depends(ai_limiter)])
+@app.put("/api/trips/{trip_id}/activities/{activity_id}", dependencies=[Depends(ai_limiter)])
+def patch_itinerary_activity(
     trip_id: str,
     activity_id: str,
-    req: ActivitySwapRequest,
+    req: ActivityPatchRequest,
     current_user: AuthUser = Depends(get_user_or_guest),
     db: Session = Depends(get_db)
 ):
-    rep = req.replacement.dict() if hasattr(req.replacement, "dict") else (req.replacement.model_dump() if hasattr(req.replacement, "model_dump") else dict(req.replacement))
-    return process_activity_swap_mutation(
-        trip_id=trip_id,
-        activity_id=activity_id,
-        rep_data=rep,
-        db=db,
-        current_user=current_user
-    )
+    # 1. If replacement or new_activity is provided, route through swap mutation:
+    if req.replacement or req.new_activity:
+        rep = req.replacement or req.new_activity or {}
+        if hasattr(rep, "dict"):
+            rep = rep.dict()
+        elif hasattr(rep, "model_dump"):
+            rep = rep.model_dump()
+        else:
+            rep = dict(rep)
+
+        if req.isConfirmed is not None and "isConfirmed" not in rep:
+            rep["isConfirmed"] = req.isConfirmed
+        return process_activity_swap_mutation(
+            trip_id=trip_id,
+            activity_id=activity_id,
+            rep_data=rep,
+            db=db,
+            current_user=current_user
+        )
+
+    # 2. In-place field updates (status toggle, isConfirmed, title, etc.):
+    from redis_client import redis_conn
+    from models_itinerary import ItineraryActivityModel, ItineraryDayModel
+    from models_package import TripExpenseModel
+
+    activity = db.query(ItineraryActivityModel).filter(ItineraryActivityModel.id == activity_id).first()
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+
+    day = db.query(ItineraryDayModel).filter(ItineraryDayModel.id == activity.day_id).first()
+
+    # Update isConfirmed / status
+    if req.isConfirmed is not None:
+        activity.is_confirmed = bool(req.isConfirmed)
+    elif req.is_confirmed is not None:
+        activity.is_confirmed = bool(req.is_confirmed)
+    elif req.status is not None:
+        if req.status.upper() in ["COMPLETED", "CONFIRMED", "DONE", "TRUE"]:
+            activity.is_confirmed = True
+        elif req.status.upper() in ["PENDING", "PLANNED", "FALSE"]:
+            activity.is_confirmed = False
+
+    # Optional field edits
+    if req.title or req.name:
+        activity.title = req.title or req.name
+    if req.description is not None:
+        activity.description = req.description
+    if req.timeSlot or req.time_slot or req.startTime:
+        activity.time_slot = req.timeSlot or req.time_slot or req.startTime
+    if req.locationName or req.location:
+        activity.location_name = req.locationName or req.location
+    if req.latitude is not None:
+        activity.latitude = float(req.latitude)
+    if req.longitude is not None:
+        activity.longitude = float(req.longitude)
+    if req.estimatedCost is not None:
+        activity.estimated_cost_inr = int(req.estimatedCost)
+    elif req.estimatedCostInr is not None:
+        activity.estimated_cost_inr = int(req.estimatedCostInr)
+    if req.activityType:
+        activity.activity_type = req.activityType
+    if req.bookingRequired is not None:
+        activity.booking_required = bool(req.bookingRequired)
+    if req.bookingReferenceId or req.booking_reference_id:
+        activity.booking_reference_id = req.bookingReferenceId or req.booking_reference_id
+
+    # Update linked expense if cost or title updated
+    linked_expense = db.query(TripExpenseModel).filter(
+        TripExpenseModel.trip_id == trip_id,
+        TripExpenseModel.activity_id == activity.id
+    ).first()
+    if linked_expense:
+        linked_expense.title = f"Activity: {activity.title}"
+        linked_expense.amount = float(activity.estimated_cost_inr)
+
+    db.commit()
+    db.refresh(activity)
+
+    # Invalidate Redis cache
+    if redis_conn:
+        try:
+            day_num = day.day_number if day else 1
+            redis_conn.delete(f"trip:{trip_id}:day:{day_num}")
+            redis_conn.delete(f"trip:{trip_id}:summary")
+        except Exception:
+            pass
+
+    return {
+        "status": "SUCCESS",
+        "message": f"Activity '{activity.title}' updated successfully",
+        "tripId": trip_id,
+        "dayId": day.id if day else None,
+        "activityId": activity.id,
+        "isConfirmed": activity.is_confirmed,
+        "updatedActivity": {
+            "id": activity.id,
+            "timeSlot": activity.time_slot,
+            "title": activity.title,
+            "description": activity.description,
+            "activityType": activity.activity_type,
+            "locationName": activity.location_name,
+            "latitude": activity.latitude,
+            "longitude": activity.longitude,
+            "estimatedCostInr": activity.estimated_cost_inr,
+            "isConfirmed": activity.is_confirmed,
+            "bookingRequired": activity.booking_required,
+            "bookingReferenceId": activity.booking_reference_id
+        }
+    }
+
+@app.post("/api/trips/{trip_id}/activities/{activity_id}/status", dependencies=[Depends(ai_limiter)])
+@app.patch("/api/trips/{trip_id}/activities/{activity_id}/status", dependencies=[Depends(ai_limiter)])
+@app.post("/api/trips/{trip_id}/activities/{activity_id}/toggle", dependencies=[Depends(ai_limiter)])
+@app.post("/api/trips/{trip_id}/itinerary/activities/{activity_id}/status", dependencies=[Depends(ai_limiter)])
+@app.patch("/api/trips/{trip_id}/itinerary/activities/{activity_id}/status", dependencies=[Depends(ai_limiter)])
+@app.post("/api/trips/{trip_id}/itinerary/activities/{activity_id}/toggle", dependencies=[Depends(ai_limiter)])
+def toggle_activity_status_endpoint(
+    trip_id: str,
+    activity_id: str,
+    payload: Optional[Dict[str, Any]] = None,
+    current_user: AuthUser = Depends(get_user_or_guest),
+    db: Session = Depends(get_db)
+):
+    activity = db.query(ItineraryActivityModel).filter(ItineraryActivityModel.id == activity_id).first()
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+
+    p = payload or {}
+    if "isConfirmed" in p:
+        activity.is_confirmed = bool(p["isConfirmed"])
+    elif "is_confirmed" in p:
+        activity.is_confirmed = bool(p["is_confirmed"])
+    elif "status" in p and isinstance(p["status"], str):
+        activity.is_confirmed = p["status"].upper() in ["COMPLETED", "CONFIRMED", "DONE", "TRUE"]
+    else:
+        # Toggle current state
+        activity.is_confirmed = not activity.is_confirmed
+
+    db.commit()
+    db.refresh(activity)
+
+    return {
+        "status": "SUCCESS",
+        "tripId": trip_id,
+        "activityId": activity.id,
+        "isConfirmed": activity.is_confirmed,
+        "message": f"Activity status updated to {'CONFIRMED/COMPLETED' if activity.is_confirmed else 'PENDING'}"
+    }
 
 @app.post("/api/trips/{trip_id}/itinerary/days/{day_id}/optimize", dependencies=[Depends(ai_limiter)])
 def optimize_day_flow_endpoint(

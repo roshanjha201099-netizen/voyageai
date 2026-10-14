@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useTrip } from '../../features/trip/TripContext';
-import { MapPin, Sparkles, Wallet, CloudRain, RefreshCw, Navigation, Car, Calendar, ArrowLeft } from 'lucide-react';
+import { MapPin, Sparkles, Wallet, CloudRain, RefreshCw, Navigation, Car, Calendar, ArrowLeft, Download, FileText, Copy, Check, Printer } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { getApiBaseUrl } from '../../config/apiConfig';
 
 export const ItineraryView: React.FC = () => {
   const navigate = useNavigate();
@@ -34,6 +35,9 @@ export const ItineraryView: React.FC = () => {
   }>({ isOpen: false, data: null });
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [showExportDropdown, setShowExportDropdown] = useState<boolean>(false);
+  const [copyToast, setCopyToast] = useState<boolean>(false);
+  const [isExportingJson, setIsExportingJson] = useState<boolean>(false);
 
   const days = currentItinerary?.days || [];
   const selectedDay = days.find(d => d.dayNumber === expandedDayNumber) || days[0];
@@ -103,6 +107,70 @@ export const ItineraryView: React.FC = () => {
 
   const destName = currentTrip?.destination?.name || 'Trip Destination';
 
+  const handleDownloadPdfOrPrint = () => {
+    setShowExportDropdown(false);
+    if (!currentTrip?.id) return;
+    const baseUrl = getApiBaseUrl();
+    const url = `${baseUrl}/api/trips/${currentTrip.id}/export?format=html&autoprint=true`;
+    window.open(url, '_blank');
+  };
+
+  const handleCopyShareableSummary = () => {
+    setShowExportDropdown(false);
+    if (!currentTrip) return;
+    let text = `✈️ ${currentTrip.title || `${destName} Tour Package`}\n`;
+    text += `📍 Destination: ${destName}\n`;
+    text += `📅 Dates: ${currentTrip.startDate} to ${currentTrip.endDate}\n`;
+    text += `👥 Travelers: ${currentTrip.travelers?.length || 2}\n\n`;
+
+    days.forEach(d => {
+      text += `🗓️ Day ${d.dayNumber}: ${d.title || ''}\n`;
+      if (d.summary) text += `   ${d.summary}\n`;
+      (d.activities || []).forEach(a => {
+        const cost = a.estimatedCostInr ? ` (₹${a.estimatedCostInr})` : '';
+        const conf = a.isConfirmed ? ' [✓ Confirmed]' : '';
+        text += `   • ${a.timeSlot || 'Anytime'}: ${a.title} @ ${a.locationName || 'Local'}${cost}${conf}\n`;
+      });
+      text += '\n';
+    });
+    text += `\nGenerated with VoyageAI Concierge`;
+
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(() => {
+        setCopyToast(true);
+        setTimeout(() => setCopyToast(false), 3000);
+      }).catch(err => {
+        console.error("Failed to copy itinerary:", err);
+      });
+    }
+  };
+
+  const handleExportJson = async () => {
+    setShowExportDropdown(false);
+    if (!currentTrip?.id) return;
+    setIsExportingJson(true);
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/trips/${currentTrip.id}/export?format=json`);
+      if (!res.ok) throw new Error("Failed to export JSON");
+      const data = await res.json();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      const fileSlug = (destName || 'itinerary').toLowerCase().replace(/\s+/g, '-');
+      a.download = `trip-${fileSlug}-itinerary.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    } catch (err: any) {
+      setErrorMessage(err.message || "Failed to download itinerary JSON");
+    } finally {
+      setIsExportingJson(false);
+    }
+  };
+
   return (
     <div className="space-y-5 pb-28 max-w-xl mx-auto animate-fadeIn">
       {/* Top Header Bar */}
@@ -117,6 +185,76 @@ export const ItineraryView: React.FC = () => {
         </button>
 
         <div className="flex items-center gap-2">
+          {/* Export Itinerary Dropdown */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowExportDropdown(!showExportDropdown)}
+              disabled={isExportingJson}
+              className="px-3 py-1.5 rounded-full bg-white hover:bg-[#F0F2EF] border border-[#D9DEDA] text-[#1F2522] text-xs font-bold flex items-center gap-1.5 press-scale shadow-xs"
+              title="Export Itinerary"
+            >
+              <Download className="w-3.5 h-3.5 text-[#355F58]" />
+              <span>Export</span>
+            </button>
+
+            {showExportDropdown && (
+              <>
+                <div 
+                  className="fixed inset-0 z-40" 
+                  onClick={() => setShowExportDropdown(false)} 
+                />
+                <div className="absolute right-0 top-full mt-2 w-64 bg-white border border-[#D9DEDA] rounded-2xl shadow-xl z-50 p-2 space-y-1 animate-fadeIn text-left">
+                  <div className="px-3 py-1.5 text-[10px] font-extrabold text-[#7C8580] uppercase tracking-wider border-b border-[#F0F2EF]">
+                    Export Itinerary
+                  </div>
+                  
+                  <button
+                    type="button"
+                    onClick={handleDownloadPdfOrPrint}
+                    className="w-full px-3 py-2.5 rounded-xl hover:bg-[#F0F2EF] text-[#1F2522] text-xs font-bold flex items-center gap-2.5 transition-colors text-left"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-[#E8F0EE] text-[#355F58] flex items-center justify-center shrink-0">
+                      <Printer className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="font-extrabold">Download PDF / Print</div>
+                      <div className="text-[10px] text-[#5F6863] font-normal">Print-optimized layout</div>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleCopyShareableSummary}
+                    className="w-full px-3 py-2.5 rounded-xl hover:bg-[#F0F2EF] text-[#1F2522] text-xs font-bold flex items-center gap-2.5 transition-colors text-left"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-[#E8F0EE] text-[#355F58] flex items-center justify-center shrink-0">
+                      <Copy className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="font-extrabold">Copy Shareable Summary</div>
+                      <div className="text-[10px] text-[#5F6863] font-normal">Formatted text to clipboard</div>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleExportJson}
+                    className="w-full px-3 py-2.5 rounded-xl hover:bg-[#F0F2EF] text-[#1F2522] text-xs font-bold flex items-center gap-2.5 transition-colors text-left"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-[#E8F0EE] text-[#355F58] flex items-center justify-center shrink-0">
+                      <Download className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="font-extrabold">Export JSON</div>
+                      <div className="text-[10px] text-[#5F6863] font-normal">Raw itinerary data</div>
+                    </div>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
           <button
             onClick={handleRunBudgetOptimization}
             disabled={isOptimizing}
@@ -442,6 +580,14 @@ export const ItineraryView: React.FC = () => {
         <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 max-w-sm w-full p-4 bg-rose-600 text-white rounded-2xl font-bold text-xs shadow-2xl flex items-center justify-between animate-fadeIn">
           <span>{errorMessage}</span>
           <button type="button" onClick={() => setErrorMessage(null)} className="ml-2 font-black text-sm">✕</button>
+        </div>
+      )}
+
+      {/* 4. CLIPBOARD COPY TOAST */}
+      {copyToast && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl bg-[#1F2522] text-white text-xs font-bold flex items-center gap-2 shadow-2xl animate-fadeIn">
+          <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>Itinerary copied to clipboard!</span>
         </div>
       )}
 
