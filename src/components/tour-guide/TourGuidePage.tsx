@@ -15,8 +15,8 @@ import { FormattedText } from '../common/FormattedText';
 const FONT_STACK = '"Hanken Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif';
 
 
-import { useDispatch } from 'react-redux';
-import { useGetTourGuideHistoryQuery, tourGuideApi } from '../../store/services/tourGuideApi';
+import { useDispatch, useSelector } from 'react-redux';
+import { type RootState, type AppDispatch, fetchTourGuideHistory, appendGuideMessage } from '../../store';
 
 export interface ActionCardData {
   id: string;
@@ -67,9 +67,13 @@ export const TourGuidePage: React.FC = () => {
     ? (activeTrip?.destination?.name || activeTrip?.title || 'Trip Destination')
     : null;
 
-  // 1. RTK Query: De-duplicated & Cached Tour Guide History (keepUnusedDataFor: 300)
+  // 1. Redux Toolkit Slice: De-duplicated & Cached Tour Guide History
   const tripParam = mode === 'trip' && activeTrip?.id ? activeTrip.id : undefined;
-  const { data: historyData, isLoading: isHistoryLoading } = useGetTourGuideHistoryQuery(tripParam);
+  const { history: historyData, loading: isHistoryLoading } = useSelector((state: RootState) => state.tourGuide);
+
+  useEffect(() => {
+    (dispatch as AppDispatch)(fetchTourGuideHistory(tripParam));
+  }, [dispatch, tripParam]);
 
   // Sync RTK Query history into local messages when query resolves
   useEffect(() => {
@@ -132,13 +136,7 @@ export const TourGuidePage: React.FC = () => {
     };
 
     setMessages(prev => [...prev, userMsg]);
-    dispatch(
-      tourGuideApi.util.updateQueryData('getTourGuideHistory', tripParam, (draft) => {
-        if (Array.isArray(draft)) {
-          draft.push(userMsg);
-        }
-      })
-    );
+    dispatch(appendGuideMessage(userMsg as any));
     if (!queryText) setInput('');
     setLoading(true);
 
@@ -174,13 +172,7 @@ export const TourGuidePage: React.FC = () => {
           }
         };
         setMessages(prev => [...prev, assistantMsg]);
-        dispatch(
-          tourGuideApi.util.updateQueryData('getTourGuideHistory', tripParam, (draft) => {
-            if (Array.isArray(draft)) {
-              draft.push(assistantMsg);
-            }
-          })
-        );
+        dispatch(appendGuideMessage(assistantMsg as any));
       } else {
         setMessages(prev => [
           ...prev,
