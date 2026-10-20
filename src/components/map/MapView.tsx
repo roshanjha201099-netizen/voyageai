@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { type RootState, type AppDispatch } from '../../store';
-import { fetchMapNearbyPlaces } from '../../store/slices/mapPlacesSlice';
+import { fetchMapNearbyPlaces } from '../../store';
 import { useApp } from '../../context/AppContext';
 import { useTrip } from '../../features/trip/TripContext';
 import { useNavigation } from '../../context/NavigationContext';

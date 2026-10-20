@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { type RootState, type AppDispatch } from '../../store';
-import { fetchNearbyPlaces } from '../../store/slices/nearbySlice';
+import { fetchNearbyPlaces } from '../../store';
 import { useAuth } from '../../auth/AuthContext';
 import { useTrip } from '../../features/trip/TripContext';
 import { useApp } from '../../context/AppContext';
