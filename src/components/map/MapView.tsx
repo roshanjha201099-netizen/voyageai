@@ -30,12 +30,12 @@ export interface PlaceItem {
   description?: string;
 }
 
-// Single basemap: standard OpenStreetMap tiles, no API key required.
-const OSM_TILES = {
-  url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-  subdomains: 'abc',
-  maxZoom: 19,
-  attribution: '&copy; OpenStreetMap contributors',
+// Basemap: Google Maps roadmap tiles
+const GOOGLE_MAPS_TILES = {
+  url: 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+  subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+  maxZoom: 20,
+  attribution: '&copy; Google Maps',
 };
 
 const CATEGORY_FILTERS = [
@@ -230,10 +230,10 @@ export const MapView: React.FC = () => {
       attributionControl: false,
     });
 
-    const tileLayer = L.tileLayer(OSM_TILES.url, {
-      maxZoom: OSM_TILES.maxZoom,
-      subdomains: OSM_TILES.subdomains,
-      attribution: OSM_TILES.attribution,
+    const tileLayer = L.tileLayer(GOOGLE_MAPS_TILES.url, {
+      maxZoom: GOOGLE_MAPS_TILES.maxZoom,
+      subdomains: GOOGLE_MAPS_TILES.subdomains,
+      attribution: GOOGLE_MAPS_TILES.attribution,
     }).addTo(map);
     tileLayerRef.current = tileLayer;
 

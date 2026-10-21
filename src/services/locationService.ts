@@ -32,26 +32,29 @@ const DEFAULT_CONFIG: LocationWatcherConfig = {
   maximumAgeMs: 10000
 };
 
+import { getApiBaseUrl } from '../config/apiConfig';
+
 /**
- * Reverse-geocode latitude and longitude into an accurate city/town name via OpenStreetMap Nominatim.
- * NEVER returns 'Local Area' or 'Live GPS'. Fallback to 'Madhubani'.
+ * Reverse-geocode latitude and longitude into an accurate city/town name via Google Geocoding API proxy.
+ * Uses backend /api/location/reverse.
  */
 export async function reverseGeocodeCoords(lat: number, lng: number): Promise<string> {
   try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`,
-      { headers: { 'User-Agent': 'VoyageAI-App/1.0' } }
-    );
+    const baseUrl = getApiBaseUrl();
+    const res = await fetch(`${baseUrl}/api/location/reverse?lat=${lat}&lng=${lng}`);
     if (res.ok) {
       const data = await res.json();
-      const address = data.address || {};
-      const city = address.city || address.town || address.village || address.suburb || address.county || address.state_district;
-      if (city && city.trim().length > 0) return city.trim();
+      const city = data.city || data.state;
+      if (city && city.trim().length > 0 && city !== 'Current Location') return city.trim();
+      if (data.formatted_address) {
+        const parts = data.formatted_address.split(',');
+        if (parts.length > 0) return parts[0].trim();
+      }
     }
   } catch (e) {
     console.warn('[GEOCODE] Reverse geocode failed:', e);
   }
-  return 'Madhubani';
+  return 'Current Location';
 }
 
 // Haversine distance calculator in meters

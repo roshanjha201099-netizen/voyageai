@@ -125,8 +125,7 @@ DEFAULT_NEARBY_TYPES = [
 async def reverse_geocode(lat: float, lng: float) -> Dict[str, Any]:
     """
     Reverse geocodes (lat, lng) coordinates to a formatted address, city, state, country.
-    First tries Google Geocoding API; if billing/access is restricted, uses Google Places API (New)
-    addressComponents or Nominatim, caching results for 24 hours.
+    Uses Google Geocoding API or Google Places API (New) addressComponents, caching results for 24 hours.
     NEVER returns 'Madhubani' unless the coordinates are actually in Madhubani district.
     """
     cache_key = f"geo:reverse:{round(lat, 3)}:{round(lng, 3)}"
@@ -210,28 +209,7 @@ async def reverse_geocode(lat: float, lng: float) -> Dict[str, Any]:
         except Exception as e:
             print(f"[PLACES REVERSE GEOCODE ERR] {e}", flush=True)
 
-    # 3. Tertiary Fallback: OpenStreetMap Nominatim
-    try:
-        nom_url = f"https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat={lat}&lon={lng}"
-        headers = {"User-Agent": "VoyageAI-Proxy/1.0"}
-        async with httpx.AsyncClient(timeout=3.5) as client:
-            res = await client.get(nom_url, headers=headers)
-            if res.status_code == 200:
-                data = res.json()
-                addr = data.get("address", {})
-                city = addr.get("city") or addr.get("town") or addr.get("village") or addr.get("suburb") or addr.get("state_district")
-                if city:
-                    result["city"] = city
-                result["state"] = addr.get("state")
-                result["country"] = addr.get("country", "India")
-                result["formatted_address"] = data.get("display_name", result["formatted_address"])
-                result["source"] = "osm_nominatim"
-                await cache.set(cache_key, result, ttl_seconds=86400)
-                return result
-    except Exception as e:
-        print(f"[NOMINATIM GEOCODE ERR] {e}", flush=True)
-
-    # 4. Final Clean Fallback (Never returns hardcoded Madhubani)
+    # 3. Final Clean Fallback (Never returns hardcoded Madhubani)
     await cache.set(cache_key, result, ttl_seconds=3600)
     return result
 

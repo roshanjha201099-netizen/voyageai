@@ -162,7 +162,8 @@ from rate_limiter import RateLimiter
 
 # Application-Layer Rate Limiters
 ai_limiter = RateLimiter(requests=5, window_seconds=60, key_prefix="rl:trip_gen")
-osm_limiter = RateLimiter(requests=20, window_seconds=60, key_prefix="rl:osm_search")
+places_limiter = RateLimiter(requests=60, window_seconds=60, key_prefix="rl:places_search")
+osm_limiter = places_limiter
 general_limiter = RateLimiter(requests=100, window_seconds=60, key_prefix="rl:general")
 
 COOKIE_NAME = "voyageai_session"
@@ -2049,8 +2050,8 @@ def search_destinations(q: str = ""):
     log_event(f"🔍 GET /api/places/search?q={q}")
     return search_places(q)
 
-@app.get("/api/places/nearby", dependencies=[Depends(osm_limiter)])
-def get_nearby_places(
+@app.get("/api/places/nearby", dependencies=[Depends(places_limiter)])
+async def get_nearby_places(
     q: Optional[str] = None,
     category: Optional[str] = "all",
     lat: Optional[float] = None,
@@ -2059,7 +2060,8 @@ def get_nearby_places(
     radius: Optional[int] = 5000
 ):
     """
-    TripAdvisor-style unified map discovery endpoint with 502/504 Bad Gateway shield.
+    Direct Google Places API (New) discovery endpoint.
+    All Overpass network calls and synthetic mocks are completely eliminated.
     """
     resolved_lng = lng if lng is not None else lon
     if lat is None or resolved_lng is None:
@@ -2068,79 +2070,41 @@ def get_nearby_places(
     log_event(f"🗺️ GET /api/places/nearby | Cat: {category} | Query: {q} | Coords: ({lat:.4f}, {resolved_lng:.4f})")
 
     try:
-        from tour_guide_service import search_nearby_pois
+        from services.google_maps_service import search_nearby_places
 
-        # 1. Free-text Search inside map area (e.g. "chai", "pizza", "mandir")
+        place_types = None
+        if category and category.lower() != "all":
+            cat_l = category.lower()
+            if "pharmacy" in cat_l:
+                place_types = ["pharmacy", "drugstore"]
+            elif "hospital" in cat_l or "medical" in cat_l:
+                place_types = ["hospital", "doctor"]
+            elif "food" in cat_l or "restaurant" in cat_l:
+                place_types = ["restaurant", "cafe"]
+            elif "hotel" in cat_l or "stay" in cat_l:
+                place_types = ["lodging", "hotel"]
+            elif "atm" in cat_l or "bank" in cat_l:
+                place_types = ["atm", "bank"]
+            elif "police" in cat_l:
+                place_types = ["police"]
+            elif "sight" in cat_l or "attraction" in cat_l or "monument" in cat_l:
+                place_types = ["tourist_attraction", "museum", "historical_landmark", "monument"]
+
+        places = await search_nearby_places(lat, resolved_lng, radius=radius or 5000, place_types=place_types)
+        
         if q and len(q.strip()) >= 2:
             clean_q = q.strip().lower()
-            search_radius = max(radius or 5000, 10000)
-            
-            all_nearby = search_nearby_pois(lat, resolved_lng, radius_m=search_radius, category="all")
-            matched = [
-                p for p in all_nearby 
+            places = [
+                p for p in places 
                 if clean_q in p.get("name", "").lower() 
                 or clean_q in p.get("category", "").lower() 
                 or clean_q in (p.get("address") or "").lower()
             ]
-            
-            if not matched:
-                from places import search_local_amenities
-                local_results = search_local_amenities(clean_q, lat, resolved_lng, radius_km=(search_radius / 1000.0))
-                return local_results if local_results else all_nearby[:10]
-                
-            return matched
 
-        # 2. Category discovery with strict timeout shield
-        from places import get_progressive_nearby_places
-        places = get_progressive_nearby_places(lat, resolved_lng, category=category)
-        return places if places else [
-            {
-                "id": f"mock_overpass_1_{int(lat*100)}",
-                "name": "MOCK • Overpass Spot 1 • MOCK",
-                "title": "MOCK • Overpass Spot 1 • MOCK",
-                "category": category or "MOCK",
-                "latitude": lat + 0.008,
-                "longitude": resolved_lng + 0.008,
-                "distanceMeters": 1000,
-                "address": "MOCK LOCATION • NO LIVE DATA",
-                "rating": 4.5,
-                "is_mock": True,
-                "_isMock": True,
-                "description": "MOCK: Overpass / Google Places returned 0 results for these coordinates."
-            },
-            {
-                "id": f"mock_overpass_2_{int(resolved_lng*100)}",
-                "name": "MOCK • Overpass Spot 2 • MOCK",
-                "title": "MOCK • Overpass Spot 2 • MOCK",
-                "category": category or "MOCK",
-                "latitude": lat - 0.006,
-                "longitude": resolved_lng - 0.006,
-                "distanceMeters": 850,
-                "address": "MOCK LOCATION • NO LIVE DATA",
-                "rating": 4.6,
-                "is_mock": True,
-                "_isMock": True,
-                "description": "MOCK: Overpass / Google Places returned 0 results for these coordinates."
-            }
-        ]
+        return places
     except Exception as e:
         print(f"[NEARBY ENDPOINT ERROR]: {e}", flush=True)
-        return [
-            {
-                "id": f"mock_overpass_1_{int(lat*100)}",
-                "name": "MOCK • Overpass Spot 1 • MOCK",
-                "title": "MOCK • Overpass Spot 1 • MOCK",
-                "category": category or "MOCK",
-                "latitude": lat + 0.008,
-                "longitude": resolved_lng + 0.008,
-                "distanceMeters": 1000,
-                "address": "MOCK LOCATION • NO LIVE DATA",
-                "rating": 4.5,
-                "is_mock": True,
-                "_isMock": True,
-                "description": "MOCK: Overpass / Google Places returned 0 results for these coordinates."
-            }
-        ]
+        return []
 
 # ── SARVAM AI TTS SYNTHESIS ENDPOINT ──
 
@@ -4585,12 +4549,9 @@ async def tour_guide_nearby(
 
     log_event(f"TOUR GUIDE NEARBY | User: {user_id} | Center: ({lat:.4f}, {lng:.4f}) | Radius: {radius}m")
 
-    # Primary: Google Places Platform
+    # Primary & ONLY: Google Places Platform
     from services.google_maps_service import search_nearby_places
     raw_places = await search_nearby_places(lat, lng, radius)
-
-    if not raw_places:
-        raw_places = search_nearby_pois(lat, lng, radius)
 
     ranked = rank_places(raw_places, user_prefs, limit=10)
 
