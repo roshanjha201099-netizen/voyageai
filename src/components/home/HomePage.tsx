@@ -44,10 +44,11 @@ export const HomePage: React.FC = () => {
       requestGPSLocation().catch(() => { });
     }
 
-    const lat = userLocation ? userLocation[0] : 22.5726;
-    const lng = userLocation ? userLocation[1] : 88.3639;
-
-    dispatch(fetchNearbyPlaces({ lat, lng, radius: 5000 }));
+    if (userLocation) {
+      const lat = userLocation[0];
+      const lng = userLocation[1];
+      dispatch(fetchNearbyPlaces({ lat, lng, radius: 5000 }));
+    }
   }, [userLocation, requestGPSLocation, dispatch]);
 
   // Transform raw Redux places to UI PlaceDetailItem shape
@@ -63,8 +64,8 @@ export const HomePage: React.FC = () => {
       estimatedCost: 0,
       address: p.address || p.description || `${p.category || 'POI'} in ${userLocationName || 'Current Location'}`,
       description: p.description || `Popular ${p.category || 'attraction'} located near your physical coordinates.`,
-      latitude: p.latitude || (userLocation ? userLocation[0] : 22.5726),
-      longitude: p.longitude || (userLocation ? userLocation[1] : 88.3639),
+      latitude: p.latitude || userLocation?.[0] || 0,
+      longitude: p.longitude || userLocation?.[1] || 0,
       is_mock: Boolean(p.is_mock || p._isMock),
     }));
   }, [rawNearbyPlaces, userLocation, userLocationName]);
@@ -83,14 +84,16 @@ export const HomePage: React.FC = () => {
       </div>
 
       {/* Destination and highlights */}
-      <TripSpotlightBanner
-        destination={currentTrip ? (currentTrip.destination?.name || currentTrip.title) : userLocationName}
-        latitude={currentTrip?.destination?.latitude ?? (userLocation ? userLocation[0] : 22.5726)}
-        longitude={currentTrip?.destination?.longitude ?? (userLocation ? userLocation[1] : 88.3639)}
-        startDate={currentTrip?.startDate}
-        endDate={currentTrip?.endDate}
-        isLocalMode={!currentTrip}
-      />
+      {(currentTrip || userLocation) && (
+        <TripSpotlightBanner
+          destination={currentTrip ? (currentTrip.destination?.name || currentTrip.title) : userLocationName}
+          latitude={currentTrip?.destination?.latitude ?? userLocation?.[0]}
+          longitude={currentTrip?.destination?.longitude ?? userLocation?.[1]}
+          startDate={currentTrip?.startDate}
+          endDate={currentTrip?.endDate}
+          isLocalMode={!currentTrip}
+        />
+      )}
 
       <AskVoyageAICard />
 

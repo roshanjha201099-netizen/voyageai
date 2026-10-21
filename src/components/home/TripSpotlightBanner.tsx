@@ -99,15 +99,16 @@ export const TripSpotlightBanner: React.FC<{
   const coarseLat = latitude !== undefined ? Number(latitude.toFixed(1)) : undefined;
   const coarseLng = longitude !== undefined ? Number(longitude.toFixed(1)) : undefined;
   const cleanDest = destination?.trim();
+  const hasTarget = Boolean(cleanDest || (coarseLat !== undefined && coarseLng !== undefined));
 
   const fetchKey = cleanDest
     ? `dest:${cleanDest.toLowerCase()}`
-    : (coarseLat !== undefined && coarseLng !== undefined ? `geo:${coarseLat}_${coarseLng}` : 'default');
+    : (coarseLat !== undefined && coarseLng !== undefined ? `geo:${coarseLat}_${coarseLng}` : '');
 
   const [data, setData] = useState<SpotlightData | null>(() => {
-    return spotlightCache.get(fetchKey) || null;
+    return fetchKey ? spotlightCache.get(fetchKey) || null : null;
   });
-  const [loading, setLoading] = useState<boolean>(!data);
+  const [loading, setLoading] = useState<boolean>(Boolean(hasTarget && !data));
   const [addingId, setAddingId] = useState<string | null>(null);
   const [failedId, setFailedId] = useState<string | null>(null);
   const [addedIds, setAddedIds] = useState<Record<string, boolean>>({});
@@ -116,6 +117,11 @@ export const TripSpotlightBanner: React.FC<{
   const lastFetchedKeyRef = useRef<string>('');
 
   useEffect(() => {
+    if (!hasTarget || !fetchKey) {
+      setLoading(false);
+      return;
+    }
+
     // If we already fetched for this exact key and have data, skip entirely to eliminate flickering
     if (fetchKey === lastFetchedKeyRef.current && data) {
       return;
@@ -214,6 +220,10 @@ export const TripSpotlightBanner: React.FC<{
 
   const stateFor = (id: string): AddState =>
     addedIds[id] ? 'added' : addingId === id ? 'adding' : failedId === id ? 'failed' : 'idle';
+
+  if (!cleanDest && (latitude === undefined || longitude === undefined)) {
+    return null; // Don't fetch default mock Kolkata/Goa highlights
+  }
 
   if (loading) {
     return (
