@@ -83,7 +83,59 @@ class OSMGeocoderProvider(GeocoderProvider):
 geocoder_service = OSMGeocoderProvider()
 
 def search_places(query: str) -> List[Dict[str, Any]]:
-    return geocoder_service.search(query)
+    """
+    Search destinations/places using Google Places Autocomplete + Details resolution,
+    with graceful fallback to OSM Geocoder Provider.
+    """
+    if not query or len(query.strip()) < 2:
+        return []
+
+    clean_query = query.strip()
+    try:
+        from services.google_maps_service import (
+            autocomplete_places, get_place_details, GOOGLE_MAPS_API_KEY
+        )
+        if GOOGLE_MAPS_API_KEY:
+            import asyncio, concurrent.futures
+            async def _google_resolve():
+                suggs = await autocomplete_places(clean_query)
+                if not suggs:
+                    return []
+                tasks = [get_place_details(s["placeId"]) for s in suggs[:6]]
+                details = await asyncio.gather(*tasks, return_exceptions=True)
+                results = []
+                for s, d in zip(suggs[:6], details):
+                    if isinstance(d, dict) and d.get("latitude") is not None and d.get("longitude") is not None:
+                        results.append({
+                            "id": s["placeId"],
+                            "place_id": s["placeId"],
+                            "name": s.get("name") or d.get("name") or clean_query,
+                            "city": s.get("city") or d.get("name"),
+                            "region": s.get("city"),
+                            "country": "India",
+                            "latitude": d["latitude"],
+                            "longitude": d["longitude"],
+                            "displayName": s.get("displayName") or d.get("address") or s.get("name"),
+                            "display_name": s.get("displayName") or d.get("address") or s.get("name")
+                        })
+                return results
+
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        results = executor.submit(lambda: asyncio.run(_google_resolve())).result()
+                else:
+                    results = loop.run_until_complete(_google_resolve())
+            except Exception:
+                results = asyncio.run(_google_resolve())
+
+            if results:
+                return results
+    except Exception as e:
+        print(f"[GOOGLE SEARCH PLACES ERR] {e}", flush=True)
+
+    return geocoder_service.search(clean_query)
 
 def search_nearby_restaurants(query: str, lat: float = None, lon: float = None) -> List[Dict[str, Any]]:
     """
@@ -342,25 +394,44 @@ def fetch_overpass_places(lat: float, lng: float, radius: int, category: Optiona
 
 def get_progressive_nearby_places(lat: float, lng: float, category: Optional[str] = "all") -> List[Dict[str, Any]]:
     """
-    Progressively expands search radius with strict timeout shield.
-    Falls back to explicit loud mock objects if Overpass API is down or barren.
+    Progressively discovers nearby POIs with Google Places Platform (New) as primary source.
+    Caches in Redis to conserve quota and eliminates synthetic mock fallbacks.
     """
-    # 1. Fast Tier Expansion: 5km -> 25km
+    # 1. Primary: Google Places Platform (New)
+    try:
+        from services.google_maps_service import search_nearby_places, GOOGLE_MAPS_API_KEY
+        if GOOGLE_MAPS_API_KEY:
+            import asyncio, concurrent.futures
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        places = executor.submit(lambda: asyncio.run(search_nearby_places(lat, lng, 5000))).result()
+                else:
+                    places = loop.run_until_complete(search_nearby_places(lat, lng, 5000))
+            except Exception:
+                places = asyncio.run(search_nearby_places(lat, lng, 5000))
+
+            if places:
+                print(f"[GOOGLE PLACES HIT] Found {len(places)} POIs near [{lat}, {lng}]", flush=True)
+                return places
+    except Exception as e:
+        print(f"[GOOGLE PLACES RETRIEVAL ERR] {e}", flush=True)
+
+    # 2. Secondary: Overpass API expansion
     for radius in [5000, 25000]:
         places = fetch_overpass_places(lat, lng, radius, category)
         if places:
-            print(f"[GEO HIT] Found {len(places)} POIs within {radius // 1000}km of [{lat}, {lng}]", flush=True)
+            print(f"[OVERPASS HIT] Found {len(places)} POIs within {radius // 1000}km of [{lat}, {lng}]", flush=True)
             return places
-        else:
-            print(f"[EXPAND RADIUS] No POIs at {radius // 1000}km. Expanding search for [{lat}, {lng}]", flush=True)
 
-    # 2. State-Level Dynamic Fallback (If barren within 50km)
+    # 3. Tertiary: State-Level Regional Attractions (Real, Non-Mock Landmarks)
     try:
         from geo_utils import resolve_administrative_hierarchy
         hierarchy = resolve_administrative_hierarchy(lat, lng)
         state_name = hierarchy.get("state")
         if state_name:
-            print(f"[STATE FALLBACK] Barren 50km zone. Falling back to state-level POIs for: {state_name}", flush=True)
+            print(f"[STATE FALLBACK] Falling back to state-level POIs for: {state_name}", flush=True)
             state_query = f"""
             [out:json][timeout:4];
             area["name"="{state_name}"]["admin_level"~"4|5"]->.searchArea;
@@ -391,58 +462,13 @@ def get_progressive_nearby_places(lat: float, lng: float, category: Optional[str
                                 "address": f"Regional Landmark in {state_name}",
                                 "rating": 4.7,
                                 "price_approx": "State Sight",
-                                "description": f"Top regional attraction in {state_name}."
+                                "description": f"Top regional attraction in {state_name}.",
+                                "is_mock": False,
+                                "_isMock": False
                             })
                 if places:
                     return places
     except Exception as e:
         print(f"[STATE QUERY ERR] {e}", flush=True)
 
-    # 3. Guaranteed Resilient Fallback for India Coordinates (Explicit Loud Mock)
-    return [
-        {
-            "id": f"fb_near_1_{int(lat*100)}",
-            "name": "MOCK • Cultural Spot • MOCK",
-            "title": "MOCK • Cultural Spot • MOCK",
-            "category": "Attraction",
-            "latitude": lat + 0.008,
-            "longitude": lng + 0.008,
-            "distanceMeters": 1200,
-            "address": "MOCK LOCATION • NO LIVE DATA",
-            "rating": 4.6,
-            "price_approx": "Free Entry",
-            "is_mock": True,
-            "_isMock": True,
-            "description": "MOCK: Overpass / Google Places returned 0 results for these coordinates."
-        },
-        {
-            "id": f"fb_near_2_{int(lng*100)}",
-            "name": "MOCK • Artisan Market • MOCK",
-            "title": "MOCK • Artisan Market • MOCK",
-            "category": "Market",
-            "latitude": lat - 0.006,
-            "longitude": lng - 0.006,
-            "distanceMeters": 850,
-            "address": "MOCK LOCATION • NO LIVE DATA",
-            "rating": 4.5,
-            "price_approx": "Local Prices",
-            "is_mock": True,
-            "_isMock": True,
-            "description": "MOCK: Overpass / Google Places returned 0 results for these coordinates."
-        },
-        {
-            "id": f"fb_near_3_{int((lat+lng)*100)}",
-            "name": "MOCK • Sunset Viewpoint • MOCK",
-            "title": "MOCK • Sunset Viewpoint • MOCK",
-            "category": "Park",
-            "latitude": lat + 0.012,
-            "longitude": lng - 0.005,
-            "distanceMeters": 1800,
-            "address": "MOCK LOCATION • NO LIVE DATA",
-            "rating": 4.7,
-            "price_approx": "Free",
-            "is_mock": True,
-            "_isMock": True,
-            "description": "MOCK: Overpass / Google Places returned 0 results for these coordinates."
-        }
-    ]
+    return []

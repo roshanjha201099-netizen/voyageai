@@ -2019,6 +2019,29 @@ def search_user_location(query: str = ""):
 
 # ── PLACES & GEOCODING ENDPOINTS ──
 
+@app.get("/api/location/reverse")
+async def location_reverse(lat: float, lng: float):
+    """Reverse geocode coordinates using Google Geocoding proxy with Redis caching."""
+    from services.google_maps_service import reverse_geocode
+    return await reverse_geocode(lat, lng)
+
+@app.get("/api/places/autocomplete")
+async def places_autocomplete(q: str = "", lat: Optional[float] = None, lng: Optional[float] = None):
+    """Google Places Autocomplete proxy with Redis caching."""
+    if not q or len(q.strip()) < 2:
+        return []
+    from services.google_maps_service import autocomplete_places
+    return await autocomplete_places(q, lat, lng)
+
+@app.get("/api/places/details")
+async def places_details(place_id: str):
+    """Google Places Details proxy with Redis caching."""
+    from services.google_maps_service import get_place_details
+    detail = await get_place_details(place_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Place details not found.")
+    return detail
+
 @app.get("/api/places/search", dependencies=[Depends(osm_limiter)])
 def search_destinations(q: str = ""):
     if not q or len(q.strip()) < 2:
@@ -4540,14 +4563,14 @@ class TourGuideVisitRequest(BaseModel):
     longitude: Optional[float] = None
 
 @app.get("/api/tour-guide/nearby", dependencies=[Depends(osm_limiter)])
-def tour_guide_nearby(
+async def tour_guide_nearby(
     lat: float,
     lng: float,
     radius: int = 5000,
     current_user: AuthUser = Depends(get_user_or_guest),
     db: Session = Depends(get_db)
 ):
-    """Discover nearby POIs within radius using Overpass API (max 5km)."""
+    """Discover nearby POIs within radius using Google Places Platform proxy with Redis caching."""
     radius = min(radius, 5000)
 
     user_id = current_user.id
@@ -4562,8 +4585,13 @@ def tour_guide_nearby(
 
     log_event(f"TOUR GUIDE NEARBY | User: {user_id} | Center: ({lat:.4f}, {lng:.4f}) | Radius: {radius}m")
 
-    # Search and rank
-    raw_places = search_nearby_pois(lat, lng, radius)
+    # Primary: Google Places Platform
+    from services.google_maps_service import search_nearby_places
+    raw_places = await search_nearby_places(lat, lng, radius)
+
+    if not raw_places:
+        raw_places = search_nearby_pois(lat, lng, radius)
+
     ranked = rank_places(raw_places, user_prefs, limit=10)
 
     # Update session

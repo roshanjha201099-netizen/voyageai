@@ -73,7 +73,7 @@ def parse_blocks(raw_text: str):
     return clean_text, chips, card
 def persist_message(user_id: str, role: str, content: str, mode: str, trip_id: Optional[str] = None, metadata: dict = None):
     if not user_id:
-        raise ValueError("user_id is required to persist messages.")
+        user_id = f"guest_{uuid.uuid4().hex[:8]}"
     try:
         msg_id = f"msg_{uuid.uuid4().hex[:12]}"
         meta_json_str = json.dumps(metadata or {})
