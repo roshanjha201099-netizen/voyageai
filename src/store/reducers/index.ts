@@ -11,8 +11,6 @@ export const rootReducer = combineReducers({
   trips: tripsReducer,
 });
 
-export type RootState = ReturnType<typeof rootReducer>;
-
 export * from './tourGuideSlice';
 export * from './nearbySlice';
 export * from './mapPlacesSlice';
