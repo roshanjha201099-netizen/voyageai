@@ -9,8 +9,8 @@ export const ContextSwitcher: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [activeContextMode, setActiveContextMode] = useState<'near_you' | 'trip'>('near_you');
 
-  const locationText = userLocationName || 'Patna, Bihar';
-  const tripTitle = currentTrip?.title || 'Goa Trip';
+  const locationText = userLocationName || (currentTrip?.destination?.name ? `Near ${currentTrip.destination.name}` : 'Current Location');
+  const tripTitle = currentTrip?.title || 'Active Trip';
   const tripDaysLeft = currentTrip ? 'Starts in 10 days' : 'Upcoming Trip';
 
   const handleSelectContext = (mode: 'near_you' | 'trip') => {

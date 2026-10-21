@@ -48,7 +48,7 @@ const initialState: TripsState = {
 
 export const fetchUserTrips = createAsyncThunk(
   'trips/fetchUserTrips',
-  async (force: boolean = false, { rejectWithValue }) => {
+  async (_force: boolean = false, { rejectWithValue }) => {
     try {
       const baseUrl = getApiBaseUrl();
       const url = `${baseUrl}/api/trips`;

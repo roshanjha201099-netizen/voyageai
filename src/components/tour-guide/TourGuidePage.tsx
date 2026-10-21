@@ -72,7 +72,7 @@ export const TourGuidePage: React.FC = () => {
     : null;
 
   // 1. Redux Toolkit Slice: De-duplicated & Cached Tour Guide History
-  const tripParam = mode === 'trip' && activeTrip?.id ? activeTrip.id : undefined;
+  const tripParam = mode === 'trip' && activeTrip?.id ? activeTrip.id : null;
   const { history: historyData, messages: reduxMessages, loading: isHistoryLoading } = useSelector(
     (state: RootState) => state.tourGuide
   );

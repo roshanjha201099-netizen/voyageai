@@ -16,7 +16,7 @@ interface NavigationContextType {
   setMapFocusTarget: (target: MapFocusTarget | null) => void;
   exploreFocusTarget: ExploreFocusTarget | null;
   setExploreFocusTarget: (target: ExploreFocusTarget | null) => void;
-  navigateToMap: (target: MapFocusTarget) => void;
+  navigateToMap: (target?: MapFocusTarget) => void;
   navigateToExplore: (placeId?: string, category?: string) => void;
 }
 
@@ -28,8 +28,10 @@ export const NavigationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [exploreFocusTarget, setExploreFocusTarget] = useState<ExploreFocusTarget | null>(null);
   const navigate = useNavigate();
 
-  const navigateToMap = useCallback((target: MapFocusTarget) => {
-    setMapFocusTarget(target);
+  const navigateToMap = useCallback((target?: MapFocusTarget) => {
+    if (target) {
+      setMapFocusTarget(target);
+    }
     setActiveMode('map');
     navigate('/map');
   }, [navigate]);

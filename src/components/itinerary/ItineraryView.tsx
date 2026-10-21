@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useTrip } from '../../features/trip/TripContext';
-import { MapPin, Sparkles, Wallet, CloudRain, RefreshCw, Navigation, Car, Calendar, ArrowLeft, Download, FileText, Copy, Check, Printer } from 'lucide-react';
+import { MapPin, Sparkles, Wallet, CloudRain, RefreshCw, Navigation, Car, Calendar, ArrowLeft, Download, Copy, Check, Printer } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { getApiBaseUrl } from '../../config/apiConfig';
 
@@ -379,13 +379,18 @@ export const ItineraryView: React.FC = () => {
                       <div className="flex items-center gap-2 pt-2 border-t border-[#D9DEDA]">
                         <button
                           type="button"
-                          onClick={() => openInAppNavigation({
-                            title: act.title,
-                            locationName: act.locationName || destName,
-                            coordinates: [act.latitude || 25.5941, act.longitude || 85.1376],
-                            dayNumber: selectedDay.dayNumber
-                          })}
-                          className="flex-1 py-2 px-3 rounded-xl bg-[#355F58] hover:bg-[#2C504A] text-white text-xs font-bold flex items-center justify-center gap-1.5 press-scale transition-all min-h-[40px]"
+                          disabled={!act.latitude || !act.longitude}
+                          onClick={() => {
+                            if (act.latitude && act.longitude) {
+                              openInAppNavigation({
+                                title: act.title,
+                                locationName: act.locationName || destName,
+                                coordinates: [act.latitude, act.longitude],
+                                dayNumber: selectedDay.dayNumber
+                              });
+                            }
+                          }}
+                          className="flex-1 py-2 px-3 rounded-xl bg-[#355F58] hover:bg-[#2C504A] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold flex items-center justify-center gap-1.5 press-scale transition-all min-h-[40px]"
                         >
                           <Navigation className="w-3.5 h-3.5" />
                           <span>Directions</span>

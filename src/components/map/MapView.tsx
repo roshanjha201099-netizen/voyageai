@@ -27,12 +27,15 @@ export interface PlaceItem {
   description?: string;
 }
 
-// Single basemap: standard OpenStreetMap tiles, no API key required.
-const OSM_TILES = {
-  url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-  subdomains: 'abc',
-  maxZoom: 19,
-  attribution: '&copy; OpenStreetMap contributors',
+// Google Maps Platform Basemap
+const googleApiKey = import.meta.env.VITE_GOOGLE_MAP_DEMO_KEY || '';
+const GOOGLE_MAPS_TILES = {
+  url: googleApiKey
+    ? `https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&key=${googleApiKey}`
+    : 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+  subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+  maxZoom: 20,
+  attribution: '&copy; Google Maps',
 };
 
 const CATEGORY_FILTERS = [
@@ -62,11 +65,16 @@ export const MapView: React.FC = () => {
 
   const tileLayerRef = useRef<L.TileLayer | null>(null);
 
-  // Coordinates anchor
-  const defaultCoords: [number, number] = useMemo(() => [
-    userLocation?.[0] || currentTrip?.destination?.latitude || 26.2376,
-    userLocation?.[1] || currentTrip?.destination?.longitude || 86.2021
-  ], [userLocation, currentTrip]);
+  // Coordinates anchor - dynamically resolved exclusively from GPS or trip destination
+  const activeCoords: [number, number] | null = useMemo(() => {
+    if (userLocation && typeof userLocation[0] === 'number' && typeof userLocation[1] === 'number') {
+      return [userLocation[0], userLocation[1]];
+    }
+    if (currentTrip?.destination?.latitude && currentTrip?.destination?.longitude) {
+      return [currentTrip.destination.latitude, currentTrip.destination.longitude];
+    }
+    return null;
+  }, [userLocation, currentTrip]);
 
   const [places, setPlaces] = useState<PlaceItem[]>([]);
   const [selectedPlace, setSelectedPlace] = useState<PlaceItem | null>(null);
@@ -205,18 +213,17 @@ export const MapView: React.FC = () => {
 
   // Initial load
   useEffect(() => {
-    const lat = userLocation ? userLocation[0] : defaultCoords[0];
-    const lng = userLocation ? userLocation[1] : defaultCoords[1];
+    if (!activeCoords) return;
+    const [lat, lng] = activeCoords;
     fetchMapPlaces(lat, lng, activeCategory);
-  }, [userLocation, defaultCoords, fetchMapPlaces]);
+  }, [activeCoords, fetchMapPlaces]);
 
   // ── MAP INITIALIZATION & CLEANUP ──
   useEffect(() => {
-    if (!mapContainerRef.current) return;
+    if (!mapContainerRef.current || !activeCoords) return;
     if (mapInstanceRef.current) return; // Initialize once
 
-    const initialLat = defaultCoords[0];
-    const initialLng = defaultCoords[1];
+    const [initialLat, initialLng] = activeCoords;
 
     const map = L.map(mapContainerRef.current, {
       center: [initialLat, initialLng],
@@ -225,10 +232,10 @@ export const MapView: React.FC = () => {
       attributionControl: false,
     });
 
-    const tileLayer = L.tileLayer(OSM_TILES.url, {
-      maxZoom: OSM_TILES.maxZoom,
-      subdomains: OSM_TILES.subdomains,
-      attribution: OSM_TILES.attribution,
+    const tileLayer = L.tileLayer(GOOGLE_MAPS_TILES.url, {
+      maxZoom: GOOGLE_MAPS_TILES.maxZoom,
+      subdomains: GOOGLE_MAPS_TILES.subdomains,
+      attribution: GOOGLE_MAPS_TILES.attribution,
     }).addTo(map);
     tileLayerRef.current = tileLayer;
 
@@ -266,10 +273,9 @@ export const MapView: React.FC = () => {
   // Update User Radar Marker
   useEffect(() => {
     const map = mapInstanceRef.current;
-    if (!map) return;
+    if (!map || !activeCoords) return;
 
-    const lat = userLocation ? userLocation[0] : defaultCoords[0];
-    const lng = userLocation ? userLocation[1] : defaultCoords[1];
+    const [lat, lng] = userLocation || activeCoords;
 
     if (!userMarkerRef.current) {
       const userIcon = createUserLocationIcon();
@@ -287,7 +293,7 @@ export const MapView: React.FC = () => {
       map.panTo([lat, lng], { animate: true, duration: 0.8 });
       setTimeout(() => { isProgrammaticMoveRef.current = false; }, 850);
     }
-  }, [userLocation, defaultCoords, isFollowMode]);
+  }, [userLocation, activeCoords, isFollowMode]);
 
   // Filter & Diff Markers
   const filteredPlaces = useMemo(() => {
@@ -367,8 +373,8 @@ export const MapView: React.FC = () => {
         longitude: coordinates[1],
         address: address || 'Targeted location from Explore',
         distanceMeters: calculateDistance(
-          userLocation ? userLocation[0] : defaultCoords[0],
-          userLocation ? userLocation[1] : defaultCoords[1],
+          (userLocation ? userLocation[0] : (activeCoords ? activeCoords[0] : coordinates[0])),
+          (userLocation ? userLocation[1] : (activeCoords ? activeCoords[1] : coordinates[1])),
           coordinates[0],
           coordinates[1]
         ),
@@ -384,13 +390,13 @@ export const MapView: React.FC = () => {
 
       return () => clearTimeout(timer);
     }
-  }, [mapFocusTarget, userLocation, defaultCoords, setMapFocusTarget, setIsFollowMode]);
+  }, [mapFocusTarget, userLocation, activeCoords, setMapFocusTarget, setIsFollowMode]);
 
   // Recenter handler
   const handleRecenter = () => {
     const map = mapInstanceRef.current;
-    const targetCoords = userLocation || defaultCoords;
-    if (map) {
+    const targetCoords = userLocation || activeCoords;
+    if (map && targetCoords) {
       hasUserPannedRef.current = false;
       setIsFollowMode(true);
       isProgrammaticMoveRef.current = true;
@@ -398,6 +404,31 @@ export const MapView: React.FC = () => {
       setTimeout(() => { isProgrammaticMoveRef.current = false; }, 1300);
     }
   };
+
+  if (!activeCoords) {
+    return (
+      <div
+        className="relative w-full bg-[#EFF1ED] flex flex-col items-center justify-center p-6 text-center select-none"
+        style={{ height: `calc(100dvh - ${HEADER_HEIGHT}px - ${BOTTOM_NAV_HEIGHT}px)` }}
+      >
+        <div className="w-16 h-16 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center mb-4 text-[#1F5A3F] animate-pulse">
+          <Crosshair className="w-8 h-8" />
+        </div>
+        <h2 className="text-lg font-bold text-gray-900">Locating Exploration Area...</h2>
+        <p className="text-xs text-gray-500 max-w-xs mt-1 mb-6 leading-relaxed">
+          Enable location access or set an active trip destination to explore Google Maps landmarks, dining, and stays.
+        </p>
+        <button
+          type="button"
+          onClick={() => navigateToExplore()}
+          className="min-h-[44px] px-5 rounded-2xl bg-[#1F5A3F] hover:bg-[#194B34] text-white font-semibold text-xs flex items-center gap-2 shadow-sm transition-colors press-scale"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>Explore Destinations</span>
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -444,9 +475,10 @@ export const MapView: React.FC = () => {
             type="button"
             onClick={() => {
               setActiveCategory(key);
-              const lat = userLocation ? userLocation[0] : defaultCoords[0];
-              const lng = userLocation ? userLocation[1] : defaultCoords[1];
-              fetchMapPlaces(lat, lng, key);
+              if (activeCoords) {
+                const [lat, lng] = activeCoords;
+                fetchMapPlaces(lat, lng, key);
+              }
             }}
             aria-pressed={activeCategory === key}
             className={`shrink-0 min-h-[32px] px-3.5 rounded-full text-xs font-semibold transition-colors border shadow-sm ${activeCategory === key

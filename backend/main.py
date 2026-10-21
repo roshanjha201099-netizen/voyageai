@@ -1105,8 +1105,12 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
         from tour_guide_service import (
             search_nearby_pois, rank_places, get_or_create_session, check_proactive_alert
         )
-        lat = float(data.get("lat") or data.get("latitude") or 15.2993)
-        lng = float(data.get("lng") or data.get("longitude") or 74.1240)
+        raw_lat = data.get("lat") or data.get("latitude")
+        raw_lng = data.get("lng") or data.get("longitude")
+        if raw_lat is None or raw_lng is None:
+            return {"places": []}
+        lat = float(raw_lat)
+        lng = float(raw_lng)
         radius = min(int(data.get("radius") or data.get("radius_m") or 5000), 5000)
 
         token = extract_ws_token(websocket, data)
@@ -1750,14 +1754,19 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
                 elif "for " in concierge_req.message:
                     act_name = concierge_req.message.split("for ")[-1].strip()
 
+                dest_obj = trip_context.get("destination") if isinstance(trip_context.get("destination"), dict) else {}
+                dest_name = dest_obj.get("name") or "Trip Destination"
+                dest_lat = dest_obj.get("latitude")
+                dest_lng = dest_obj.get("longitude")
+
                 current_activity_dict = {
                     "id": concierge_req.activityId or "act_temp",
                     "title": act_name,
                     "description": f"Alternative options for {act_name}",
                     "timeSlot": "10:00 AM",
-                    "locationName": (trip_context.get("destination") or {}).get("name") if isinstance(trip_context.get("destination"), dict) else "Kolkata",
-                    "latitude": 22.5726,
-                    "longitude": 88.3639,
+                    "locationName": dest_name,
+                    "latitude": dest_lat,
+                    "longitude": dest_lng,
                     "estimatedCostInr": 500,
                     "date": "2026-10-15"
                 }
@@ -3835,15 +3844,18 @@ def ai_concierge(
             elif "for " in req.message:
                 act_name = req.message.split("for ")[-1].strip()
 
-            dest_name = (trip.destination.get("name") if trip and isinstance(trip.destination, dict) else "Kolkata") if trip else "Kolkata"
+            dest_obj = trip.destination if trip and isinstance(trip.destination, dict) else {}
+            dest_name = dest_obj.get("name") or "Trip Destination"
+            dest_lat = dest_obj.get("latitude")
+            dest_lng = dest_obj.get("longitude")
             current_activity_dict = {
                 "id": effective_activity_id or "act_temp",
                 "title": act_name,
                 "description": f"Alternative options for {act_name}",
                 "timeSlot": "10:00 AM",
                 "locationName": dest_name,
-                "latitude": 22.5726,
-                "longitude": 88.3639,
+                "latitude": dest_lat,
+                "longitude": dest_lng,
                 "estimatedCostInr": 500,
                 "date": "2026-10-15"
             }

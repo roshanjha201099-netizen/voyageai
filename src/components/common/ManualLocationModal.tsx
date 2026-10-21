@@ -61,7 +61,7 @@ export const ManualLocationModal: React.FC = () => {
   const isNoLocation = !userLocation;
 
   const quickCities = [
-    { name: 'Patna Sahib, Patna', lat: 25.5941, lng: 85.1376, city: 'Patna, Bihar' },
+    { name: 'Hawa Mahal, Jaipur', lat: 26.9239, lng: 75.8267, city: 'Jaipur, RJ' },
     { name: 'Connaught Place, Delhi', lat: 28.6315, lng: 77.2167, city: 'New Delhi' },
     { name: 'Bandra West, Mumbai', lat: 19.0596, lng: 72.8295, city: 'Mumbai, MH' },
     { name: 'Panaji, Goa', lat: 15.4909, lng: 73.8278, city: 'Goa' },

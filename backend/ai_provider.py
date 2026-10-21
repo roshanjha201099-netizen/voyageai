@@ -375,8 +375,8 @@ class MockAIProvider(AIProviderInterface):
                         "description": "Climb the iconic 1786 beehive granary overlooking the Ganges River.",
                         "activityType": "SIGHTSEEING",
                         "locationName": "Golghar, Patna",
-                        "latitude": 25.6190,
-                        "longitude": 85.1444,
+                        "latitude": 25.5890,
+                        "longitude": 85.2044,
                         "estimatedCostInr": 50,
                         "bookingRequired": False,
                         "isConfirmed": False
@@ -387,8 +387,8 @@ class MockAIProvider(AIProviderInterface):
                         "description": "Traditional roasted sattu litti served with spicy eggplant chokha and desi ghee.",
                         "activityType": "DINING",
                         "locationName": "Maurya Lok Complex, Patna",
-                        "latitude": 25.6112,
-                        "longitude": 85.1378,
+                        "latitude": 25.5912,
+                        "longitude": 85.2078,
                         "estimatedCostInr": 250,
                         "bookingRequired": False,
                         "isConfirmed": False
@@ -399,7 +399,7 @@ class MockAIProvider(AIProviderInterface):
                         "description": "Visit sacred historic gurdwara followed by evening breeze on Ganga Path.",
                         "activityType": "CULTURE",
                         "locationName": "Patna Sahib & Ganga Path, Patna",
-                        "latitude": 25.6025,
+                        "latitude": 25.5925,
                         "longitude": 85.2280,
                         "estimatedCostInr": 100,
                         "bookingRequired": False,
@@ -474,8 +474,10 @@ class MockAIProvider(AIProviderInterface):
                     "activities": cluster["activities"]
                 })
             else:
-                lat_offset = (destination.get("latitude") or 25.5941) + (d * 0.015)
-                lng_offset = (destination.get("longitude") or 85.1376) + (d * 0.012)
+                base_d_lat = float(destination.get("latitude") or 0.0)
+                base_d_lng = float(destination.get("longitude") or 0.0)
+                lat_offset = base_d_lat + (d * 0.015) if base_d_lat else 0.0
+                lng_offset = base_d_lng + (d * 0.012) if base_d_lng else 0.0
                 
                 days_list.append({
                     "dayNumber": d,
@@ -617,6 +619,8 @@ class MockAIProvider(AIProviderInterface):
                 }
             ]
         else:
+            base_lat = current_activity.get("latitude") or (trip_context.get("destination") or {}).get("latitude") or 0.0
+            base_lng = current_activity.get("longitude") or (trip_context.get("destination") or {}).get("longitude") or 0.0
             return [
                 {
                     "id": "swap_rec_1",
@@ -626,8 +630,8 @@ class MockAIProvider(AIProviderInterface):
                     "startTime": "10:00 AM",
                     "durationMinutes": 120,
                     "locationName": f"Central Museum, {dest_name}",
-                    "latitude": current_activity.get("latitude") or 22.5726,
-                    "longitude": current_activity.get("longitude") or 88.3639,
+                    "latitude": base_lat,
+                    "longitude": base_lng,
                     "estimatedCost": 200,
                     "reason": "Indoor cultural alternative"
                 },
@@ -639,8 +643,8 @@ class MockAIProvider(AIProviderInterface):
                     "startTime": "10:30 AM",
                     "durationMinutes": 90,
                     "locationName": f"Botanical Promenade, {dest_name}",
-                    "latitude": (current_activity.get("latitude") or 22.5726) + 0.005,
-                    "longitude": (current_activity.get("longitude") or 88.3639) + 0.005,
+                    "latitude": base_lat + 0.005 if base_lat else None,
+                    "longitude": base_lng + 0.005 if base_lng else None,
                     "estimatedCost": 100,
                     "reason": "Nature & relaxation"
                 },
@@ -652,8 +656,8 @@ class MockAIProvider(AIProviderInterface):
                     "startTime": "11:00 AM",
                     "durationMinutes": 90,
                     "locationName": f"Artisanal Quarter, {dest_name}",
-                    "latitude": (current_activity.get("latitude") or 22.5726) - 0.004,
-                    "longitude": (current_activity.get("longitude") or 88.3639) - 0.004,
+                    "latitude": base_lat - 0.004 if base_lat else None,
+                    "longitude": base_lng - 0.004 if base_lng else None,
                     "estimatedCost": 0,
                     "reason": "Local heritage shopping"
                 }
@@ -931,8 +935,8 @@ Output ONLY a valid JSON object matching this schema:
       "startTime": "{current_activity.get('timeSlot', '10:00 AM')}",
       "durationMinutes": 90,
       "locationName": "Precise Establishment Name, Neighborhood",
-      "latitude": 22.5726,
-      "longitude": 88.3639,
+      "latitude": {float(current_activity.get('latitude') or 0.0)},
+      "longitude": {float(current_activity.get('longitude') or 0.0)},
       "estimatedCost": 300,
       "reason": "Direct explanation of why this replaces the original activity effectively."
     }}

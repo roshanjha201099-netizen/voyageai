@@ -130,6 +130,8 @@ def validate_and_sanitize_itinerary(parsed_schema: GeneratedItinerarySchema, exp
 def construct_ai_prompt(ai_input: Dict[str, Any]) -> str:
     dest = ai_input.get('destination', {})
     dest_name = dest.get('name', 'India')
+    dest_lat = float(dest.get('latitude') or 0.0)
+    dest_lng = float(dest.get('longitude') or 0.0)
     total_days = ai_input.get('totalDays', 5)
     start_date = ai_input.get('startDate', '2026-10-15')
     prefs = ai_input.get('preferencesSnapshot', {})
@@ -151,7 +153,7 @@ OPERATIONAL CONSTRAINTS:
 1. DATE ARITHMETIC: Days must strictly sequence from Day 1 ({start_date}) to Day {total_days} with no gaps.
 2. LOGISTICAL CLUSTERING: Group activities within each day by geographic proximity to minimize transit time. Never bounce across opposite ends of a city on the same day.
 3. PACING & REALISM: Schedule 3 to 4 activities per day (Morning, Lunch/Midday, Afternoon, Evening). Do not overload.
-4. SPECIFICITY: Use verified, concrete attraction and establishment names (e.g., "Amber Palace, Amer" or "Victoria Memorial, Kolkata" instead of generic placeholders).
+4. SPECIFICITY: Use verified, concrete attraction and establishment names instead of generic placeholders.
 5. TEMPORAL CONTINUITY: Activities must follow strict 12-hour chronological order (e.g., "09:00 AM" -> "01:00 PM" -> "04:30 PM" -> "08:00 PM").
 6. COORDINATES: Provide accurate, best-known latitude and longitude for the named attraction.
 7. FLAGS: Set `bookingRequired: false` and `isConfirmed: false` for all generated options.
@@ -172,8 +174,8 @@ Output ONLY a single valid JSON object following this exact structure:
           "description": "Engaging, practical 1-2 sentence description highlighting key highlights.",
           "activityType": "SIGHTSEEING",
           "locationName": "Real Venue Name, Specific Neighborhood/District",
-          "latitude": 22.5726,
-          "longitude": 88.3639,
+          "latitude": {dest_lat},
+          "longitude": {dest_lng},
           "estimatedCostInr": 250,
           "bookingRequired": false,
           "isConfirmed": false

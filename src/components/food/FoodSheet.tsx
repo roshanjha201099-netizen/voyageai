@@ -2,23 +2,22 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useTrip } from '../../features/trip/TripContext';
 import { BottomSheet } from '../common/BottomSheet';
-import { getDestinationInfo } from '../../utils/destinationData';
 import type { RestaurantPlace } from '../../utils/destinationData';
 import { Star, MapPin, Navigation, Car, Heart, RefreshCw } from 'lucide-react';
-import { wsClient } from '../../services/wsClient';
+import { getApiBaseUrl, DEFAULT_HEADERS } from '../../config/apiConfig';
 
 export const FoodSheet: React.FC = () => {
-  const { isFoodSheetOpen, setIsFoodSheetOpen, openCabModal, toggleSavePlace, userProfile, activeTrip, userLocation } = useApp();
+  const { isFoodSheetOpen, setIsFoodSheetOpen, openCabModal, openInAppNavigation, toggleSavePlace, userProfile, activeTrip, userLocation, userLocationName } = useApp();
   const { currentTrip } = useTrip();
 
-  const activeDestName = currentTrip?.destination?.name || (typeof activeTrip?.destination === 'string' ? activeTrip.destination : 'Bihar');
-  const activeDestCoords: [number, number] = userLocation || [
-    currentTrip?.destination?.latitude || 25.5941,
-    currentTrip?.destination?.longitude || 85.1376
-  ];
+  const activeDestName = currentTrip?.destination?.name || (typeof activeTrip?.destination === 'string' ? activeTrip.destination : userLocationName || 'Nearby');
+  const activeDestCoords: [number, number] | null = userLocation || (
+    currentTrip?.destination?.latitude && currentTrip?.destination?.longitude
+      ? [currentTrip.destination.latitude, currentTrip.destination.longitude]
+      : null
+  );
 
-  const fallbackInfo = getDestinationInfo(activeDestName, activeDestCoords);
-  const [dynamicRestaurants, setDynamicRestaurants] = useState<RestaurantPlace[]>(fallbackInfo.restaurants);
+  const [dynamicRestaurants, setDynamicRestaurants] = useState<RestaurantPlace[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [filter, setFilter] = useState<'All' | 'Local Special' | 'Pure Veg'>('All');
 
@@ -26,29 +25,47 @@ export const FoodSheet: React.FC = () => {
 
   useEffect(() => {
     if (!isFoodSheetOpen) return;
+    if (!activeDestCoords) {
+      setDynamicRestaurants([]);
+      return;
+    }
     setIsLoading(true);
 
-    wsClient.sendRequest('places:nearby', {
-      query: activeDestName,
-      lat: activeDestCoords[0],
-      lng: activeDestCoords[1]
-    })
+    const baseUrl = getApiBaseUrl();
+    const url = `${baseUrl}/api/places/nearby?lat=${activeDestCoords[0]}&lng=${activeDestCoords[1]}&category=food&limit=25`;
+
+    fetch(url, { headers: DEFAULT_HEADERS })
+      .then(res => res.json())
       .then(data => {
-        if (Array.isArray(data) && data.length > 0) {
-          setDynamicRestaurants(data);
+        const rawItems = Array.isArray(data) ? data : (data.places || data.results || []);
+        if (Array.isArray(rawItems) && rawItems.length > 0) {
+          const formatted: RestaurantPlace[] = rawItems.map((p: any, idx: number) => ({
+            id: p.id || `food-${idx}`,
+            name: p.name || 'Local Eatery',
+            rating: p.rating || 4.5,
+            cuisine: p.cuisine ? (Array.isArray(p.cuisine) ? p.cuisine : [p.cuisine]) : ['Local Dining', 'Regional Food'],
+            priceRange: p.price_approx || '₹₹',
+            location: p.address || p.description || activeDestName,
+            coordinates: [p.latitude || activeDestCoords[0], p.longitude || activeDestCoords[1]],
+            distanceKm: p.distance_meters ? Number((p.distance_meters / 1000).toFixed(1)) : 1.2,
+            openingHours: '10:00 AM – 11:00 PM',
+            photos: p.photos && p.photos.length > 0 ? p.photos : ['https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=800&q=80'],
+            dietary: ['Vegetarian Friendly', 'Dine-in']
+          }));
+          setDynamicRestaurants(formatted);
         } else {
-          setDynamicRestaurants(fallbackInfo.restaurants);
+          setDynamicRestaurants([]);
         }
       })
       .catch(err => {
-        console.warn("Dynamic food places fetch error via WebSocket:", err);
-        setDynamicRestaurants(fallbackInfo.restaurants);
+        console.warn("Dynamic food places fetch error:", err);
+        setDynamicRestaurants([]);
       })
       .finally(() => setIsLoading(false));
-  }, [isFoodSheetOpen, activeDestName, activeDestCoords[0], activeDestCoords[1]]);
+  }, [isFoodSheetOpen, activeDestCoords, activeDestName]);
 
   const displayRestaurants = dynamicRestaurants.filter(r => {
-    if (filter === 'Local Special') return r.cuisine.some(c => c.toLowerCase().includes('bihari') || c.toLowerCase().includes('local') || c.toLowerCase().includes('thali') || c.toLowerCase().includes('seafood') || c.toLowerCase().includes('kati roll'));
+    if (filter === 'Local Special') return r.cuisine.some(c => c.toLowerCase().includes('local') || c.toLowerCase().includes('special') || c.toLowerCase().includes('thali') || c.toLowerCase().includes('signature'));
     if (filter === 'Pure Veg') return (r.dietary || []).some(d => d.toLowerCase().includes('veg'));
     return true;
   });
@@ -139,7 +156,14 @@ export const FoodSheet: React.FC = () => {
                   </button>
                   <button
                     onClick={() => {
-                      alert(`Navigating to ${r.name} (${r.distanceKm} km away)`);
+                      if (r.coordinates && r.coordinates[0] && r.coordinates[1]) {
+                        openInAppNavigation({
+                          title: r.name,
+                          locationName: r.location,
+                          coordinates: r.coordinates,
+                        });
+                        setIsFoodSheetOpen(false);
+                      }
                     }}
                     className="flex-1 touch-target press-scale py-2.5 rounded-xl bg-white/5 border border-white/10 text-slate-200 font-semibold text-xs flex items-center justify-center gap-1.5"
                   >
@@ -149,6 +173,12 @@ export const FoodSheet: React.FC = () => {
               </div>
             );
           })}
+
+          {displayRestaurants.length === 0 && !isLoading && (
+            <div className="p-8 text-center text-slate-400 text-xs">
+              No dining spots found around this location.
+            </div>
+          )}
         </div>
       </div>
     </BottomSheet>

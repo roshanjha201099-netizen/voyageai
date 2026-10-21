@@ -115,7 +115,7 @@ Provide 5 diverse real activities and 2 real events. Replace [{lat}, {lng}] with
     else:
         prompt = f"""
 You are an elite travel concierge. Generate an authentic, hyper-accurate travel guide for {clean_dest}.
-DO NOT use generic place names like 'Top Landmarks Walk' or fake static coordinates like [26.2376, 86.2021].
+DO NOT use generic place names like 'Top Landmarks Walk' or fake static coordinates.
 Use REAL, ICONIC landmarks, local specialty restaurants, and authentic upcoming festivals/events for {clean_dest}.
 Ensure the latitude and longitude coordinates accurately match the real geographic locations in {clean_dest}.
 

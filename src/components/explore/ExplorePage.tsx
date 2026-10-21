@@ -266,12 +266,19 @@ export const ExplorePage: React.FC = () => {
           </div>
 
           <button
-            onClick={() => navigateToMap({
-              id: 'user-live',
-              name: liveCityName,
-              coordinates: userLocation || [26.2376, 86.2021],
-              zoom: 16
-            })}
+            onClick={() => {
+              const coords = userLocation || (currentTrip?.destination?.latitude && currentTrip?.destination?.longitude ? [currentTrip.destination.latitude, currentTrip.destination.longitude] as [number, number] : null);
+              if (coords) {
+                navigateToMap({
+                  id: 'user-live',
+                  name: liveCityName,
+                  coordinates: coords,
+                  zoom: 16
+                });
+              } else {
+                navigateToMap();
+              }
+            }}
             className="px-3.5 py-1.5 rounded-xl bg-white hover:bg-gray-50 border border-gray-200 text-[#1F5A3F] text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all press-scale shrink-0"
           >
             <Navigation className="w-3.5 h-3.5 fill-[#1F5A3F]" />

@@ -22,7 +22,10 @@ export const RidesPage: React.FC = () => {
   const { openInAppNavigation, setTripView, setActiveTab, userLocationName, bookings } = useApp();
   const { currentTrip, currentItinerary } = useTrip();
 
-  const activeDestName = currentTrip?.destination?.name || 'Kerala';
+  const activeDestName = currentTrip?.destination?.name || 'Your Destination';
+  const destCoords: [number, number] | null = (currentTrip?.destination?.latitude && currentTrip?.destination?.longitude)
+    ? [currentTrip.destination.latitude, currentTrip.destination.longitude]
+    : null;
 
   // Extract all trip itinerary activities as drop-off choices
   const tripActivities = useMemo(() => {
@@ -30,29 +33,31 @@ export const RidesPage: React.FC = () => {
     if (currentItinerary?.days) {
       currentItinerary.days.forEach(day => {
         (day.activities || []).forEach(act => {
-          list.push({
-            id: act.id,
-            title: act.title,
-            locationName: act.locationName || activeDestName,
-            dayNumber: day.dayNumber,
-            coordinates: [act.latitude || 25.5941, act.longitude || 85.1376]
-          });
+          if (act.latitude && act.longitude) {
+            list.push({
+              id: act.id,
+              title: act.title,
+              locationName: act.locationName || activeDestName,
+              dayNumber: day.dayNumber,
+              coordinates: [act.latitude, act.longitude]
+            });
+          }
         });
       });
     }
-    if (list.length === 0) {
+    if (list.length === 0 && currentTrip?.destination?.name && destCoords) {
       list.push({
-        id: 'default-1',
-        title: 'Takht Sri Patna Sahib Sacred Heritage Visit',
-        locationName: 'Harmandir Gali, Patna Sahib',
+        id: 'dest-1',
+        title: `${currentTrip.destination.name} Exploration`,
+        locationName: currentTrip.destination.name,
         dayNumber: 1,
-        coordinates: [25.5941, 85.1376]
+        coordinates: destCoords
       });
     }
     return list;
-  }, [currentItinerary, activeDestName]);
+  }, [currentItinerary, activeDestName, currentTrip, destCoords]);
 
-  const [selectedDestination, setSelectedDestination] = useState<string>(tripActivities[0]?.title || 'Takht Sri Patna Sahib');
+  const [selectedDestination, setSelectedDestination] = useState<string>(tripActivities[0]?.title || '');
   const [selectedVehicleType, setSelectedVehicleType] = useState<string>('Sedan');
   const [isRideBooked, setIsRideBooked] = useState<boolean>(false);
   const [bookedDriverInfo, setBookedDriverInfo] = useState<any>(null);

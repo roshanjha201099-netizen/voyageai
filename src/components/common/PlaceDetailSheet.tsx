@@ -28,11 +28,14 @@ export const PlaceDetailSheet: React.FC<PlaceDetailSheetProps> = ({ item, onClos
 
   if (!item) return null;
 
+  const hasCoordinates = typeof item.latitude === 'number' && typeof item.longitude === 'number' && !isNaN(item.latitude) && !isNaN(item.longitude);
+
   const handleNavigate = () => {
+    if (!hasCoordinates || item.latitude === undefined || item.longitude === undefined) return;
     openInAppNavigation({
       title: item.name,
       locationName: item.address || item.name,
-      coordinates: [item.latitude || 15.2993, item.longitude || 74.1240],
+      coordinates: [item.latitude, item.longitude],
     });
     onClose();
   };
@@ -118,10 +121,11 @@ export const PlaceDetailSheet: React.FC<PlaceDetailSheetProps> = ({ item, onClos
           <button
             type="button"
             onClick={handleNavigate}
-            className="w-full py-4 rounded-2xl bg-[#355F58] hover:bg-[#2C504A] text-white font-extrabold text-base flex items-center justify-center gap-2 shadow-xs press-scale min-h-[54px]"
+            disabled={!hasCoordinates}
+            className="w-full py-4 rounded-2xl bg-[#355F58] hover:bg-[#2C504A] disabled:opacity-50 disabled:cursor-not-allowed text-white font-extrabold text-base flex items-center justify-center gap-2 shadow-xs press-scale min-h-[54px]"
           >
             <Navigation className="w-5 h-5 text-white" />
-            <span>Navigate / Get Directions</span>
+            <span>{hasCoordinates ? 'Navigate / Get Directions' : 'Directions Unavailable'}</span>
           </button>
 
           <div className="grid grid-cols-2 gap-2">

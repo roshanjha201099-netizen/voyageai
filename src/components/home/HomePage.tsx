@@ -23,8 +23,7 @@ export const HomePage: React.FC = () => {
 
   const [selectedPlace, setSelectedPlace] = useState<PlaceDetailItem | null>(null);
 
-  // Redux-cached nearby places and loading state
-  const { places: rawNearbyPlaces, loading: isLoadingNearby } = useSelector(
+  const { places: rawNearbyPlaces } = useSelector(
     (state: RootState) => state.nearby
   );
 
@@ -177,20 +176,20 @@ export const HomePage: React.FC = () => {
                   <div className="mt-5 grid grid-cols-2 gap-2">
                     <button
                       type="button"
-                      onClick={() =>
-                        openInAppNavigation({
-                          title: poi.name,
-                          locationName: poi.address || poi.name,
-                          coordinates: [
-                            poi.latitude || 25.6,
-                            poi.longitude || 85.1,
-                          ],
-                        })
-                      }
+                      disabled={typeof poi.latitude !== 'number' || typeof poi.longitude !== 'number'}
+                      onClick={() => {
+                        if (typeof poi.latitude === 'number' && typeof poi.longitude === 'number') {
+                          openInAppNavigation({
+                            title: poi.name,
+                            locationName: poi.address || poi.name,
+                            coordinates: [poi.latitude, poi.longitude],
+                          });
+                        }
+                      }}
                       className="flex min-h-12 items-center justify-center gap-2
                            rounded-xl bg-[#355F58] px-3 text-sm font-bold
                            text-white shadow-sm transition-all
-                           hover:bg-[#264A44] active:scale-95
+                           hover:bg-[#264A44] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed
                            focus-visible:outline focus-visible:outline-2
                            focus-visible:outline-offset-2
                            focus-visible:outline-[#355F58]"

@@ -292,12 +292,17 @@ export const FoodPage: React.FC = () => {
                 <div className="flex items-center justify-between pt-1 border-t border-[#D9DEDA]">
                   <button
                     type="button"
-                    onClick={() => openInAppNavigation({
-                      title: rst.name,
-                      locationName: rst.location || activeDestName,
-                      coordinates: rst.coordinates || [25.5941, 85.1376]
-                    })}
-                    className="px-3 py-1.5 rounded-xl bg-[#F0F2EF] hover:bg-[#E8F0EE] text-[#355F58] text-xs font-bold flex items-center gap-1 border border-[#D9DEDA] transition-all"
+                    disabled={!rst.coordinates}
+                    onClick={() => {
+                      if (rst.coordinates) {
+                        openInAppNavigation({
+                          title: rst.name,
+                          locationName: rst.location || activeDestName,
+                          coordinates: rst.coordinates
+                        });
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-[#F0F2EF] hover:bg-[#E8F0EE] disabled:opacity-50 disabled:cursor-not-allowed text-[#355F58] text-xs font-bold flex items-center gap-1 border border-[#D9DEDA] transition-all"
                   >
                     <Navigation className="w-3.5 h-3.5 text-[#355F58]" />
                     <span>Navigate</span>
