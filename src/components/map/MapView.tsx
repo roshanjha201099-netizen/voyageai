@@ -1,17 +1,14 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
-import { type RootState, type AppDispatch } from '../../store';
-import { fetchMapNearbyPlaces } from '../../store';
 import { useApp } from '../../context/AppContext';
 import { useTrip } from '../../features/trip/TripContext';
 import { useNavigation } from '../../context/NavigationContext';
 import {
   Crosshair, ExternalLink, Volume2, VolumeX, Loader2,
-  Plus, Check, ArrowLeft, RefreshCw
+  Plus, Check, ArrowLeft
 } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { getApiBaseUrl, DEFAULT_FETCH_OPTIONS } from '../../config/apiConfig';
+import { getApiBaseUrl, DEFAULT_HEADERS } from '../../config/apiConfig';
 import { useAudioGuide } from '../../hooks/useAudioGuide';
 import { createUserLocationIcon, createPoiIcon } from './mapIcons';
 import { AddToItineraryModal, type AddToItineraryPayload } from '../itinerary/AddToItineraryModal';
@@ -30,12 +27,12 @@ export interface PlaceItem {
   description?: string;
 }
 
-// Basemap: Google Maps roadmap tiles
-const GOOGLE_MAPS_TILES = {
-  url: 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
-  subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
-  maxZoom: 20,
-  attribution: '&copy; Google Maps',
+// Single basemap: standard OpenStreetMap tiles, no API key required.
+const OSM_TILES = {
+  url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  subdomains: 'abc',
+  maxZoom: 19,
+  attribution: '&copy; OpenStreetMap contributors',
 };
 
 const CATEGORY_FILTERS = [
@@ -59,7 +56,6 @@ const HEADER_HEIGHT = 64;
 const BOTTOM_NAV_HEIGHT = 72;
 
 export const MapView: React.FC = () => {
-  const dispatch = useDispatch<AppDispatch>();
   const { userLocation, userLocationName, isFollowMode, setIsFollowMode } = useApp();
   const { currentTrip, refetchItinerary } = useTrip();
   const { mapFocusTarget, setMapFocusTarget, navigateToExplore } = useNavigation();
@@ -72,34 +68,9 @@ export const MapView: React.FC = () => {
     userLocation?.[1] || currentTrip?.destination?.longitude || 86.2021
   ], [userLocation, currentTrip]);
 
-  // Read places & loading state from Redux store
-  const { places: rawMapPlaces, loading: isMapLoading } = useSelector(
-    (state: RootState) => state.mapPlaces
-  );
-
+  const [places, setPlaces] = useState<PlaceItem[]>([]);
   const [selectedPlace, setSelectedPlace] = useState<PlaceItem | null>(null);
   const [activeCategory, setActiveCategory] = useState<'hotels' | 'food' | 'sights' | 'experiences' | 'all'>('all');
-  const [showSearchArea, setShowSearchArea] = useState(false);
-
-  // Transform raw cached Redux places to PlaceItem shape with relative distance
-  const places: PlaceItem[] = useMemo(() => {
-    if (!rawMapPlaces || rawMapPlaces.length === 0) return [];
-    const centerLat = userLocation ? userLocation[0] : defaultCoords[0];
-    const centerLng = userLocation ? userLocation[1] : defaultCoords[1];
-
-    return rawMapPlaces.map((p: any) => ({
-      id: p.id || `poi-${p.latitude}-${p.longitude}`,
-      name: p.name || 'Unnamed Spot',
-      category: (p.category || 'sights').toLowerCase(),
-      latitude: p.latitude,
-      longitude: p.longitude,
-      distanceMeters: p.distance_meters || p.distanceMeters || Math.round(calculateDistance(centerLat, centerLng, p.latitude, p.longitude)),
-      address: p.address || p.description || 'Near live location',
-      rating: p.rating || 4.7,
-      price_approx: p.price_approx || '₹500 - ₹1,500',
-      description: p.description || 'Popular local spot on your route.',
-    }));
-  }, [rawMapPlaces, userLocation, defaultCoords]);
 
   // Audio Guide hooks
   const { playBase64Audio, stopAudio } = useAudioGuide();
@@ -115,8 +86,8 @@ export const MapView: React.FC = () => {
     try {
       const baseUrl = getApiBaseUrl();
       const res = await fetch(`${baseUrl}/api/trips/itinerary/add`, {
-        ...DEFAULT_FETCH_OPTIONS,
         method: 'POST',
+        headers: DEFAULT_HEADERS,
         body: JSON.stringify(payload),
       });
 
@@ -147,12 +118,9 @@ export const MapView: React.FC = () => {
   const userMarkerRef = useRef<L.Marker | null>(null);
   const markersMapRef = useRef<Map<string, L.Marker>>(new Map());
 
-  // Closest place auto-calculation for bottom mini-sheet
-  const closestPlace = useMemo(() => {
-    if (selectedPlace) return selectedPlace;
-    if (!places || places.length === 0) return null;
-    return [...places].sort((a, b) => (a.distanceMeters || 999999) - (b.distanceMeters || 999999))[0];
-  }, [selectedPlace, places]);
+  // Card scroller refs: lets a marker tap scroll its matching card into view
+  const cardScrollRef = useRef<HTMLDivElement>(null);
+  const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   // Handle Play TTS Narration
   const handlePlayNarration = useCallback(async (place: PlaceItem, e?: React.MouseEvent) => {
@@ -168,8 +136,8 @@ export const MapView: React.FC = () => {
     try {
       const baseUrl = getApiBaseUrl();
       const res = await fetch(`${baseUrl}/api/tts/speak`, {
-        ...DEFAULT_FETCH_OPTIONS,
         method: 'POST',
+        headers: DEFAULT_HEADERS,
         body: JSON.stringify({
           place_name: place.name,
           category: place.category,
@@ -192,28 +160,55 @@ export const MapView: React.FC = () => {
     }
   }, [playingPlaceId, playBase64Audio, stopAudio]);
 
-  // Dispatch Redux fetch on coordinates/category change (guarded by < 500m condition)
+  // Fetch POIs from /api/places/nearby or fallback
+  const fetchMapPlaces = useCallback(async (
+    centerLat: number,
+    centerLng: number,
+    category: string = 'all'
+  ) => {
+    try {
+      const baseUrl = getApiBaseUrl();
+      const categoryParam = category !== 'all' ? `&category=${encodeURIComponent(category)}` : '';
+      const url = `${baseUrl}/api/places/nearby?lat=${centerLat}&lng=${centerLng}&radius=5000&limit=40${categoryParam}`;
+
+      const res = await fetch(url, { headers: DEFAULT_HEADERS });
+
+      if (res.ok) {
+        const data = await res.json();
+        const rawItems = Array.isArray(data)
+          ? data
+          : (data.places || data.results || []);
+
+        if (Array.isArray(rawItems) && rawItems.length > 0) {
+          const fetchedPlaces: PlaceItem[] = rawItems.map((p: any) => ({
+            id: p.id || `poi-${p.latitude}-${p.longitude}`,
+            name: p.name || 'Unnamed Spot',
+            category: (p.category || category).toLowerCase(),
+            latitude: p.latitude,
+            longitude: p.longitude,
+            distanceMeters: p.distance_meters || p.distanceMeters || Math.round(calculateDistance(centerLat, centerLng, p.latitude, p.longitude)),
+            address: p.address || p.description || 'Near live location',
+            rating: p.rating || 4.7,
+            price_approx: p.price_approx || '₹500 - ₹1,500',
+            description: p.description || 'Popular local spot on your route.',
+          }));
+          setPlaces(fetchedPlaces);
+          return;
+        }
+      }
+    } catch (err: any) {
+      console.warn('[MAP] Failed to fetch nearby POIs:', err);
+    }
+
+    setPlaces([]);
+  }, []);
+
+  // Initial load
   useEffect(() => {
     const lat = userLocation ? userLocation[0] : defaultCoords[0];
     const lng = userLocation ? userLocation[1] : defaultCoords[1];
-    dispatch(fetchMapNearbyPlaces({ lat, lng, radius: 5000, limit: 40, category: activeCategory }));
-  }, [userLocation, defaultCoords, activeCategory, dispatch]);
-
-  // Handler for user clicking "Search this area" after panning
-  const handleSearchThisArea = () => {
-    const map = mapInstanceRef.current;
-    if (!map) return;
-    const center = map.getCenter();
-    setShowSearchArea(false);
-    dispatch(fetchMapNearbyPlaces({
-      lat: center.lat,
-      lng: center.lng,
-      radius: 5000,
-      limit: 40,
-      category: activeCategory,
-      force: true, // Bypasses condition guard to refresh markers for the new viewport
-    }));
-  };
+    fetchMapPlaces(lat, lng, activeCategory);
+  }, [userLocation, defaultCoords, fetchMapPlaces]);
 
   // ── MAP INITIALIZATION & CLEANUP ──
   useEffect(() => {
@@ -230,10 +225,10 @@ export const MapView: React.FC = () => {
       attributionControl: false,
     });
 
-    const tileLayer = L.tileLayer(GOOGLE_MAPS_TILES.url, {
-      maxZoom: GOOGLE_MAPS_TILES.maxZoom,
-      subdomains: GOOGLE_MAPS_TILES.subdomains,
-      attribution: GOOGLE_MAPS_TILES.attribution,
+    const tileLayer = L.tileLayer(OSM_TILES.url, {
+      maxZoom: OSM_TILES.maxZoom,
+      subdomains: OSM_TILES.subdomains,
+      attribution: OSM_TILES.attribution,
     }).addTo(map);
     tileLayerRef.current = tileLayer;
 
@@ -245,7 +240,6 @@ export const MapView: React.FC = () => {
     const handleDragStart = () => {
       if (!isProgrammaticMoveRef.current) {
         hasUserPannedRef.current = true;
-        setShowSearchArea(true);
         if (isFollowModeRef.current) {
           setIsFollowMode(false);
         }
@@ -301,6 +295,27 @@ export const MapView: React.FC = () => {
     return places.filter(p => p.category === activeCategory);
   }, [places, activeCategory]);
 
+  // Nearest-first order for the scrollable card row
+  const sortedPlaces = useMemo(() => {
+    return [...filteredPlaces].sort((a, b) => (a.distanceMeters ?? Infinity) - (b.distanceMeters ?? Infinity));
+  }, [filteredPlaces]);
+
+  // Selects a place from either a marker tap or a card tap, and flies the map to it
+  const focusPlace = useCallback((place: PlaceItem) => {
+    setSelectedPlace(place);
+    setIsFollowMode(false);
+    const map = mapInstanceRef.current;
+    if (map) {
+      map.flyTo([place.latitude, place.longitude], 17, { animate: true, duration: 1.2 });
+    }
+  }, [setIsFollowMode]);
+
+  // When a marker is tapped (or a deep link focuses a place), scroll its card into view
+  useEffect(() => {
+    if (!selectedPlace) return;
+    cardRefs.current.get(selectedPlace.id)?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  }, [selectedPlace]);
+
   useEffect(() => {
     const map = mapInstanceRef.current;
     const layer = markersLayerRef.current;
@@ -325,18 +340,14 @@ export const MapView: React.FC = () => {
       let marker = existingMap.get(place.id);
       if (!marker) {
         marker = L.marker([place.latitude, place.longitude], { icon });
-        marker.on('click', () => {
-          setSelectedPlace(place);
-          setIsFollowMode(false);
-          map.flyTo([place.latitude, place.longitude], 17, { animate: true, duration: 1.2 });
-        });
+        marker.on('click', () => focusPlace(place));
         layer.addLayer(marker);
         existingMap.set(place.id, marker);
       } else {
         marker.setIcon(icon);
       }
     });
-  }, [filteredPlaces, selectedPlace, setIsFollowMode]);
+  }, [filteredPlaces, selectedPlace, focusPlace]);
 
   // ── BRIDGE LOGIC: Deep Link Target from Explore Mode ──
   useEffect(() => {
@@ -379,7 +390,6 @@ export const MapView: React.FC = () => {
   const handleRecenter = () => {
     const map = mapInstanceRef.current;
     const targetCoords = userLocation || defaultCoords;
-    setShowSearchArea(false);
     if (map) {
       hasUserPannedRef.current = false;
       setIsFollowMode(true);
@@ -414,8 +424,8 @@ export const MapView: React.FC = () => {
           aria-label="Recenter on my location"
           title="Recenter on my location"
           className={`pointer-events-auto w-10 h-10 shrink-0 rounded-full border shadow-sm transition-colors press-scale flex items-center justify-center ${isFollowMode
-            ? 'bg-[#1F5A3F] text-white border-[#1F5A3F]'
-            : 'bg-white text-gray-600 border-gray-200 hover:border-[#1F5A3F]/40'
+              ? 'bg-[#1F5A3F] text-white border-[#1F5A3F]'
+              : 'bg-white text-gray-600 border-gray-200 hover:border-[#1F5A3F]/40'
             }`}
         >
           <Crosshair className="w-4 h-4" aria-hidden="true" />
@@ -434,12 +444,14 @@ export const MapView: React.FC = () => {
             type="button"
             onClick={() => {
               setActiveCategory(key);
-              setShowSearchArea(false);
+              const lat = userLocation ? userLocation[0] : defaultCoords[0];
+              const lng = userLocation ? userLocation[1] : defaultCoords[1];
+              fetchMapPlaces(lat, lng, key);
             }}
             aria-pressed={activeCategory === key}
             className={`shrink-0 min-h-[32px] px-3.5 rounded-full text-xs font-semibold transition-colors border shadow-sm ${activeCategory === key
-              ? 'bg-[#1F5A3F] text-white border-[#1F5A3F]'
-              : 'bg-white text-gray-600 border-gray-200 hover:text-gray-900'
+                ? 'bg-[#1F5A3F] text-white border-[#1F5A3F]'
+                : 'bg-white text-gray-600 border-gray-200 hover:text-gray-900'
               }`}
           >
             {label}
@@ -447,93 +459,110 @@ export const MapView: React.FC = () => {
         ))}
       </div>
 
-      {/* Floating "Search this area" button */}
-      {showSearchArea && (
-        <div className="absolute top-[106px] left-1/2 -translate-x-1/2 z-[500] pointer-events-auto animate-fadeIn">
-          <button
-            type="button"
-            onClick={handleSearchThisArea}
-            className="px-4 py-1.5 rounded-full bg-white text-[#1F5A3F] border border-gray-200 shadow-md font-semibold text-xs flex items-center gap-1.5 hover:bg-gray-50 press-scale"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isMapLoading ? 'animate-spin' : ''}`} aria-hidden="true" />
-            <span>Search this area</span>
-          </button>
-        </div>
-      )}
+      {/* Bottom sheet: scrollable row of place cards, nearest first */}
+      {sortedPlaces.length > 0 ? (
+        <div
+          ref={cardScrollRef}
+          className="absolute bottom-3 left-0 right-0 z-[500] flex gap-3 overflow-x-auto px-3 pb-1 snap-x snap-mandatory scrollbar-none pointer-events-auto animate-slideUp"
+        >
+          {sortedPlaces.map((place) => {
+            const isSelected = selectedPlace?.id === place.id;
+            return (
+              <div
+                key={place.id}
+                ref={(el) => {
+                  if (el) cardRefs.current.set(place.id, el);
+                  else cardRefs.current.delete(place.id);
+                }}
+                role="button"
+                tabIndex={0}
+                onClick={() => focusPlace(place)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    focusPlace(place);
+                  }
+                }}
+                className={`w-[270px] sm:w-[300px] shrink-0 snap-center rounded-3xl bg-white border p-4 shadow-lg space-y-3 cursor-pointer transition-colors ${isSelected ? 'border-[#1F5A3F] ring-2 ring-[#1F5A3F]/20' : 'border-gray-200'
+                  }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded-md bg-[#1F5A3F]/10 text-[#1F5A3F] border border-[#1F5A3F]/20 text-[10px] font-semibold uppercase">
+                        {sentenceCase(place.category)}
+                      </span>
+                      <span className="text-[11px] font-medium text-gray-400">
+                        {formatDistance(place.distanceMeters)}
+                      </span>
+                    </div>
+                    <h3 className="text-base font-semibold text-gray-900 truncate">
+                      {place.name}
+                    </h3>
+                    <p className="text-xs text-gray-500 truncate">
+                      {place.address}
+                    </p>
+                  </div>
 
-      {/* Bottom mini-sheet: closest or selected place */}
-      {closestPlace ? (
-        <div className="absolute bottom-3 left-3 right-3 z-[500] pointer-events-auto animate-slideUp">
-          <div className="rounded-3xl bg-white border border-gray-200 p-4 shadow-lg space-y-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0 space-y-0.5">
-                <div className="flex items-center gap-2">
-                  <span className="px-2 py-0.5 rounded-md bg-[#1F5A3F]/10 text-[#1F5A3F] border border-[#1F5A3F]/20 text-[10px] font-semibold uppercase">
-                    {sentenceCase(closestPlace.category)}
-                  </span>
-                  <span className="text-[11px] font-medium text-gray-400">
-                    {formatDistance(closestPlace.distanceMeters)}
-                  </span>
+                  {/* Audio Narration TTS Control */}
+                  <button
+                    type="button"
+                    onClick={(e) => handlePlayNarration(place, e)}
+                    disabled={audioLoadingId === place.id}
+                    aria-label={playingPlaceId === place.id ? 'Stop audio guide' : 'Play audio guide'}
+                    className={`w-10 h-10 shrink-0 rounded-full border transition-colors press-scale flex items-center justify-center ${playingPlaceId === place.id
+                        ? 'bg-amber-500 text-white border-amber-500'
+                        : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-[#1F5A3F]/40'
+                      }`}
+                  >
+                    {audioLoadingId === place.id ? (
+                      <Loader2 className="w-5 h-5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                    ) : playingPlaceId === place.id ? (
+                      <VolumeX className="w-5 h-5" aria-hidden="true" />
+                    ) : (
+                      <Volume2 className="w-5 h-5 text-[#1F5A3F]" aria-hidden="true" />
+                    )}
+                  </button>
                 </div>
-                <h3 className="text-base font-semibold text-gray-900 truncate">
-                  {closestPlace.name}
-                </h3>
-                <p className="text-xs text-gray-500 truncate">
-                  {closestPlace.address}
-                </p>
+
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-gray-100">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedPlaceForModal(place);
+                    }}
+                    className={`flex-1 min-h-[44px] px-3 rounded-xl font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors press-scale ${addedPlaceDays.has(place.id)
+                        ? 'bg-[#1F5A3F]/10 text-[#1F5A3F] border border-[#1F5A3F]/30'
+                        : 'bg-[#1F5A3F] hover:bg-[#194B34] text-white shadow-sm'
+                      }`}
+                  >
+                    {addedPlaceDays.has(place.id) ? (
+                      <>
+                        <Check className="w-4 h-4" aria-hidden="true" /> Added to Day {addedPlaceDays.get(place.id)}
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4" aria-hidden="true" /> Add to Itinerary
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigateToExplore(place.id, place.category);
+                    }}
+                    className="min-h-[44px] px-4 rounded-xl bg-white hover:bg-gray-50 text-gray-900 border border-gray-200 font-semibold text-xs flex items-center gap-1.5 press-scale"
+                  >
+                    <span>Details</span>
+                    <ExternalLink className="w-3.5 h-3.5 text-[#1F5A3F]" aria-hidden="true" />
+                  </button>
+                </div>
               </div>
-
-              {/* Audio Narration TTS Control */}
-              <button
-                type="button"
-                onClick={(e) => handlePlayNarration(closestPlace, e)}
-                disabled={audioLoadingId === closestPlace.id}
-                aria-label={playingPlaceId === closestPlace.id ? 'Stop audio guide' : 'Play audio guide'}
-                className={`w-10 h-10 shrink-0 rounded-full border transition-colors press-scale flex items-center justify-center ${playingPlaceId === closestPlace.id
-                  ? 'bg-amber-500 text-white border-amber-500'
-                  : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-[#1F5A3F]/40'
-                  }`}
-              >
-                {audioLoadingId === closestPlace.id ? (
-                  <Loader2 className="w-5 h-5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
-                ) : playingPlaceId === closestPlace.id ? (
-                  <VolumeX className="w-5 h-5" aria-hidden="true" />
-                ) : (
-                  <Volume2 className="w-5 h-5 text-[#1F5A3F]" aria-hidden="true" />
-                )}
-              </button>
-            </div>
-
-            <div className="flex items-center justify-between gap-2 pt-2 border-t border-gray-100">
-              <button
-                type="button"
-                onClick={() => setSelectedPlaceForModal(closestPlace)}
-                className={`flex-1 min-h-[44px] px-3 rounded-xl font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors press-scale ${addedPlaceDays.has(closestPlace.id)
-                  ? 'bg-[#1F5A3F]/10 text-[#1F5A3F] border border-[#1F5A3F]/30'
-                  : 'bg-[#1F5A3F] hover:bg-[#194B34] text-white shadow-sm'
-                  }`}
-              >
-                {addedPlaceDays.has(closestPlace.id) ? (
-                  <>
-                    <Check className="w-4 h-4" aria-hidden="true" /> Added to Day {addedPlaceDays.get(closestPlace.id)}
-                  </>
-                ) : (
-                  <>
-                    <Plus className="w-4 h-4" aria-hidden="true" /> Add to Itinerary
-                  </>
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => navigateToExplore(closestPlace.id, closestPlace.category)}
-                className="min-h-[44px] px-4 rounded-xl bg-white hover:bg-gray-50 text-gray-900 border border-gray-200 font-semibold text-xs flex items-center gap-1.5 press-scale"
-              >
-                <span>Details</span>
-                <ExternalLink className="w-3.5 h-3.5 text-[#1F5A3F]" aria-hidden="true" />
-              </button>
-            </div>
-          </div>
+            );
+          })}
         </div>
       ) : (
         <div className="absolute bottom-3 left-3 right-3 z-[500] pointer-events-auto animate-slideUp">

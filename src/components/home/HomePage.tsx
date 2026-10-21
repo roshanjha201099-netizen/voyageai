@@ -98,96 +98,134 @@ export const HomePage: React.FC = () => {
       <AskVoyageAICard />
 
       {/* Near you */}
-      <section aria-labelledby="near-you-heading" className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 id="near-you-heading" className="text-xl font-extrabold text-[#1F2522]">
-            Near you
-          </h2>
-          <button
-            type="button"
-            onClick={() => navigate('/map')}
-            className="py-2 text-sm font-semibold text-[#355F58] underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#355F58]"
-          >
-            Open map
-          </button>
-        </div>
 
-        {isLoadingNearby ? (
-          <div role="status" className="space-y-3">
-            <span className="sr-only">Finding places near you</span>
-            {[0, 1, 2].map((i) => (
-              <div
-                key={i}
-                className="h-[148px] rounded-3xl bg-white border border-[#D9DEDA] animate-pulse motion-reduce:animate-none"
-              />
-            ))}
-          </div>
-        ) : nearbyPlaces.length === 0 ? (
-          <div className="rounded-3xl border border-dashed border-[#C9D0CC] p-6 text-center">
-            <p className="text-sm font-semibold text-[#1F2522]">No places to show right now</p>
-            <p className="mt-1 text-xs text-[#5F6863]">Open the map to look further out.</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {nearbyPlaces.map((poi) => {
-              const isMock = isMockPayload(poi);
-              return (
-                <article key={poi.id} className="rounded-3xl bg-white border border-[#D9DEDA] p-4">
+      <div className="relative">
+        <div
+          className="flex gap-4 overflow-x-auto overflow-y-hidden pb-4
+               snap-x snap-mandatory scroll-smooth
+               [scrollbar-width:thin]
+               [scrollbar-color:#A8C4BB_transparent]
+               motion-reduce:scroll-auto"
+        >
+          {nearbyPlaces.map((poi) => {
+            const isMock = isMockPayload(poi);
+
+            return (
+              <article
+                key={poi.id}
+                className="group relative flex w-[82%] min-w-[280px] max-w-[340px]
+                     shrink-0 snap-start flex-col overflow-hidden
+                     rounded-3xl border border-[#D9DEDA]
+                     bg-gradient-to-br from-white via-white to-[#EAF3EF]
+                     p-4 shadow-sm transition-all duration-300
+                     hover:-translate-y-1 hover:border-[#A8C4BB]
+                     hover:shadow-lg sm:w-[320px]"
+              >
+                {/* Decorative accent */}
+                <div className="absolute right-0 top-0 h-24 w-24 rounded-bl-full
+                          bg-gradient-to-bl from-[#C7E5D9]/60 to-transparent
+                          pointer-events-none" />
+
+                <div className="relative flex flex-1 flex-col">
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-xs font-semibold text-[#355F58]">{sentenceCase(poi.category || 'Attraction')}</p>
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-[#E8F0EE] px-2.5 py-1
+                                   text-[11px] font-bold uppercase tracking-wide
+                                   text-[#355F58]">
+                          {sentenceCase(poi.category || "Attraction")}
+                        </span>
+
                         {isMock && (
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                          <span className="rounded-full border border-amber-200
+                                     bg-amber-50 px-2 py-1 text-[10px]
+                                     font-bold text-amber-700">
                             Demo Spot
                           </span>
                         )}
                       </div>
-                      <h3 className="mt-0.5 text-base sm:text-lg font-bold text-[#1F2522] truncate">{poi.name}</h3>
-                      <p className="text-xs text-[#5F6863] truncate">{poi.address}</p>
+
+                      <h3 className="truncate text-lg font-extrabold text-[#1F2522]">
+                        {poi.name}
+                      </h3>
+
+                      <p className="mt-1 line-clamp-2 min-h-9 text-xs leading-5
+                              text-[#5F6863]">
+                        {poi.address || "Address unavailable"}
+                      </p>
                     </div>
 
-                    <div className="shrink-0 text-right">
-                      <p className="text-sm font-bold text-[#1F2522]">{poi.distanceText}</p>
+                    <div className="shrink-0 rounded-2xl bg-white/90 px-3 py-2
+                              text-right shadow-sm ring-1 ring-[#D9DEDA]">
+                      <p className="text-sm font-extrabold text-[#355F58]">
+                        {poi.distanceText}
+                      </p>
+
                       {poi.rating ? (
-                        <p className="mt-0.5 flex items-center justify-end gap-1 text-xs font-semibold text-[#8A5A00]">
-                          <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" aria-hidden="true" />
-                          <span>{Number(poi.rating).toFixed(1)}</span>
+                        <p className="mt-1 flex items-center justify-end gap-1
+                                text-xs font-bold text-[#8A5A00]">
+                          <Star
+                            className="h-3.5 w-3.5 fill-amber-500 text-amber-500"
+                            aria-hidden="true"
+                          />
+                          {Number(poi.rating).toFixed(1)}
                         </p>
                       ) : null}
                     </div>
                   </div>
 
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      openInAppNavigation({
-                        title: poi.name,
-                        locationName: poi.address || poi.name,
-                        coordinates: [poi.latitude || 25.6, poi.longitude || 85.1],
-                      })
-                    }
-                    className="min-h-[48px] rounded-xl bg-[#E8F0EE] text-[#355F58] hover:bg-[#DCE9E5] text-sm font-bold flex items-center justify-center gap-1.5 transition-colors press-scale focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#355F58]"
-                  >
-                    <Navigation className="w-4 h-4" aria-hidden="true" />
-                    <span>Directions</span>
-                  </button>
+                  <div className="mt-5 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        openInAppNavigation({
+                          title: poi.name,
+                          locationName: poi.address || poi.name,
+                          coordinates: [
+                            poi.latitude || 25.6,
+                            poi.longitude || 85.1,
+                          ],
+                        })
+                      }
+                      className="flex min-h-12 items-center justify-center gap-2
+                           rounded-xl bg-[#355F58] px-3 text-sm font-bold
+                           text-white shadow-sm transition-all
+                           hover:bg-[#264A44] active:scale-95
+                           focus-visible:outline focus-visible:outline-2
+                           focus-visible:outline-offset-2
+                           focus-visible:outline-[#355F58]"
+                    >
+                      <Navigation className="h-4 w-4" aria-hidden="true" />
+                      Directions
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={() => setSelectedPlace(poi)}
-                    className="min-h-[48px] rounded-xl border border-[#D9DEDA] text-[#1F2522] hover:bg-[#F0F2EF] text-sm font-semibold flex items-center justify-center transition-colors press-scale focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#355F58]"
-                  >
-                    Details
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPlace(poi)}
+                      className="min-h-12 rounded-xl border border-[#C9D8D1]
+                           bg-white/80 px-3 text-sm font-bold text-[#1F2522]
+                           transition-all hover:bg-[#DCE9E5]
+                           active:scale-95 focus-visible:outline
+                           focus-visible:outline-2 focus-visible:outline-offset-2
+                           focus-visible:outline-[#355F58]"
+                    >
+                      Details
+                    </button>
+                  </div>
                 </div>
               </article>
             );
           })}
         </div>
-      )}
-      </section>
+
+        <p className="mt-1 flex items-center justify-center gap-2 text-xs
+                font-medium text-[#5F6863] sm:hidden">
+          <span aria-hidden="true">←</span>
+          Swipe to explore more places
+          <span aria-hidden="true">→</span>
+        </p>
+      </div>
+
 
       {/* Current trip */}
       {currentTrip && (
