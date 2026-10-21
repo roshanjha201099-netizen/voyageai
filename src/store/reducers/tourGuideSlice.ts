@@ -4,11 +4,14 @@ import { getApiBaseUrl, getAuthHeaders } from '../../config/apiConfig';
 
 export interface Message {
   id: string;
-  sender?: 'user' | 'assistant';
-  role?: 'user' | 'assistant';
-  text?: string;
-  content?: string;
+  sender: 'user' | 'assistant';
+  role: 'user' | 'assistant';
+  text: string;
+  content: string;
   timestamp?: string;
+  created_at?: string;
+  card?: any;
+  chips?: string[];
   recommendations?: any[];
   metadata?: any;
   mode?: string;
@@ -16,6 +19,7 @@ export interface Message {
 
 export interface TourGuideState {
   messages: Message[];
+  history: Message[];
   loading: boolean;
   isInitialized: boolean;
   error: string | null;
@@ -23,6 +27,7 @@ export interface TourGuideState {
 
 const initialState: TourGuideState = {
   messages: [],
+  history: [],
   loading: false,
   isInitialized: false,
   error: null,
@@ -42,28 +47,48 @@ export const fetchTourGuideHistory = createAsyncThunk(
       });
       
       const data = res.data;
-      const rawMessages = Array.isArray(data)
+      const rawList = Array.isArray(data)
         ? data
-        : data.messages || data.history || [];
+        : (data.messages || data.history || []);
 
-      // Normalize message fields for role/sender and content/text
-      return rawMessages.map((m: any) => ({
-        id: m.id || `msg_${Date.now()}_${Math.random()}`,
-        role: m.role || m.sender || 'assistant',
-        sender: m.sender || m.role || 'assistant',
-        content: m.content || m.text || '',
-        text: m.text || m.content || '',
-        timestamp: m.timestamp || new Date().toISOString(),
-        recommendations: m.recommendations || m.metadata?.chips || [],
-        metadata: m.metadata || {},
-        mode: m.mode || 'local',
-      }));
+      // Normalize backend schema to frontend expectation
+      return rawList.map((item: any) => {
+        const meta = typeof item.metadata === 'string'
+          ? (() => { try { return JSON.parse(item.metadata); } catch { return {}; } })()
+          : (item.metadata || {});
+
+        const role = (item.role === 'assistant' || item.role === 'guide' || item.sender === 'assistant')
+          ? 'assistant'
+          : 'user';
+        const text = item.content || item.text || meta?.reply || '';
+        const card = item.card || meta?.card || null;
+        const chips = item.chips || meta?.chips || item.recommendations || [];
+        const timestamp = item.created_at || item.timestamp || new Date().toISOString();
+
+        return {
+          id: String(item.id || `msg_${Date.now()}_${Math.random()}`),
+          sender: role,
+          role: role,
+          text: text,
+          content: text,
+          timestamp: timestamp,
+          created_at: timestamp,
+          card: card,
+          chips: chips,
+          recommendations: chips,
+          metadata: {
+            ...meta,
+            card: card,
+            chips: chips
+          },
+          mode: item.mode || 'local',
+        };
+      });
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.detail || 'Failed to fetch guide history');
     }
   },
   {
-    // Guard: Prevent redundant calls if history is already loaded or currently fetching
     condition: (_, { getState }: any) => {
       const { tourGuide } = getState() as { tourGuide: TourGuideState };
       if (tourGuide.isInitialized || tourGuide.loading) {
@@ -78,18 +103,44 @@ export const tourGuideSlice = createSlice({
   name: 'tourGuide',
   initialState,
   reducers: {
-    appendGuideMessage: (state, action: PayloadAction<Message>) => {
+    appendGuideMessage: (state, action: PayloadAction<any>) => {
+      const item = action.payload;
+      const meta = typeof item.metadata === 'string'
+        ? (() => { try { return JSON.parse(item.metadata); } catch { return {}; } })()
+        : (item.metadata || {});
+
+      const role = (item.role === 'assistant' || item.role === 'guide' || item.sender === 'assistant')
+        ? 'assistant'
+        : 'user';
+      const text = item.content || item.text || meta?.reply || '';
+      const card = item.card || meta?.card || null;
+      const chips = item.chips || meta?.chips || item.recommendations || [];
+      const timestamp = item.created_at || item.timestamp || new Date().toISOString();
+
       const normalized: Message = {
-        ...action.payload,
-        role: action.payload.role || action.payload.sender || 'assistant',
-        sender: action.payload.sender || action.payload.role || 'assistant',
-        content: action.payload.content || action.payload.text || '',
-        text: action.payload.text || action.payload.content || '',
+        id: String(item.id || `msg_${Date.now()}`),
+        sender: role,
+        role: role,
+        text: text,
+        content: text,
+        timestamp: timestamp,
+        created_at: timestamp,
+        card: card,
+        chips: chips,
+        recommendations: chips,
+        metadata: {
+          ...meta,
+          card: card,
+          chips: chips
+        },
+        mode: item.mode || 'local',
       };
       state.messages.push(normalized);
+      state.history.push(normalized);
     },
     resetGuideHistory: (state) => {
       state.messages = [];
+      state.history = [];
       state.isInitialized = false;
       state.error = null;
     },
@@ -104,6 +155,7 @@ export const tourGuideSlice = createSlice({
         state.loading = false;
         state.isInitialized = true;
         state.messages = action.payload;
+        state.history = action.payload;
         state.error = null;
       })
       .addCase(fetchTourGuideHistory.rejected, (state, action: any) => {

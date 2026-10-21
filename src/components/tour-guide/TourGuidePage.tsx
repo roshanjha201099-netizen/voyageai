@@ -31,8 +31,12 @@ export interface ActionCardData {
 export interface ChatMsg {
   id?: string;
   role: 'user' | 'assistant' | 'guide';
+  sender?: 'user' | 'assistant';
   content: string;
+  text?: string;
   mode?: 'local' | 'trip';
+  card?: ActionCardData | null;
+  chips?: string[];
   metadata?: {
     chips?: string[];
     card?: ActionCardData | null;
@@ -69,7 +73,10 @@ export const TourGuidePage: React.FC = () => {
 
   // 1. Redux Toolkit Slice: De-duplicated & Cached Tour Guide History
   const tripParam = mode === 'trip' && activeTrip?.id ? activeTrip.id : undefined;
-  const { history: historyData, loading: isHistoryLoading } = useSelector((state: RootState) => state.tourGuide);
+  const { history: historyData, messages: reduxMessages, loading: isHistoryLoading } = useSelector(
+    (state: RootState) => state.tourGuide
+  );
+  const activeHistory = (historyData && historyData.length > 0) ? historyData : (reduxMessages || []);
 
   useEffect(() => {
     (dispatch as AppDispatch)(fetchTourGuideHistory(tripParam));
@@ -77,16 +84,34 @@ export const TourGuidePage: React.FC = () => {
 
   // Sync RTK Query history into local messages when query resolves
   useEffect(() => {
-    if (historyData && Array.isArray(historyData) && historyData.length > 0) {
-      const parsedMsgs: ChatMsg[] = historyData.map((m: any) => ({
-        id: m.id,
-        role: m.role === 'assistant' || m.role === 'guide' ? 'assistant' : 'user',
-        content: m.content,
-        mode: m.mode,
-        metadata: typeof m.metadata === 'string' ? JSON.parse(m.metadata) : (m.metadata || {})
-      }));
+    if (activeHistory && Array.isArray(activeHistory) && activeHistory.length > 0) {
+      const parsedMsgs: ChatMsg[] = activeHistory.map((m: any) => {
+        const meta = typeof m.metadata === 'string'
+          ? (() => { try { return JSON.parse(m.metadata); } catch { return {}; } })()
+          : (m.metadata || {});
+        const role = m.role === 'assistant' || m.role === 'guide' || m.sender === 'assistant' ? 'assistant' : 'user';
+        const content = m.text || m.content || meta.reply || '';
+        const card = m.card || meta.card || null;
+        const chips = m.chips || meta.chips || m.recommendations || [];
+
+        return {
+          id: m.id,
+          role: role,
+          sender: role,
+          content: content,
+          text: content,
+          mode: m.mode,
+          card: card,
+          chips: chips,
+          metadata: {
+            ...meta,
+            card: card,
+            chips: chips
+          }
+        };
+      });
       setMessages(parsedMsgs);
-    } else if (!isHistoryLoading && (!historyData || historyData.length === 0) && messages.length === 0) {
+    } else if (!isHistoryLoading && (!activeHistory || activeHistory.length === 0) && messages.length === 0) {
       // Default Welcome Message if no history found
       setMessages([
         {
@@ -99,7 +124,7 @@ export const TourGuidePage: React.FC = () => {
         }
       ]);
     }
-  }, [historyData, isHistoryLoading]);
+  }, [activeHistory, isHistoryLoading]);
 
   // Sync router navigation state
   useEffect(() => {
@@ -321,122 +346,129 @@ export const TourGuidePage: React.FC = () => {
             </div>
           )}
 
-          {messages.map((m, i) => (
-            <div key={m.id || i} className={m.role === 'user' ? 'flex justify-end' : ''}>
-              {m.role === 'user' ? (
-                <div className="max-w-[85%] sm:max-w-[75%] rounded-xl rounded-br-sm bg-[#16232B] text-white px-4 py-2.5 text-sm leading-relaxed">
-                  <FormattedText content={m.content} isUserMessage />
-                </div>
-              ) : (
-                <div className="max-w-[94%] sm:max-w-[85%]">
-                  <div className="text-sm leading-relaxed text-[#16232B]">
-                    <FormattedText content={m.content} isUserMessage={false} />
-                  </div>
+          {messages.map((m, i) => {
+            const isUser = m.role === 'user' || m.sender === 'user';
+            const textContent = m.text || m.content || '';
+            const cardData = m.card || m.metadata?.card;
+            const chipsList = m.chips || m.metadata?.chips;
 
-                  {/* Place card */}
-                  {m.metadata?.card && m.metadata.card.title && (
-                    <div className="mt-4 rounded-xl bg-white border border-[#DDE2DF] overflow-hidden">
-                      <div className="p-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-xs text-[#5B6B73]">{m.metadata.card.category || 'Sight'}</p>
-                            <h4 className="mt-0.5 text-lg font-semibold leading-snug">{m.metadata.card.title}</h4>
+            return (
+              <div key={m.id || i} className={isUser ? 'flex justify-end' : ''}>
+                {isUser ? (
+                  <div className="max-w-[85%] sm:max-w-[75%] rounded-xl rounded-br-sm bg-[#16232B] text-white px-4 py-2.5 text-sm leading-relaxed">
+                    <FormattedText content={textContent} isUserMessage />
+                  </div>
+                ) : (
+                  <div className="max-w-[94%] sm:max-w-[85%]">
+                    <div className="text-sm leading-relaxed text-[#16232B]">
+                      <FormattedText content={textContent} isUserMessage={false} />
+                    </div>
+
+                    {/* Place card */}
+                    {cardData && cardData.title && (
+                      <div className="mt-4 rounded-xl bg-white border border-[#DDE2DF] overflow-hidden">
+                        <div className="p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-xs text-[#5B6B73]">{cardData.category || 'Sight'}</p>
+                              <h4 className="mt-0.5 text-lg font-semibold leading-snug">{cardData.title}</h4>
+                            </div>
+                            {cardData.cost !== undefined && (
+                              <p className="shrink-0 text-base font-semibold tabular-nums">₹{cardData.cost}</p>
+                            )}
                           </div>
-                          {m.metadata.card.cost !== undefined && (
-                            <p className="shrink-0 text-base font-semibold tabular-nums">₹{m.metadata.card.cost}</p>
+
+                          {(cardData.location || cardData.duration) && (
+                            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#5B6B73]">
+                              {cardData.location && (
+                                <span className="flex items-center gap-1.5">
+                                  <MapPin className="w-3.5 h-3.5" aria-hidden="true" />
+                                  {cardData.location}
+                                </span>
+                              )}
+                              {cardData.duration && (
+                                <span className="flex items-center gap-1.5">
+                                  <Clock className="w-3.5 h-3.5" aria-hidden="true" />
+                                  {cardData.duration}
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {cardData.heads_up && (
+                            <div className="mt-3 flex items-start gap-2 rounded-md border-l-4 border-[#D9930D] bg-[#FBF3DF] px-3 py-2 text-xs text-[#5A4210]">
+                              <AlertTriangle className="w-4 h-4 shrink-0 mt-px text-[#B37A0A]" aria-hidden="true" />
+                              <p>
+                                <span className="font-semibold">Check before you go: </span>
+                                {cardData.heads_up}
+                              </p>
+                            </div>
                           )}
                         </div>
 
-                        {(m.metadata.card.location || m.metadata.card.duration) && (
-                          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#5B6B73]">
-                            {m.metadata.card.location && (
-                              <span className="flex items-center gap-1.5">
-                                <MapPin className="w-3.5 h-3.5" aria-hidden="true" />
-                                {m.metadata.card.location}
-                              </span>
-                            )}
-                            {m.metadata.card.duration && (
-                              <span className="flex items-center gap-1.5">
-                                <Clock className="w-3.5 h-3.5" aria-hidden="true" />
-                                {m.metadata.card.duration}
-                              </span>
-                            )}
-                          </div>
-                        )}
+                        {/* Perforated edge between details and actions */}
+                        <div className="relative border-t border-dashed border-[#C9D0CC]" aria-hidden="true">
+                          <span className="absolute -left-2 -top-2 w-4 h-4 rounded-full bg-[#F4F5F2] border border-[#DDE2DF]" />
+                          <span className="absolute -right-2 -top-2 w-4 h-4 rounded-full bg-[#F4F5F2] border border-[#DDE2DF]" />
+                        </div>
 
-                        {m.metadata.card.heads_up && (
-                          <div className="mt-3 flex items-start gap-2 rounded-md border-l-4 border-[#D9930D] bg-[#FBF3DF] px-3 py-2 text-xs text-[#5A4210]">
-                            <AlertTriangle className="w-4 h-4 shrink-0 mt-px text-[#B37A0A]" aria-hidden="true" />
-                            <p>
-                              <span className="font-semibold">Check before you go: </span>
-                              {m.metadata.card.heads_up}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Perforated edge between details and actions */}
-                      <div className="relative border-t border-dashed border-[#C9D0CC]" aria-hidden="true">
-                        <span className="absolute -left-2 -top-2 w-4 h-4 rounded-full bg-[#F4F5F2] border border-[#DDE2DF]" />
-                        <span className="absolute -right-2 -top-2 w-4 h-4 rounded-full bg-[#F4F5F2] border border-[#DDE2DF]" />
-                      </div>
-
-                      <div className="px-4 py-3 flex flex-wrap gap-2">
-                        {mode === 'trip' && activeTrip && (
+                        <div className="px-4 py-3 flex flex-wrap gap-2">
+                          {mode === 'trip' && activeTrip && (
+                            <button
+                              type="button"
+                              onClick={() => handleAddToItinerary(cardData)}
+                              disabled={addingCardId === cardData.id}
+                              className="flex-1 min-h-[40px] px-4 rounded-lg bg-[#16232B] text-white text-xs font-semibold flex items-center justify-center gap-1.5 hover:bg-[#22343F] disabled:opacity-60 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#16232B]"
+                            >
+                              {addingCardId === cardData.id ? (
+                                <Loader2 className="w-4 h-4 animate-spin motion-reduce:animate-none" aria-label="Adding" />
+                              ) : addedSuccessId === cardData.id ? (
+                                <>
+                                  <Check className="w-4 h-4" aria-hidden="true" /> Added to Day 1
+                                </>
+                              ) : (
+                                <>
+                                  <Plus className="w-4 h-4" aria-hidden="true" /> Add to Day 1
+                                </>
+                              )}
+                            </button>
+                          )}
                           <button
                             type="button"
-                            onClick={() => handleAddToItinerary(m.metadata!.card!)}
-                            disabled={addingCardId === m.metadata.card.id}
-                            className="flex-1 min-h-[40px] px-4 rounded-lg bg-[#16232B] text-white text-xs font-semibold flex items-center justify-center gap-1.5 hover:bg-[#22343F] disabled:opacity-60 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#16232B]"
+                            onClick={() =>
+                              window.open(
+                                `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(cardData.title)}`,
+                                '_blank'
+                              )
+                            }
+                            className="min-h-[40px] px-4 rounded-lg border border-[#C9D0CC] bg-white text-xs font-semibold flex items-center justify-center gap-1.5 hover:bg-[#ECEEEA] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#16232B]"
                           >
-                            {addingCardId === m.metadata.card.id ? (
-                              <Loader2 className="w-4 h-4 animate-spin motion-reduce:animate-none" aria-label="Adding" />
-                            ) : addedSuccessId === m.metadata.card.id ? (
-                              <>
-                                <Check className="w-4 h-4" aria-hidden="true" /> Added to Day 1
-                              </>
-                            ) : (
-                              <>
-                                <Plus className="w-4 h-4" aria-hidden="true" /> Add to Day 1
-                              </>
-                            )}
+                            <Navigation className="w-3.5 h-3.5" aria-hidden="true" /> Open in Maps
                           </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() =>
-                            window.open(
-                              `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(m.metadata!.card!.title)}`,
-                              '_blank'
-                            )
-                          }
-                          className="min-h-[40px] px-4 rounded-lg border border-[#C9D0CC] bg-white text-xs font-semibold flex items-center justify-center gap-1.5 hover:bg-[#ECEEEA] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#16232B]"
-                        >
-                          <Navigation className="w-3.5 h-3.5" aria-hidden="true" /> Open in Maps
-                        </button>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {/* Suggested replies: only on the latest message so old ones don't pile up */}
-                  {i === lastIndex && m.metadata?.chips && m.metadata.chips.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {m.metadata.chips.map((chip, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => handleSend(chip)}
-                          className="px-3 py-1.5 rounded-lg border border-[#C9D0CC] bg-white text-xs font-medium hover:bg-[#ECEEEA] hover:border-[#16232B]/40 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#16232B]"
-                        >
-                          {chip}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
+                    {/* Suggested replies: only on the latest message so old ones don't pile up */}
+                    {i === lastIndex && chipsList && chipsList.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {chipsList.map((chip: string, idx: number) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => handleSend(chip)}
+                            className="px-3 py-1.5 rounded-lg border border-[#C9D0CC] bg-white text-xs font-medium hover:bg-[#ECEEEA] hover:border-[#16232B]/40 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#16232B]"
+                          >
+                            {chip}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
 
           {loading && (
             <div role="status" className="flex items-center gap-2.5 text-xs text-[#5B6B73]">
