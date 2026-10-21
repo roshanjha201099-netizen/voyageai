@@ -61,7 +61,7 @@ const MainContent: React.FC = () => {
       <div className="py-16 text-center space-y-3">
         <AlertTriangle className="w-10 h-10 text-rose-600 mx-auto" />
         <h2 className="text-lg font-bold text-[#1F2522]">Connection error</h2>
-        <p className="text-meta text-[13px] max-w-xs mx-auto text-[#5F6863]">We couldn't connect. Your trip data is safe in LocalStorage.</p>
+        <p className="text-meta text-[13px] max-w-xs mx-auto text-[#5F6863]">We couldn't connect. Your trip data is safe with us.</p>
         <button
           onClick={() => setAppUIState('ready')}
           className="px-5 py-2 rounded-xl bg-[#355F58] text-white font-bold text-xs"
