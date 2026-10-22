@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useTrip } from '../../features/trip/TripContext';
 import { useNavigation } from '../../context/NavigationContext';
-import { getApiBaseUrl, DEFAULT_FETCH_OPTIONS } from '../../config/apiConfig';
+import { getApiBaseUrl, DEFAULT_FETCH_OPTIONS, getAuthHeaders } from '../../config/apiConfig';
 import {
   Compass, MapPin, Sparkles, Plus, Check, Calendar,
   Clock, Tag, Star, Navigation, Layers, Bookmark
@@ -53,7 +53,13 @@ export const ExplorePage: React.FC = () => {
     const fetchSavedPlaces = async () => {
       try {
         const baseUrl = getApiBaseUrl();
-        const res = await fetch(`${baseUrl}/api/user/saved-places`, { ...DEFAULT_FETCH_OPTIONS });
+        const res = await fetch(`${baseUrl}/api/user/saved-places`, {
+          ...DEFAULT_FETCH_OPTIONS,
+          headers: {
+            ...getAuthHeaders(),
+            'Accept': 'application/json',
+          }
+        });
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data)) {
@@ -93,6 +99,10 @@ export const ExplorePage: React.FC = () => {
       const baseUrl = getApiBaseUrl();
       await fetch(`${baseUrl}/api/user/saved-places`, {
         ...DEFAULT_FETCH_OPTIONS,
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json',
+        },
         method: isSaved ? 'DELETE' : 'POST',
         body: JSON.stringify({
           place_id: item.id,

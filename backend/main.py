@@ -702,7 +702,7 @@ class SavePlaceRequest(BaseModel):
 @app.post("/api/user/saved-places")
 def save_place(
     req: SavePlaceRequest,
-    current_user: AuthUser = Depends(get_current_user)
+    current_user: AuthUser = Depends(get_user_or_guest)
 ):
     from redis_client import redis_conn
     if redis_conn:
@@ -717,7 +717,7 @@ def save_place(
 @app.delete("/api/user/saved-places")
 def unsave_place(
     req: SavePlaceRequest,
-    current_user: AuthUser = Depends(get_current_user)
+    current_user: AuthUser = Depends(get_user_or_guest)
 ):
     from redis_client import redis_conn
     if redis_conn:
@@ -731,8 +731,10 @@ def unsave_place(
 
 @app.get("/api/user/saved-places")
 def get_saved_places(
-    current_user: AuthUser = Depends(get_current_user)
+    current_user: AuthUser = Depends(get_user_or_guest)
 ):
+    if not current_user or current_user.id.startswith("guest_"):
+        return []
     from redis_client import redis_conn
     if redis_conn:
         try:
@@ -758,7 +760,7 @@ class LocationPayload(BaseModel):
 @app.post("/api/user/location")
 def update_user_location(
     payload: LocationPayload,
-    current_user: AuthUser = Depends(get_current_user)
+    current_user: AuthUser = Depends(get_user_or_guest)
 ):
     import math
     user_id = current_user.id
