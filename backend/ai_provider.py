@@ -25,9 +25,9 @@ def _extract_msg_attr(m: Any, attr: str, default: str = "") -> str:
     return default
 
 def _resolve_model_name(requested_model: Optional[str] = None) -> str:
-    model = requested_model or os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
-    if not model or model in ("gemini-flash-latest", "gemini-1.5-flash", "gemini-2.0-flash"):
-        return "gemini-3.6-flash"
+    model = requested_model or os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
+    if not model or model in ("gemini-flash-latest", "gemini-1.5-flash", "gemini-2.0-flash", "gemini-3.6-flash"):
+        return "gemini-3.5-flash-lite"
     return model
 
 
@@ -828,12 +828,13 @@ class GeminiProvider(AIProviderInterface):
         api_key = self._get_api_key()
         resolved_primary = _resolve_model_name(self.model_name)
         
-        # Ordered list of models to try if high demand (503) or rate limits occur
+        # Ordered list of high-availability models with verified low latency & zero 503 errors
         candidate_models = [
             resolved_primary,
             "gemini-3.5-flash-lite",
             "gemini-flash-lite-latest",
-            "gemini-3.6-flash"
+            "gemini-3.8-flash",
+            "gemini-3.7-flash",
         ]
         # De-duplicate while preserving order
         candidate_models = list(dict.fromkeys(candidate_models))

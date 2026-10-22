@@ -2538,12 +2538,10 @@ def get_swap_options(req: SwapRecommendationRequest):
 
     if api_key:
         model_candidates = [
-            "gemini-2.5-flash",
-            "gemini-flash-latest",
+            "gemini-3.5-flash-lite",
             "gemini-flash-lite-latest",
-            "gemini-2.5-pro",
-            "gemini-2.5-flash-lite",
-            "gemini-3.5-flash"
+            "gemini-3.8-flash",
+            "gemini-3.7-flash",
         ]
         for m_name in model_candidates:
             try:
@@ -2702,7 +2700,9 @@ def execute_swap(
 # ── TRIP DOMAIN ENDPOINTS ──
 
 @app.get("/api/trips", dependencies=[Depends(general_limiter)])
-def get_trips(current_user: AuthUser = Depends(get_current_user), db: Session = Depends(get_db)):
+def get_trips(current_user: AuthUser = Depends(get_user_or_guest), db: Session = Depends(get_db)):
+    if not current_user or current_user.id.startswith("guest_"):
+        return []
     db_trips = db.query(TripModel).filter(TripModel.user_id == current_user.id).order_by(TripModel.created_at.desc()).all()
     result = []
     for t in db_trips:

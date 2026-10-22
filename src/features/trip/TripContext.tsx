@@ -4,7 +4,7 @@ import { tripRepository } from './tripRepository';
 import { useAuth } from '../../auth/AuthContext';
 import { wsClient } from '../../services/wsClient';
 import { useSyncRevalidation } from '../../utils/useSyncRevalidation';
-import { getApiBaseUrl, DEFAULT_FETCH_OPTIONS } from '../../config/apiConfig';
+import { getApiBaseUrl, DEFAULT_FETCH_OPTIONS, getAuthHeaders } from '../../config/apiConfig';
 
 interface TripContextType {
   trips: Trip[];
@@ -120,6 +120,7 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
       ...DEFAULT_FETCH_OPTIONS,
       credentials: 'include',
       headers: {
+        ...getAuthHeaders(),
         'Accept': 'application/json',
       }
     })
@@ -184,7 +185,10 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const res = await fetch(`${baseUrl}/api/trips/${tripId}`, {
           ...DEFAULT_FETCH_OPTIONS,
           credentials: 'include',
-          headers: { 'Accept': 'application/json' }
+          headers: {
+            ...getAuthHeaders(),
+            'Accept': 'application/json'
+          }
         });
         if (res.ok) {
           const tripDetail = await res.json();
@@ -272,7 +276,10 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
       fetch(`${baseUrl}/api/trips`, {
         ...DEFAULT_FETCH_OPTIONS,
         credentials: 'include',
-        headers: { 'Accept': 'application/json' }
+        headers: {
+          ...getAuthHeaders(),
+          'Accept': 'application/json'
+        }
       })
         .then(async (res) => {
           if (res.ok) {

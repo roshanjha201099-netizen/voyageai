@@ -157,10 +157,10 @@ Provide 5 diverse real activities and 2 real events. Replace [26.9124, 75.7873] 
 
     parsed_data = None
     model_candidates = [
-        "gemini-3.6-flash",
         "gemini-3.5-flash-lite",
-        "gemini-flash-latest",
-        "gemini-flash-lite-latest"
+        "gemini-flash-lite-latest",
+        "gemini-3.8-flash",
+        "gemini-3.7-flash",
     ]
 
     if api_key:
