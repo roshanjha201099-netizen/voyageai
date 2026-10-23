@@ -331,9 +331,14 @@ def get_session_user(db: Session, token: str) -> Tuple[AuthUser, UserProfile, Us
     if is_expired:
         raise ValueError("Session token has expired")
 
-    # Update last used timestamp (sliding activity window)
+    # Update last used timestamp and extend expiry (sliding activity window)
     now_iso = get_current_iso_time()
     session_record.last_used_at = now_iso
+    session_record.expires_at = get_expiry_iso_time(SESSION_TTL_DAYS)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
 
     db_user = db.query(AuthUserModel).filter(AuthUserModel.id == session_record.user_id).first()
     if not db_user:

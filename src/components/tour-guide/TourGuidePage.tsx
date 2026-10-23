@@ -17,6 +17,7 @@ const FONT_STACK = '"Hanken Grotesk", ui-sans-serif, system-ui, -apple-system, "
 
 import { useDispatch, useSelector } from 'react-redux';
 import { type RootState, type AppDispatch, fetchTourGuideHistory, appendGuideMessage } from '../../store';
+import { useAuth } from '../../auth/AuthContext';
 
 export interface ActionCardData {
   id: string;
@@ -71,16 +72,20 @@ export const TourGuidePage: React.FC = () => {
     ? (activeTrip?.destination?.name || activeTrip?.title || 'Trip Destination')
     : null;
 
+  const { authUser, userProfile } = useAuth();
+  const userId = authUser?.id || userProfile?.userId;
+
   // 1. Redux Toolkit Slice: De-duplicated & Cached Tour Guide History
-  const tripParam = mode === 'trip' && activeTrip?.id ? activeTrip.id : null;
   const { history: historyData, messages: reduxMessages, loading: isHistoryLoading } = useSelector(
     (state: RootState) => state.tourGuide
   );
   const activeHistory = (historyData && historyData.length > 0) ? historyData : (reduxMessages || []);
 
   useEffect(() => {
-    (dispatch as AppDispatch)(fetchTourGuideHistory(tripParam));
-  }, [dispatch, tripParam]);
+    if (userId) {
+      (dispatch as AppDispatch)(fetchTourGuideHistory());
+    }
+  }, [dispatch, userId]);
 
   // Sync RTK Query history into local messages when query resolves
   useEffect(() => {
@@ -142,10 +147,22 @@ export const TourGuidePage: React.FC = () => {
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
 
-  // 2. Stateless Client-Driven Send Message
   const handleSend = async (queryText?: string) => {
     const textToSend = (queryText || input).trim();
     if (!textToSend || loading) return;
+
+    if (!userId) {
+      setMessages(prev => [
+        ...prev,
+        {
+          id: `auth_err_${Date.now()}`,
+          role: 'assistant',
+          content: 'Please log in to chat with your AI travel guide and save your conversation.',
+          metadata: { chips: ['Log in to continue'] }
+        }
+      ]);
+      return;
+    }
 
     // Extract recent 5 messages for client-driven context injection
     const recentHistory = messages.slice(-5).map(m => ({

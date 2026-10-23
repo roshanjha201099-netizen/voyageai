@@ -446,7 +446,7 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.warn('WebSocket trip creation error, constructing local fallback trip.', e);
       createdTrip = {
         id: `trip_${Date.now()}`,
-        userId: userId || 'usr_guest',
+        userId: userId || '',
         title: `${payload.destination.name} Tour Package`,
         destination: payload.destination,
         coverMedia: {

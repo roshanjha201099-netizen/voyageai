@@ -1160,7 +1160,7 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
     elif reqname in ("tour_guide:chat", "ai:concierge", "concierge:chat"):
         from tour_guide_service import process_concierge_message
         token = extract_ws_token(websocket, data)
-        user_id = "guest_user"
+        user_id = None
         if token:
             try:
                 u_tuple = auth.get_session_user(db, token)
@@ -1168,6 +1168,9 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
                     user_id = u_tuple[0].id
             except Exception:
                 pass
+
+        if not user_id:
+            return {"error": "Authentication required. Please log in.", "code": 401}
 
         target_mode = data.get("mode") or "local"
         target_trip_id = data.get("trip_id") or data.get("tripId")
@@ -2752,7 +2755,7 @@ class TourGuideChatRequest(BaseModel):
 @app.post("/api/chat")
 def chat_with_concierge(
     payload: TourGuideChatRequest,
-    current_user: AuthUser = Depends(get_user_or_guest),
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     from tour_guide_service import process_concierge_message
@@ -2775,12 +2778,15 @@ def chat_with_concierge(
 @app.get("/api/chat/history")
 def get_tour_guide_history(
     trip_id: Optional[str] = None,
-    limit: int = 50,
-    current_user: AuthUser = Depends(get_user_or_guest),
+    limit: int = 100,
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     from tour_guide_service import fetch_chat_history
-    return fetch_chat_history(user_id=current_user.id, trip_id=trip_id, limit=limit, db=db)
+    clean_trip_id = None
+    if trip_id and str(trip_id).strip().lower() not in ("null", "undefined", "none", ""):
+        clean_trip_id = str(trip_id).strip()
+    return fetch_chat_history(user_id=current_user.id, trip_id=clean_trip_id, limit=limit, db=db)
 
 @app.post("/trips", status_code=status.HTTP_201_CREATED, dependencies=[Depends(ai_limiter)])
 @app.post("/api/trips", status_code=status.HTTP_201_CREATED, dependencies=[Depends(ai_limiter)])
@@ -3729,7 +3735,7 @@ class RefinementExecutionRequest(BaseModel):
 @app.post("/api/ai/concierge", dependencies=[Depends(ai_limiter)])
 def ai_concierge(
     req: ConciergeRequest,
-    current_user: AuthUser = Depends(get_user_or_guest),
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     user_msg = req.message or req.query or ""
@@ -3737,12 +3743,7 @@ def ai_concierge(
         raise HTTPException(status_code=400, detail="Message cannot be empty.")
     req.message = user_msg
 
-    effective_user_id = (
-        getattr(req, "userId", None)
-        or getattr(req, "user_id", None)
-        or getattr(current_user, "id", None)
-        or f"guest_{uuid.uuid4().hex[:8]}"
-    )
+    effective_user_id = current_user.id
     user_email_log = getattr(current_user, "email", None) or f"user:{effective_user_id}"
 
     log_frontend_payload(

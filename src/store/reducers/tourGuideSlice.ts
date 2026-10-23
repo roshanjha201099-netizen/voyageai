@@ -35,17 +35,34 @@ const initialState: TourGuideState = {
 
 export const fetchTourGuideHistory = createAsyncThunk(
   'tourGuide/fetchHistory',
-  async (tripId: string | null = null, { rejectWithValue }) => {
+  async (_tripId?: string | null, { rejectWithValue } = {} as any) => {
     try {
       const baseUrl = getApiBaseUrl();
-      const query = tripId ? `?trip_id=${encodeURIComponent(tripId)}` : '';
-      const url = `${baseUrl}/api/tour-guide/history${query}`;
-      
+      const url = `${baseUrl}/api/tour-guide/history?limit=100`;
+
+      const headers = getAuthHeaders();
+      const cached = typeof window !== 'undefined' ? localStorage.getItem('voyageai_session_data') : null;
+      let hasAuth = Boolean(headers['Authorization']);
+      if (!hasAuth && cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (parsed?.authUser?.id || parsed?.userProfile?.id) {
+            hasAuth = true;
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      if (!hasAuth) {
+        return rejectWithValue('Authentication required to fetch chat history');
+      }
+
       const res = await axios.get(url, {
         withCredentials: true,
-        headers: getAuthHeaders(),
+        headers: headers,
       });
-      
+
       const data = res.data;
       const rawList = Array.isArray(data)
         ? data
@@ -53,35 +70,41 @@ export const fetchTourGuideHistory = createAsyncThunk(
 
       // Normalize backend schema to frontend expectation
       return rawList.map((item: any) => {
-        const meta = typeof item.metadata === 'string'
-          ? (() => { try { return JSON.parse(item.metadata); } catch { return {}; } })()
-          : (item.metadata || {});
+        let meta = item.metadata || {};
+        if (typeof meta === 'string') {
+          try {
+            meta = JSON.parse(meta);
+          } catch {
+            meta = {};
+          }
+        }
 
         const role = (item.role === 'assistant' || item.role === 'guide' || item.sender === 'assistant')
           ? 'assistant'
           : 'user';
         const text = item.content || item.text || meta?.reply || '';
-        const card = item.card || meta?.card || null;
-        const chips = item.chips || meta?.chips || item.recommendations || [];
+        const card = meta?.card || item.card || null;
+        const chips = meta?.chips || item.chips || item.recommendations || [];
         const timestamp = item.created_at || item.timestamp || new Date().toISOString();
 
         return {
           id: String(item.id || `msg_${Date.now()}_${Math.random()}`),
-          sender: role,
           role: role,
-          text: text,
+          sender: role,
           content: text,
-          timestamp: timestamp,
-          created_at: timestamp,
-          card: card,
-          chips: chips,
-          recommendations: chips,
+          text: text,
+          mode: item.mode || 'local',
+          trip_id: item.trip_id || null,
           metadata: {
             ...meta,
             card: card,
             chips: chips
           },
-          mode: item.mode || 'local',
+          card: card,
+          chips: chips,
+          recommendations: chips,
+          timestamp: timestamp,
+          created_at: timestamp,
         };
       });
     } catch (err: any) {
@@ -91,7 +114,7 @@ export const fetchTourGuideHistory = createAsyncThunk(
   {
     condition: (_, { getState }: any) => {
       const { tourGuide } = getState() as { tourGuide: TourGuideState };
-      if (tourGuide.isInitialized || tourGuide.loading) {
+      if (tourGuide.loading) {
         return false;
       }
       return true;
