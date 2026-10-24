@@ -1,0 +1,2 @@
+# Optional CPU evaluation backend; not required for the default micro-classifier.
+fastembed==0.7.4

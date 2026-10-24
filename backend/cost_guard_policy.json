@@ -1,0 +1,38 @@
+{
+  "fingerprint": "1140c9fd8ae2d8fcf9bbd072413509ddf7cffb21e5f1a9851916b8077d0d15ef",
+  "artifact_fingerprint": "f567d671b0611742d2b4a8066aea612d9ec1805a25079991de4d6591156f970e",
+  "thresholds": {
+    "emergency": {
+      "similarity": 0.45,
+      "margin": 0.14
+    },
+    "off_topic": {
+      "similarity": 0.45,
+      "margin": 0.03
+    },
+    "travel": {
+      "similarity": 0.45,
+      "margin": 0.05
+    }
+  },
+  "calibration": {
+    "examples": 50,
+    "metrics": {
+      "emergency": {
+        "accepted_correct": 8,
+        "false_accepts": 0,
+        "total": 15
+      },
+      "off_topic": {
+        "accepted_correct": 8,
+        "false_accepts": 0,
+        "total": 15
+      },
+      "travel": {
+        "accepted_correct": 9,
+        "false_accepts": 0,
+        "total": 15
+      }
+    }
+  }
+}

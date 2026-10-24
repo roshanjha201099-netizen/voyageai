@@ -245,12 +245,18 @@ print("Database cleared successfully.")
 
 ## 🔧 Environment Variables Summary
 
+Concierge intent routing uses a structured Flash-Lite classifier before paid
+answer generation. See [cost guard configuration, tests and measured limitations](backend/COST_GUARD.md).
+
 ### Backend (`backend/.env`)
 ```env
 DATABASE_URL=postgresql://<username>:<password>@<host>:<port>/<dbname>
 SECRET_KEY=<random-32-character-secret>
 ENVIRONMENT=development
 COOKIE_DOMAIN=localhost
+GEMINI_API_KEY=<gemini-api-key>
+COST_GUARD_BACKEND=gemini
+COST_GUARD_MODEL=gemini-3.5-flash-lite
 ```
 
 ### Frontend (`frontend/.env`)

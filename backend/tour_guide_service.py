@@ -2,7 +2,7 @@
 VoyageAI tour guide / concierge service.
 
 Request flow (process_concierge_message):
-    1. Cost guard      -> cheap rules decide if we even need to call an LLM
+    1. Cost guard      -> bounded intent classification gates paid answer generation
     2. Pick prompt     -> normal travel prompt, or emergency prompt
     3. Build context   -> location anchor + last few chat messages
     4. Call LLM        -> Tier A (grounded) -> Tier B (plain) -> Tier C (REST)
@@ -371,7 +371,7 @@ def process_concierge_message(
     eff_lat = lat if lat is not None else user_lat
     eff_lng = lng if lng is not None else user_lng
 
-    # 1. Cost guard: cheap rule-based gates
+    # 1. Cost guard: unmatched or unavailable classification asks for clarification.
     should_call_llm, gate_reason, deflection = evaluate_cost_guards(message)
     if not should_call_llm:
         payload = {
