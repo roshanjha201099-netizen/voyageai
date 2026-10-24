@@ -66,17 +66,17 @@ class PolicyContract(unittest.TestCase):
             guard.decide({"emergency": .99}, self.thresholds)
 
     def test_policy_is_bound_to_model_and_corpus(self):
-        corpus = json.loads(guard.CORPUS_PATH.read_text())
-        policy = json.loads(guard.POLICY_PATH.read_text())
+        corpus = json.loads(guard.CORPUS_PATH.read_text(encoding="utf-8"))
+        policy = json.loads(guard.POLICY_PATH.read_text(encoding="utf-8"))
         guard.validate_policy(policy, corpus)
         corpus["anchors"]["travel"][0] += " changed"
         with self.assertRaises(ValueError):
             guard.validate_policy(policy, corpus)
 
     def test_invalid_policy_values_reject(self):
-        corpus = json.loads(guard.CORPUS_PATH.read_text())
+        corpus = json.loads(guard.CORPUS_PATH.read_text(encoding="utf-8"))
         for bad in (math.nan, math.inf, -1, "0.5", True):
-            policy = json.loads(guard.POLICY_PATH.read_text())
+            policy = json.loads(guard.POLICY_PATH.read_text(encoding="utf-8"))
             policy["thresholds"]["travel"]["similarity"] = bad
             with self.subTest(value=bad), self.assertRaises(ValueError):
                 guard.validate_policy(policy, corpus)
@@ -116,7 +116,12 @@ class PolicyContract(unittest.TestCase):
 
 class MicroClassifierContract(unittest.TestCase):
     def setUp(self):
-        self.env = patch.dict(os.environ, {"GEMINI_API_KEY": "test-only", "COST_GUARD_MODEL": "gemini-3.5-flash-lite"})
+        self.env = patch.dict(os.environ, {
+            "GEMINI_API_KEY": "test-only",
+            "COST_GUARD_MODEL": "gemini-3.5-flash-lite",
+            "COST_GUARD_CONNECT_TIMEOUT": "1.5",
+            "COST_GUARD_READ_TIMEOUT": "3.5",
+        })
         self.env.start()
         self.addCleanup(self.env.stop)
         self.classifier = guard.GeminiClassifier()

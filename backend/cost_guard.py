@@ -18,6 +18,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Protocol
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 log = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parent
 CORPUS_PATH = ROOT / "cost_guard_routes.json"
@@ -160,7 +164,10 @@ class GeminiClassifier:
                         }}},
                     },
                 },
-                timeout=(1.5, 3.5),
+                timeout=(
+                    float(os.getenv("COST_GUARD_CONNECT_TIMEOUT", "1.5")),
+                    float(os.getenv("COST_GUARD_READ_TIMEOUT", "3.5")),
+                ),
                 allow_redirects=False,
             )
             response.raise_for_status()
@@ -197,10 +204,10 @@ class SemanticClassifier:
         from fastembed import TextEmbedding
         from importlib.metadata import version
 
-        self.corpus = json.loads(CORPUS_PATH.read_text())
+        self.corpus = json.loads(CORPUS_PATH.read_text(encoding="utf-8"))
         if version("fastembed") != self.corpus["fastembed_version"]:
             raise ValueError("FastEmbed version differs from calibration")
-        self.policy = json.loads(policy_path.read_text()) if policy_path.exists() else None
+        self.policy = json.loads(policy_path.read_text(encoding="utf-8")) if policy_path.exists() else None
         if self.policy is not None:
             validate_policy(self.policy, self.corpus)
         self.encoder = TextEmbedding(

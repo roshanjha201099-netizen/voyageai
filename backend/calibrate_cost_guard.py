@@ -45,7 +45,7 @@ def main():
     args = parser.parse_args()
     # A nonexistent path deliberately avoids loading an old policy while fitting.
     classifier = SemanticClassifier(download=args.download, policy_path=ROOT / ".uncalibrated")
-    data = json.loads((ROOT / "cost_guard_calibration.json").read_text())
+    data = json.loads((ROOT / "cost_guard_calibration.json").read_text(encoding="utf-8"))
     examples = [(label, query) for label, queries in data.items() for query in queries]
     anchors = {q for queries in classifier.corpus["anchors"].values() for q in queries}
     if any(query in anchors for _, query in examples):

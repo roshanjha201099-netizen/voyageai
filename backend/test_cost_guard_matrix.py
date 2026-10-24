@@ -98,8 +98,8 @@ def main():
         load_dotenv(ROOT / ".env")
     except ImportError:
         pass
-    corpus = json.loads((ROOT / "cost_guard_routes.json").read_text())
-    calibration = json.loads((ROOT / "cost_guard_calibration.json").read_text())
+    corpus = json.loads((ROOT / "cost_guard_routes.json").read_text(encoding="utf-8"))
+    calibration = json.loads((ROOT / "cost_guard_calibration.json").read_text(encoding="utf-8"))
     training = {q.casefold() for group in [corpus["anchors"], calibration] for queries in group.values() for q in queries}
     assert all(q.casefold() not in training for _, _, q in CASES), "Test/train utterance overlap"
     started = time.perf_counter()
