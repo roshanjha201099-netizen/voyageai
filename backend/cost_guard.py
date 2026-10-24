@@ -1,31 +1,28 @@
 """
-Cost guard: decides whether a message deserves a (paid) LLM call.
+Cost guard: decides whether a message deserves a (paid) LLM call or an API action.
 
-Pipeline, in order. The first gate that matches wins:
-    Gate 0    exact canned replies ("hi", "thanks", ...)            -> free
-    Gate 1    adult words                                           -> free deflect
-    Gate 1.5  medical / hygiene essentials                          -> ALWAYS go to LLM (emergency mode)
-    Gate 1    coding / finance / homework                           -> free deflect
-    Gate 2A   obvious travel words (incl. Hinglish transport words) -> go to LLM
-    Gate 2B   everything else is "ambiguous" -> ask the Laya ML router
-              Laya says TRAVEL     -> go to LLM
-              Laya says OFF_TOPIC  -> free deflect
-              Laya unavailable     -> go to LLM (fail open, see ask_laya)
-
-Debug: set env COST_GUARD_DEBUG=1 to print every decision and the raw Laya output.
-
-Returns (should_call_llm, gate_reason, reply_if_deflected).
+Pipeline order:
+    Gate 0    Exact canned matches ("hi", "thanks", etc.)        -> 0ms, free canned reply
+    Gate 1    Adult / explicit filter via fast regex             -> 0ms, free deflect
+    Gate 2    In-process Semantic Router (FastEmbed CPU vectors) -> ~5ms
+              - "emergency"          -> Handled as emergency mode
+              - "places_and_transit" -> Dispatched to Google Maps / Places API
+              - "travel_itinerary"   -> Handled via main LLM prompt
+              - "deflect"            -> Deflected with cheeky canned response
+    Fallback  Ambiguous / Low Confidence                         -> Fail OPEN to LLM
 """
 
 import os
 import random
 import re
 from typing import Optional, Tuple
+from semantic_router import Route
+from semantic_router.encoders import FastEmbedEncoder
+from semantic_router.routers import IndexedRouter
 
-os.environ["HF_HUB_OFFLINE"] = "1"
-os.environ["TRANSFORMERS_OFFLINE"] = "1"
-os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
-
+# ----------------------------------------------------------------------
+# Environment & Debug Configuration
+# ----------------------------------------------------------------------
 DEBUG = os.getenv("COST_GUARD_DEBUG") == "1"
 
 
@@ -35,13 +32,17 @@ def _dbg(*args):
 
 
 def _normalize(s: str) -> str:
-    """lowercase, drop punctuation, trim. Used for BOTH the incoming query and the exact-match keys."""
+    """Lowercase, remove punctuation, and strip whitespace for clean dictionary matching."""
     return re.sub(r"[^\w\s]", "", s.strip().lower()).strip()
 
 
-# ============================================================================
-# Gate 0: exact replies (0 ms, 0 tokens)
-# ============================================================================
+def _pick(pool: list) -> str:
+    return random.choice(pool)
+
+
+# ----------------------------------------------------------------------
+# Gate 0: Exact Canned Replies (0ms, 0 Tokens)
+# ----------------------------------------------------------------------
 _RAW_EXACT_REPLIES = {
     "hi": "Hey! VoyageAI concierge here. Where are we heading today?",
     "hello": "Hello! Looking for places to eat, sights, or trip planning?",
@@ -55,25 +56,18 @@ _RAW_EXACT_REPLIES = {
     "baarish mein bache kahan masti karein?": "Rainy day fun! Indoor games, cafes, museums... batao kaun si city hai?",
     "cricket score kya chal raha hai?": "Bhai, cricket ka update baad mein, pehle plan batao - kahan jaana hai?",
 }
-# FIX: keys that had "?" could never match because the query's "?" is stripped. Normalize keys too.
 EXACT_REPLIES = {_normalize(k): v for k, v in _RAW_EXACT_REPLIES.items()}
 
-CHEEKY_CODING = [
-    "Bhai, main GPS hoon, compiler nahi 😄 Code ka nahi, local raste aur khane ka puchho!",
-    "Bugs sirf hotel ke bistar mein dhundhta hoon, code mein nahi 🐛 Kahan ghoomna hai?",
-    "Binary search mein main sirf best chai ki dukaan dhundh sakta hoon ☕ Kahan ghoom rahe ho?",
-    "Mera stack overflow sirf tab hota hai jab thali bahut badi ho 🍛 Chalo khane ki baat karein?",
-]
-CHEEKY_FINANCE = [
-    "Bhai main itinerary planner hoon, Zerodha broker nahi 📈 Paisa travel pe lagao, stock market Google se poocho!",
-    "Mutual funds sahi honge dost, par abhi konsi chai sahi hai wo main bata sakta hoon ☕",
-    "Bull market ho ya bear market, ghoomna hamesha all-time high pe hona chahiye! Kahan chalna hai?",
-]
+
+# ----------------------------------------------------------------------
+# Deflection Response Pools
+# ----------------------------------------------------------------------
 CHEEKY_ADULT = [
     "Bhai, ye wala rasta mere map pe hi nahi hai 🙅 Khana, sights, stay — kuch aur puchho!",
     "Main sirf ghoomne wali baatein karta hoon. Chai, fort, sunset — kuch bhi puchho, ye nahi 😌",
     "Wrong turn le liya dost 🚧 U-turn maaro aur batao kahan ghoomna hai!",
 ]
+
 CHEEKY_GENERAL = [
     "Ye sawal meri zone se bahar hai dost 😅 Main sirf khana, ghoomna aur raste janta hoon.",
     "Iska jawab Google dega, par best chai kahan milegi wo sirf mere paas hai ☕",
@@ -82,180 +76,152 @@ CHEEKY_GENERAL = [
 ]
 
 
-def _pick(pool):
-    return random.choice(pool)
-
-
-# ============================================================================
-# Gate 1: regex rules
-# ============================================================================
-# FIX: the original had  ...|khoon beh rha waha se'  'pharmacy|...  with NO "|" between the two
-# string pieces, so "pharmacy" was glued into "...waha sepharmacy" and never matched on its own.
-# Also: "pad thai" and "best period to visit" used to trigger emergency mode.
-ESSENTIAL_NEEDS = re.compile(
+# ----------------------------------------------------------------------
+# Gate 1: Adult / Explicit Filter Regex
+# ----------------------------------------------------------------------
+ADULT_REGEX = re.compile(
     r"\b("
-    r"pads?(?!\s*thai)|sanitary|napkins?|tampons?|"
-    r"(?<!best\s)(?<!good\s)(?<!ideal\s)(?<!right\s)periods?(?!\s+(?:to|for|of|in)\b)|cramps?|maasik|khoon\s*beh\w*|"
-    r"pharm\w*|phara|farmacy|medical\s*store|chemist|medicines?|dawai|dawa|paracetamol|painkiller|first\s*aid|ors|"
-    r"doctor|hospital|clinic|ambulance|emergency|bukhar|fever|ulti|vomit|motion\s*sickness|"
-    r"atm|washroom|toilet|restroom|charger|power\s*bank|sim\s*card|wifi|"
-    r"petrol\s*pump|police|lost|kho\s*gaya|wallet|passport|luggage|locker|cloakroom"
+    r"brothel|prostitut\w*|escorts?|call\s*girls?|red\s*light\s*area|"
+    r"r[a|aa]+nd[i|a|e]?(\s*khana|\s*ghar)?|chhamiya|slut\w*|sex\s*workers?|"
+    r"chud\w*|chod\w*|behen\s*chod\w*|madar\s*chod\w*|maa\s*ki|"
+    r"chut|choot|gand|gaand|gandu|lauda|loda|lund|bhosad\w*|mutth|sexy?|nudes?|porn\w*|xxx|"
+    r"sambhog\w*|sanbhog\w*|jism\s*farosh\w*|gigolos?|hook\s*ups?|happy\s*ending|one\s*night\s*stand|"
+    r"ladki\s*(chahiye|patana|set|dila)|room\s*me\s*ladki"
     r")\b",
     re.IGNORECASE,
 )
 
-ADULT_REGEX = re.compile(
-    r"\b(brothel|prostitut\w*|escorts?|call\s*girls?|red\s*light\s*area|randi(\s*khana|\s*ghar)?|randa|chhamiya|"
-    r"slut\w*|sex\s*workers?|chudai|behen\s*chod\w*|madar\s*chod\w*|maa\s*ki|"
-    r"chut|choot|gand|gaand|gandu|lauda|loda|lund|bhosad\w*|mutth|sexy?|nudes?|porn\w*|xxx|"
-    r"sambhog\w*|sanbhog\w*|jism\s*farosh\w*|gigolos?|hook\s*ups?|happy\s*ending|one\s*night\s*stand|"
-    r"ladki\s*(chahiye|patana|set|dila)|room\s*me\s*ladki)\b",
-    re.IGNORECASE,
-)
 
-SAFE_TRAVEL_TERMS = re.compile(
-    r"\b(dress\s*code|qr\s*code|promo\s*code|pin\s*code|area\s*code|discount\s*code|coupon\s*code)\b",
-    re.IGNORECASE,
-)
-
-CODING_REGEX = re.compile(
-    r"(c\+\+|\bcpp\b|\bpython\b|\bjavascript\b|\btypescript\b|\bhtml\b|\bcss\b|\bsql\b|\bgolang\b|\bphp\b|\bkotlin\b|"
-    r"\b(source\s*code|coding|code\s*(de|likh|likho|do|write|snippet)|write\s*(a\s*)?(code|program|script))\b|"
-    r"\b(algorithm|binary\s*search|bianry\s*search|merge\s*sort|dsa|leetcode|recursion|linked\s*list|hashmap)\b|"
-    r"\b(backend|postgres|redis|kafka|system\s*design|load\s*balancer))\b",
-    re.IGNORECASE,
-)
-
-# FIX: bare "sip" and "shares" blocked "sip chai" and "share auto/cab", which are travel questions.
-FINANCE_REGEX = re.compile(
-    r"\b(stocks?|stock\s*market|share\s*market|shares?\s*(price|prices|broker|trading)|nifty|sensex|crypto|bitcoin|"
-    r"mutual\s*funds?|sips?\s*(invest\w*|plan|amount|returns?)|portfolio|trading|invest\w*)\b",
-    re.IGNORECASE,
-)
-
-# FIX: removed "who is" (blocked "who is the best guide in Jaipur").
-HOMEWORK_REGEX = re.compile(
-    r"\b(homework|assignment|solve\s*(this|equation)|derivative|integral|maths?|essay|who\s*won)\b",
-    re.IGNORECASE,
-)
-
-# ============================================================================
-# Gate 2A: obvious travel words
-# ============================================================================
-# FIX: no Hinglish "going / how to reach / which is best" words existed, so
-# "baguati kolkata se newton jaana hai best kya rahega" matched NOTHING and went to the ML router,
-# which wrongly called it OFF_TOPIC. The two new groups at the end cover that.
-TRAVEL_SIGNALS = re.compile(
-    r"("
-    r"\b(hotel|stay|hostel|resort|flight|train|bus|auto|cab|taxi|metro|route|distance|km|ticket|entry|timing|open|close)\b|"
-    r"\b(food|restaurant|cafe|dhaba|thali|chai|tea|coffee|breakfast|lunch|dinner|eat|drink|street\s*food|biryani|snack)\b|"
-    r"\b(fort|palace|temple|mandir|masjid|church|beach|viewpoint|sunset|sunrise|park|garden|museum|(?<!stock\s)(market|bazaar)|shopping|mall)\b|"
-    r"\b(itinerary|guide|trip|travel|visit|reach|pacing|explore|city|famous|historical|pack|weather|safe|nightlife)\b|"
-    r"\b(jagah|place|places|ghoom\w*|dekh\w*|kaha\s*jau|batao|asspas|aas\s*paas|aaspass|near\s*me|nearby|paas|kahan|kaha\s*milega|kaise\s*jaye|route)\b|"
-    # NEW: Hinglish movement / transport words
-    r"\b(jaana|jana|jaane|jaaun|jaun|jayein|jaye|jaaye|chalna|pahunch\w*|pohoch\w*|rasta|raasta|raste|"
-    r"bhada|bhaada|fare|kharcha|ola|uber|rapido|rickshaw|bike|scooter|ferry)\b|"
-    # NEW: "A se B tak", "kya rahega", "best option/way"
-    r"\bse\b.{1,40}\b(tak|jaana|jana|jaane)\b|"
-    r"\bkya\s*rahega\b|\bbest\s*(option|way|rahega|hoga)\b"
-    r")",
-    re.IGNORECASE,
-)
-
-# ============================================================================
-# Gate 2B: Laya ML router (only for messages no rule could decide)
-# ============================================================================
-_laya_router_instance = None
+# ----------------------------------------------------------------------
+# Gate 2: Semantic Router Singleton (Loaded in RAM)
+# ----------------------------------------------------------------------
+_router_instance: Optional[IndexedRouter] = None
 
 
-def get_laya():
-    global _laya_router_instance
-    if _laya_router_instance is None:
+def get_semantic_router() -> Optional[IndexedRouter]:
+    global _router_instance
+    if _router_instance is None:
         try:
-            from laya.laya import LayaRouter
+            encoder = FastEmbedEncoder(name="BAAI/bge-small-en-v1.5")
 
-            criteria = {
-                "TRAVEL": (
-                    "Anything about going somewhere or being somewhere: trip planning, directions, how to reach a place "
-                    "(bus, metro, cab, train), hotels, flights, itineraries, tourist spots, sights, local food, packing."
-                ),
-                "OFF_TOPIC": (
-                    "Chit-chat, mood, asking for songs or music, jokes, emotional talk, personal life, philosophy, "
-                    "finance, or anything unrelated to a physical trip."
-                ),
-            }
-            _laya_router_instance = LayaRouter(
-                criteria=criteria,
-                instructions="Route to TRAVEL if the user wants to go somewhere, reach a place, or asks about a destination, trip, or tourism. Everything else is OFF_TOPIC.",
-                fallback="OFF_TOPIC",
+            # Route 1: Medical, Safety & Hygiene Essentials
+            emergency_route = Route(
+                name="emergency",
+                utterances=[
+                    "need sanitary pads urgently",
+                    "tampon or napkin nearby",
+                    "hospital emergency room or clinic",
+                    "24 hour pharmacy chemist dawa",
+                    "vomiting fever motion sickness doctor",
+                    "lost my wallet passport luggage",
+                    "police station help ambulance",
+                    "kho gaya mera bag",
+                    "accident ho gaya help chahiye",
+                    "first aid kit or bandaid",
+                ],
+                score_threshold=0.72,
             )
-            print("[COST GUARD] LayaRouter initialized successfully.", flush=True)
+
+            # Route 2: Location, Navigation & Food (Maps / Places API Candidates)
+            places_route = Route(
+                name="places_and_transit",
+                utterances=[
+                    "where is the nearest cafe or restaurant",
+                    "directions to maurya lok",
+                    "top food nearby",
+                    "how to reach railway station from hotel",
+                    "auto cab fare kitna lagega",
+                    "famous sights and places to visit around me",
+                    "dhaba thali tea breakfast nearby",
+                    "baguati se newtown jana hai best option kya hai",
+                    "nearest petrol pump or atm",
+                    "metro station route and timings",
+                ],
+                score_threshold=0.68,
+            )
+
+            # Route 3: Travel Concierge & Itinerary
+            travel_route = Route(
+                name="travel_itinerary",
+                utterances=[
+                    "plan a 3 day itinerary for jaipur",
+                    "what is the best season to explore goa",
+                    "packing tips and dress code for temples",
+                    "tell me the history of amer fort",
+                    "is it safe to travel at night here",
+                    "budget friendly backpacking advice",
+                    "what are the local customs in this town",
+                ],
+                score_threshold=0.70,
+            )
+
+            # Route 4: Deflection (Coding, Homework, Trading, General Trivia)
+            deflect_route = Route(
+                name="deflect",
+                utterances=[
+                    "write code for binary search tree",
+                    "python script to connect postgres database",
+                    "how to invest in stock market nifty zerodha",
+                    "solve this math calculus equation",
+                    "who won yesterday cricket match",
+                    "tell me a romantic joke",
+                    "write an essay on climate change",
+                    "explain quantum physics",
+                ],
+                score_threshold=0.70,
+            )
+
+            # Use IndexedRouter with encoder
+            _router_instance = IndexedRouter(
+                encoder=encoder,
+                routes=[emergency_route, places_route, travel_route, deflect_route],
+            )
+            print("[COST GUARD] Semantic Router initialized successfully with FastEmbed in RAM.", flush=True)
         except Exception as e:
-            print(f"[COST GUARD] Laya init notice: {e}", flush=True)
-            _laya_router_instance = False
-    return _laya_router_instance if _laya_router_instance is not False else None
+            print(f"[COST GUARD] Semantic Router init failed: {e}", flush=True)
+            _router_instance = None
+
+    return _router_instance
 
 
-def ask_laya(query: str) -> Optional[bool]:
-    """True = travel, False = off-topic, None = router unavailable/errored."""
-    router = get_laya()
-    if not router:
-        return None
-    try:
-        decision = router(query)
-        _dbg("raw laya decision:", repr(decision))  # shows route + any confidence fields
-        route_val = getattr(decision, "route", str(decision))
-        return route_val == "TRAVEL"
-    except Exception as e:
-        print(f"[LAYA ROUTE ERROR] {e}", flush=True)
-        return None
-
-
-# ============================================================================
-# Main pipeline
-# ============================================================================
+# ----------------------------------------------------------------------
+# Main Evaluation Pipeline
+# ----------------------------------------------------------------------
 def _evaluate(query: str) -> Tuple[bool, str, str]:
     clean_q = query.strip().lower()
     normalized = _normalize(query)
 
-    # Gate 0
+    # Gate 0: Exact canned strings (0ms, 0 tokens)
     if normalized in EXACT_REPLIES:
         return False, "GATE_0_EXACT_MATCH_FREE", EXACT_REPLIES[normalized]
 
-    # Gate 1: adult
+    # Gate 1: Adult / explicit filter
     if ADULT_REGEX.search(clean_q):
         return False, "GATE_1_ADULT_BLOCKED_FREE", _pick(CHEEKY_ADULT)
 
-    # Gate 1.5: medical / hygiene -> always allow (service switches to emergency prompt)
-    if ESSENTIAL_NEEDS.search(clean_q):
-        return True, "PASSED_ESSENTIAL_NEED", ""
+    # Gate 2: Semantic vector classification
+    router = get_semantic_router()
+    if router:
+        try:
+            match = router(query)
+            route_name = match.name if match else None
 
-    # Gate 1: coding
-    if not SAFE_TRAVEL_TERMS.search(clean_q) and CODING_REGEX.search(clean_q):
-        return False, "GATE_1_CODING_BLOCKED_FREE", _pick(CHEEKY_CODING)
+            if route_name == "emergency":
+                return True, "PASSED_EMERGENCY", ""
 
-    # Gate 1: finance
-    if FINANCE_REGEX.search(clean_q):
-        return False, "GATE_1_FINANCE_BLOCKED_FREE", _pick(CHEEKY_FINANCE)
+            if route_name == "places_and_transit":
+                return True, "PASSED_PLACES_API", ""
 
-    # Gate 1: homework
-    if HOMEWORK_REGEX.search(clean_q):
-        return False, "GATE_1_HOMEWORK_BLOCKED_FREE", _pick(CHEEKY_GENERAL)
+            if route_name == "travel_itinerary":
+                return True, "PASSED_TRAVEL_LLM", ""
 
-    # Gate 2A: known travel words -> allow
-    if TRAVEL_SIGNALS.search(clean_q):
-        return True, "PASSED_TO_LLM", ""
+            if route_name == "deflect":
+                return False, "GATE_SEMANTIC_DEFLECT_FREE", _pick(CHEEKY_GENERAL)
+        except Exception as e:
+            print(f"[ROUTER ERROR] {e}", flush=True)
 
-    # Gate 2B: ambiguous -> ML router
-    laya_result = ask_laya(clean_q)
-    if laya_result is True:
-        return True, "PASSED_VIA_LAYA", ""
-    if laya_result is False:
-        return False, "GATE_2_LAYA_DEFLECT_FREE", _pick(CHEEKY_GENERAL)
-
-    # Router unavailable. FIX: was "deflect everything" (blocks real users when the model fails to load).
-    # Now we fail OPEN: a wasted LLM call is cheap; a blocked real traveller is not.
-    return True, "PASSED_LAYA_UNAVAILABLE", ""
+    # Fallback: Fail open so legitimate, nuanced travel queries are not blocked
+    return True, "PASSED_FAIL_OPEN", ""
 
 
 def evaluate_cost_guards(query: str) -> Tuple[bool, str, str]:

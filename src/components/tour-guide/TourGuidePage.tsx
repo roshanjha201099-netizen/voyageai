@@ -5,7 +5,8 @@ import { useTrip } from '../../features/trip/TripContext';
 import { getApiBaseUrl, DEFAULT_FETCH_OPTIONS, getAuthHeaders } from '../../config/apiConfig';
 import {
   MapPin, Navigation, Plus, ArrowUp,
-  AlertTriangle, Compass, Clock, Check, Loader2
+  AlertTriangle, Compass, Clock, Check, Loader2,
+  Sparkles, X
 } from 'lucide-react';
 import { FormattedText } from '../common/FormattedText';
 
@@ -46,6 +47,9 @@ export interface ChatMsg {
   created_at?: string;
 }
 
+const MAX_CHARS = 1000;
+const WARNING_THRESHOLD = 900;
+
 export const TourGuidePage: React.FC = () => {
   const dispatch = useDispatch();
   const location = useLocation();
@@ -61,6 +65,11 @@ export const TourGuidePage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [addingCardId, setAddingCardId] = useState<string | null>(null);
   const [addedSuccessId, setAddedSuccessId] = useState<string | null>(null);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+
+  const remaining = MAX_CHARS - input.length;
+  const isExceeded = remaining < 0;
+  const isNearLimit = input.length >= WARNING_THRESHOLD && !isExceeded;
 
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
@@ -148,6 +157,11 @@ export const TourGuidePage: React.FC = () => {
   }, [messages, loading]);
 
   const handleSend = async (queryText?: string) => {
+    if (!queryText && isExceeded) {
+      setShowUpgradeModal(true);
+      return;
+    }
+
     const textToSend = (queryText || input).trim();
     if (!textToSend || loading) return;
 
@@ -510,32 +524,142 @@ export const TourGuidePage: React.FC = () => {
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            if (isExceeded) {
+              setShowUpgradeModal(true);
+              return;
+            }
             handleSend();
           }}
           className="max-w-3xl mx-auto flex items-center gap-2 p-3 sm:p-4"
         >
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            aria-label="Message Jarvis"
-            placeholder={
-              mode === 'trip'
-                ? `Ask about ${destinationName}`
-                : `Ask about places in ${userLocationName || 'your area'}`
-            }
-            className="flex-1 min-w-0 rounded-lg border border-[#C9D0CC] bg-white px-3.5 py-2.5 text-sm placeholder:text-[#77858B] focus:outline-none focus:border-[#16232B] focus:ring-2 focus:ring-[#16232B]/15"
-          />
+          <div className="relative flex-1">
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && isExceeded) {
+                  e.preventDefault();
+                  setShowUpgradeModal(true);
+                }
+              }}
+              aria-label="Message Jarvis"
+              placeholder={
+                mode === 'trip'
+                  ? `Ask about ${destinationName}`
+                  : `Ask about places in ${userLocationName || 'your area'}`
+              }
+              className={`w-full min-w-0 rounded-lg border bg-white pl-3.5 pr-14 py-2.5 text-sm placeholder:text-[#77858B] transition-all focus:outline-none ${
+                isExceeded
+                  ? 'border-rose-500 ring-1 ring-rose-500 focus:border-rose-500 focus:ring-rose-500'
+                  : 'border-[#C9D0CC] focus:border-[#16232B] focus:ring-2 focus:ring-[#16232B]/15'
+              }`}
+            />
+            {input.length > 0 && (
+              <span
+                aria-live="polite"
+                className={`absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none select-none tabular-nums ${
+                  isExceeded
+                    ? 'text-rose-500 font-extrabold text-xs'
+                    : isNearLimit
+                    ? 'text-amber-500 font-semibold text-xs'
+                    : 'text-slate-400 text-xs'
+                }`}
+              >
+                {remaining}
+              </span>
+            )}
+          </div>
           <button
             type="submit"
+            onClick={(e) => {
+              if (isExceeded) {
+                e.preventDefault();
+                setShowUpgradeModal(true);
+              }
+            }}
             disabled={!input.trim() || loading}
             aria-label="Send message"
-            className="w-10 h-10 shrink-0 rounded-lg bg-[#16232B] text-white flex items-center justify-center hover:bg-[#22343F] disabled:bg-[#C9D0CC] disabled:cursor-not-allowed transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#16232B]"
+            className={`w-10 h-10 shrink-0 rounded-lg flex items-center justify-center transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#16232B] ${
+              isExceeded
+                ? 'bg-rose-500 hover:bg-rose-600 text-white shadow-sm cursor-pointer'
+                : 'bg-[#16232B] text-white hover:bg-[#22343F] disabled:bg-[#C9D0CC] disabled:cursor-not-allowed'
+            }`}
           >
             <ArrowUp className="w-4 h-4" aria-hidden="true" />
           </button>
         </form>
       </div>
+
+      {/* Upgrade Plan Warning Popup (Mock Modal) */}
+      {showUpgradeModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="upgrade-modal-title"
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fadeIn"
+          onClick={() => setShowUpgradeModal(false)}
+        >
+          <div
+            className="bg-slate-900 border border-slate-800 p-6 max-w-md w-full shadow-2xl text-center rounded-2xl relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close Button */}
+            <button
+              type="button"
+              onClick={() => setShowUpgradeModal(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+              aria-label="Close dialog"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            {/* Icon / Badge */}
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-semibold mb-3">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <span>⚡ Pro Feature</span>
+            </div>
+
+            {/* Headline */}
+            <h3 id="upgrade-modal-title" className="text-xl font-bold text-white tracking-tight">
+              Message Limit Exceeded
+            </h3>
+
+            {/* Body Copy */}
+            <p className="mt-2.5 text-slate-300 text-sm leading-relaxed">
+              Your message exceeds the 1,000 character limit for the standard tier. Please shorten your message or upgrade to VoyageAI Pro for unlimited long-form travel planning and priority LLM routing.
+            </p>
+
+            {/* Character Overflow Info Box */}
+            {isExceeded && (
+              <div className="mt-4 py-2.5 px-3.5 rounded-lg bg-slate-800/80 border border-slate-700/60 flex items-center justify-between text-xs text-slate-300">
+                <span>Message character count:</span>
+                <span className="font-semibold text-rose-400 tabular-nums">
+                  {input.length} / {MAX_CHARS} ({remaining} characters)
+                </span>
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="mt-6 flex flex-col sm:flex-row items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setShowUpgradeModal(false)}
+                className="w-full sm:flex-1 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-medium px-4 py-2.5 rounded-lg hover:brightness-110 transition-all shadow-md text-sm cursor-pointer"
+              >
+                Upgrade Plan
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowUpgradeModal(false)}
+                className="w-full sm:flex-1 px-4 py-2.5 rounded-lg border border-slate-700 bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors text-sm font-medium cursor-pointer"
+              >
+                Edit Message
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
