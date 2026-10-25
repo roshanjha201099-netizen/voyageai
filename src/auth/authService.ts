@@ -1,48 +1,34 @@
 import type { SessionData, LoginPayload, RegisterPayload, OnboardingUpdatePayload } from './types';
 import { wsClient } from '../services/wsClient';
-import { getApiBaseUrl, getAuthHeaders } from '../config/apiConfig';
+import { getApiBaseUrl, getAuthHeaders, setAuthToken, getAuthToken } from '../config/apiConfig';
 
-const SESSION_CACHE_KEY = 'voyageai_session_data';
-const TOKEN_KEY = 'voyageai_token';
+let inMemorySession: SessionData | null = null;
 
 export const authService = {
   clearSessionCache() {
+    inMemorySession = null;
+    setAuthToken(null);
     try {
-      localStorage.removeItem(SESSION_CACHE_KEY);
-      localStorage.removeItem(TOKEN_KEY);
-      sessionStorage.removeItem(TOKEN_KEY);
+      if (typeof window !== 'undefined' && window.localStorage) {
+        localStorage.clear();
+      }
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        sessionStorage.clear();
+      }
     } catch {
       /* ignore */
     }
   },
 
   saveCachedSession(session: SessionData) {
-    try {
-      localStorage.setItem(SESSION_CACHE_KEY, JSON.stringify(session));
-      if (session.token) {
-        localStorage.setItem(TOKEN_KEY, session.token);
-        sessionStorage.setItem(TOKEN_KEY, session.token);
-      }
-    } catch {
-      /* ignore */
+    inMemorySession = session;
+    if (session?.token) {
+      setAuthToken(session.token);
     }
   },
 
   getCachedSession(): SessionData | null {
-    try {
-      const cached = localStorage.getItem(SESSION_CACHE_KEY);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (!parsed.token) {
-          const directToken = localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY);
-          if (directToken) parsed.token = directToken;
-        }
-        return parsed;
-      }
-      return null;
-    } catch {
-      return null;
-    }
+    return inMemorySession;
   },
 
   getAuthHeaders(): Record<string, string> {
@@ -162,7 +148,7 @@ export const authService = {
       if (response.ok) {
         const data = await response.json();
         if (data && data.authenticated && data.authUser) {
-          const directToken = (typeof window !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null) || undefined;
+          const directToken = getAuthToken() || undefined;
           const sessionData: SessionData = {
             token: data.token || directToken,
             authUser: data.authUser,
@@ -194,7 +180,7 @@ export const authService = {
         const data = await response.json();
         if (data && data.authenticated && data.authUser) {
           const sessionData: SessionData = {
-            token: data.token || cached?.token || (typeof window !== 'undefined' ? localStorage.getItem(TOKEN_KEY) || undefined : undefined),
+            token: data.token || cached?.token || getAuthToken() || undefined,
             authUser: data.authUser,
             userProfile: data.userProfile,
             userPreferences: data.userPreferences,
@@ -208,7 +194,7 @@ export const authService = {
     }
 
     // Try WS fallback if cached token exists
-    const token = cached?.token || (typeof window !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null);
+    const token = cached?.token || getAuthToken();
     if (token) {
       try {
         const wsData: SessionData = await wsClient.sendRequest('auth:session', { token });
@@ -253,7 +239,7 @@ export const authService = {
 
   async updateOnboarding(payload: OnboardingUpdatePayload): Promise<{ userProfile: SessionData['userProfile']; userPreferences: SessionData['userPreferences'] }> {
     const cached = this.getCachedSession();
-    const token = cached?.token || (typeof window !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null) || undefined;
+    const token = cached?.token || getAuthToken() || undefined;
     const url = `${getApiBaseUrl()}/api/user/onboarding`;
     const requestPayload = { ...payload, token };
 

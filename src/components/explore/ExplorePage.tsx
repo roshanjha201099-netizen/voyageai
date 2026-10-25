@@ -70,13 +70,6 @@ export const ExplorePage: React.FC = () => {
       } catch (err) {
         console.warn('[FETCH SAVED PLACES WARN]', err);
       }
-      try {
-        const local = localStorage.getItem('voyage_saved_places');
-        if (local) {
-          const parsed = JSON.parse(local);
-          setSavedPlaceIds(new Set(parsed));
-        }
-      } catch (e) { }
     };
     fetchSavedPlaces();
   }, []);
@@ -90,10 +83,6 @@ export const ExplorePage: React.FC = () => {
       nextSet.add(item.id);
     }
     setSavedPlaceIds(nextSet);
-
-    try {
-      localStorage.setItem('voyage_saved_places', JSON.stringify(Array.from(nextSet)));
-    } catch (e) { }
 
     try {
       const baseUrl = getApiBaseUrl();

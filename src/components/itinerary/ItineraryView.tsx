@@ -3,7 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { useTrip } from '../../features/trip/TripContext';
 import { MapPin, Sparkles, Wallet, CloudRain, RefreshCw, Navigation, Car, Calendar, ArrowLeft, Download, Copy, Check, Printer } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { getApiBaseUrl } from '../../config/apiConfig';
+import { getApiBaseUrl, DEFAULT_HEADERS } from '../../config/apiConfig';
 
 export const ItineraryView: React.FC = () => {
   const navigate = useNavigate();
@@ -151,7 +151,9 @@ export const ItineraryView: React.FC = () => {
     setIsExportingJson(true);
     try {
       const baseUrl = getApiBaseUrl();
-      const res = await fetch(`${baseUrl}/api/trips/${currentTrip.id}/export?format=json`);
+      const res = await fetch(`${baseUrl}/api/trips/${currentTrip.id}/export?format=json`, {
+        headers: DEFAULT_HEADERS,
+      });
       if (!res.ok) throw new Error("Failed to export JSON");
       const data = await res.json();
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });

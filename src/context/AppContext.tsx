@@ -15,27 +15,6 @@ import { locationSocket } from '../services/locationSocket';
 import { wsClient } from '../services/wsClient';
 import { sanitizeLocationName } from '../utils/locationSanitizer';
 
-// Helper for LocalStorage Persistence
-function usePersistedState<T>(key: string, defaultValue: T): [T, React.Dispatch<React.SetStateAction<T>>] {
-  const [state, setState] = useState<T>(() => {
-    try {
-      const saved = localStorage.getItem(`voyageai_${key}`);
-      return saved ? JSON.parse(saved) : defaultValue;
-    } catch {
-      return defaultValue;
-    }
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(`voyageai_${key}`, JSON.stringify(state));
-    } catch (e) {
-      console.warn(`Failed to persist state for key voyageai_${key}`, e);
-    }
-  }, [key, state]);
-
-  return [state, setState];
-}
 
 interface AppContextType {
   // Navigation State
@@ -164,10 +143,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     console.warn('[AppContext] setActiveTrip called. TripContext is the single source of truth for active trip state.');
   }, []);
 
-  const [bookings, setBookings] = usePersistedState<Booking[]>('bookings', mockBookings);
-  const [expenses, setExpenses] = usePersistedState<Expense[]>('expenses', mockExpenses);
-  const [notifications, setNotifications] = usePersistedState<NotificationItem[]>('notifications', mockNotifications);
-  const [userProfile, setUserProfile] = usePersistedState<UserProfile>('user_profile', mockUserProfile);
+  const [bookings, setBookings] = useState<Booking[]>(mockBookings);
+  const [expenses, setExpenses] = useState<Expense[]>(mockExpenses);
+  const [notifications, setNotifications] = useState<NotificationItem[]>(mockNotifications);
+  const [userProfile, setUserProfile] = useState<UserProfile>(mockUserProfile);
 
   // Catalogs
   const [hotels] = useState<Hotel[]>(mockHotels);

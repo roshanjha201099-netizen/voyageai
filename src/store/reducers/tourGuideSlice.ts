@@ -41,22 +41,6 @@ export const fetchTourGuideHistory = createAsyncThunk(
       const url = `${baseUrl}/api/tour-guide/history?limit=100`;
 
       const headers = getAuthHeaders();
-      const cached = typeof window !== 'undefined' ? localStorage.getItem('voyageai_session_data') : null;
-      let hasAuth = Boolean(headers['Authorization']);
-      if (!hasAuth && cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          if (parsed?.authUser?.id || parsed?.userProfile?.id) {
-            hasAuth = true;
-          }
-        } catch {
-          // ignore
-        }
-      }
-
-      if (!hasAuth) {
-        return rejectWithValue('Authentication required to fetch chat history');
-      }
 
       const res = await axios.get(url, {
         withCredentials: true,

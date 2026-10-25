@@ -1,57 +1,43 @@
 import type { Trip, TripDraft, TripStatus } from './types';
 
-const TRIPS_BASE_KEY = 'voyageai_user_trips';
-const CURRENT_TRIP_ID_KEY = 'voyageai_current_trip_id';
-const TRIP_DRAFT_KEY = 'voyageai_trip_draft';
+const inMemoryTrips: Record<string, Trip[]> = {};
+const inMemoryCurrentTripId: Record<string, string | null> = {};
+const inMemoryDrafts: Record<string, TripDraft | null> = {};
 
 export const tripRepository = {
   getStoredTrips(userId?: string): Trip[] {
-    try {
-      const storageKey = userId ? `${TRIPS_BASE_KEY}_${userId}` : TRIPS_BASE_KEY;
-      const data = localStorage.getItem(storageKey);
-      return data ? JSON.parse(data) : [];
-    } catch {
-      return [];
-    }
+    const key = userId || 'default';
+    return inMemoryTrips[key] || [];
   },
 
   saveStoredTrips(trips: Trip[], userId?: string) {
-    const storageKey = userId ? `${TRIPS_BASE_KEY}_${userId}` : TRIPS_BASE_KEY;
-    localStorage.setItem(storageKey, JSON.stringify(trips));
+    const key = userId || 'default';
+    inMemoryTrips[key] = trips;
   },
 
   getCurrentTripId(userId?: string): string | null {
-    const storageKey = userId ? `${CURRENT_TRIP_ID_KEY}_${userId}` : CURRENT_TRIP_ID_KEY;
-    return localStorage.getItem(storageKey);
+    const key = userId || 'default';
+    return inMemoryCurrentTripId[key] || null;
   },
 
   setCurrentTripId(id: string | null, userId?: string) {
-    const storageKey = userId ? `${CURRENT_TRIP_ID_KEY}_${userId}` : CURRENT_TRIP_ID_KEY;
-    if (id) {
-      localStorage.setItem(storageKey, id);
-    } else {
-      localStorage.removeItem(storageKey);
-    }
+    const key = userId || 'default';
+    inMemoryCurrentTripId[key] = id;
   },
 
   getDraft(userId?: string): TripDraft | null {
-    try {
-      const storageKey = userId ? `${TRIP_DRAFT_KEY}_${userId}` : TRIP_DRAFT_KEY;
-      const data = localStorage.getItem(storageKey);
-      return data ? JSON.parse(data) : null;
-    } catch {
-      return null;
-    }
+    const key = userId || 'default';
+    return inMemoryDrafts[key] || null;
   },
 
   saveDraft(draft: TripDraft, userId?: string) {
-    const storageKey = userId ? `${TRIP_DRAFT_KEY}_${userId}` : TRIP_DRAFT_KEY;
-    localStorage.setItem(storageKey, JSON.stringify({ ...draft, updatedAt: new Date().toISOString() }));
+    const key = userId || 'default';
+    inMemoryDrafts[key] = { ...draft, updatedAt: new Date().toISOString() };
   },
 
   clearDraft(userId?: string) {
-    const storageKey = userId ? `${TRIP_DRAFT_KEY}_${userId}` : TRIP_DRAFT_KEY;
-    localStorage.removeItem(storageKey);
+    const key = userId || 'default';
+    delete inMemoryDrafts[key];
   },
 
   selectCurrentTripId(trips: Trip[], preferredId?: string | null): string | null {

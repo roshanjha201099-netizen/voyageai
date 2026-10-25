@@ -5,7 +5,7 @@
  * Simply update `DEFAULT_BACKEND_URL` below or edit `VITE_API_URL` in `.env` / `.env.production`.
  */
 
-export const DEFAULT_BACKEND_URL = 'http://localhost:80';
+export const DEFAULT_BACKEND_URL = 'https://754e-2401-4900-8f64-358c-cdc7-21e3-d903-8910.ngrok-free.app';
 
 /**
  * Returns the active HTTP/HTTPS API base URL.
@@ -56,6 +56,16 @@ export const DEFAULT_HEADERS: Record<string, string> = {
   'ngrok-skip-browser-warning': 'true',
 };
 
+let inMemoryToken: string | null = null;
+
+export const setAuthToken = (token: string | null) => {
+  inMemoryToken = token;
+};
+
+export const getAuthToken = (): string | null => {
+  return inMemoryToken;
+};
+
 /**
  * Returns HTTP headers for authenticated requests.
  * User identity is bound to the voyageai_session HttpOnly cookie (credentials: 'include')
@@ -64,20 +74,7 @@ export const DEFAULT_HEADERS: Record<string, string> = {
 export const getAuthHeaders = (): Record<string, string> => {
   const headers: Record<string, string> = { ...DEFAULT_HEADERS };
   try {
-    let token: string | null = null;
-    if (typeof window !== 'undefined') {
-      token = localStorage.getItem('voyageai_token');
-      if (!token) {
-        const raw = localStorage.getItem('voyageai_session_data');
-        if (raw) {
-          const data = JSON.parse(raw);
-          token = data?.token || null;
-        }
-      }
-      if (!token) {
-        token = sessionStorage.getItem('voyageai_token');
-      }
-    }
+    const token = getAuthToken();
     if (token && token.trim().length > 0) {
       const cleanToken = token.trim();
       headers['Authorization'] = `Bearer ${cleanToken}`;

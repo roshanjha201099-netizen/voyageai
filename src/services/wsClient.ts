@@ -3,6 +3,8 @@
  * Features: Exponential Backoff Reconnection, Replay Buffering, Dual Envelope Schemas (V4 RPC + Legacy)
  */
 
+import { getAuthToken } from '../config/apiConfig';
+
 export interface WsRequestFrame {
   id?: string;
   action?: string;
@@ -206,18 +208,7 @@ class WebSocketClient {
   public async sendRequest<T = any>(reqname: string, data: any = {}, timeoutMs: number = DEFAULT_TIMEOUT_MS): Promise<T> {
     const requestId = 'req_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
 
-    let token: string | undefined = undefined;
-    try {
-      if (typeof window !== 'undefined') {
-        token = localStorage.getItem('voyageai_token') || undefined;
-        if (!token) {
-          const raw = localStorage.getItem('voyageai_session_data');
-          if (raw) token = JSON.parse(raw)?.token || undefined;
-        }
-      }
-    } catch {
-      /* ignore */
-    }
+    const token = getAuthToken() || undefined;
 
     const payloadObj = typeof data === 'object' && data !== null ? { ...data } : { value: data };
     if (token && !payloadObj.token) {

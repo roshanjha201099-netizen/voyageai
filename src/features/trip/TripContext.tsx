@@ -345,11 +345,7 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
     }
 
-    setStays(prev => {
-      const updated = [newStay, ...prev];
-      localStorage.setItem(`voyageai_stays_${currentTripId}`, JSON.stringify(updated));
-      return updated;
-    });
+    setStays(prev => [newStay, ...prev]);
     return newStay;
   }, [currentTripId]);
 
@@ -377,11 +373,7 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
     }
 
-    setTransports(prev => {
-      const updated = [newTransport, ...prev];
-      localStorage.setItem(`voyageai_transports_${currentTripId}`, JSON.stringify(updated));
-      return updated;
-    });
+    setTransports(prev => [newTransport, ...prev]);
     return newTransport;
   }, [currentTripId]);
 
@@ -406,11 +398,7 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
     }
 
-    setExpenses(prev => {
-      const updated = [newExpense, ...prev];
-      localStorage.setItem(`voyageai_expenses_${currentTripId}`, JSON.stringify(updated));
-      return updated;
-    });
+    setExpenses(prev => [newExpense, ...prev]);
     return newExpense;
   }, [currentTripId]);
 

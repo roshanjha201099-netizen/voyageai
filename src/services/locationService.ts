@@ -32,7 +32,7 @@ const DEFAULT_CONFIG: LocationWatcherConfig = {
   maximumAgeMs: 10000
 };
 
-import { getApiBaseUrl } from '../config/apiConfig';
+import { getApiBaseUrl, DEFAULT_HEADERS } from '../config/apiConfig';
 
 /**
  * Reverse-geocode latitude and longitude into an accurate city/town name via Google Geocoding API proxy.
@@ -41,7 +41,9 @@ import { getApiBaseUrl } from '../config/apiConfig';
 export async function reverseGeocodeCoords(lat: number, lng: number): Promise<string> {
   try {
     const baseUrl = getApiBaseUrl();
-    const res = await fetch(`${baseUrl}/api/location/reverse?lat=${lat}&lng=${lng}`);
+    const res = await fetch(`${baseUrl}/api/location/reverse?lat=${lat}&lng=${lng}`, {
+      headers: DEFAULT_HEADERS,
+    });
     if (res.ok) {
       const data = await res.json();
       const city = data.city || data.state;
