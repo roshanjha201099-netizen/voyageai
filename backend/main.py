@@ -99,6 +99,7 @@ async def websocket_trip_endpoint(websocket: WebSocket, trip_id: str):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        "https://5cf2-2401-4900-8f64-358c-2843-25c-eb6e-6225.ngrok-free.app",
         "https://754e-2401-4900-8f64-358c-cdc7-21e3-d903-8910.ngrok-free.app",
         "https://tour-guide-v1.netlify.app",
         "https://98e8-2401-4900-8f64-f3ac-f84f-b19f-1d6f-a085.ngrok-free.app",
@@ -1340,8 +1341,14 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
         
         dest_name = destination.get("name") if isinstance(destination, dict) else "Destination"
 
-        start_date_str = trip_data.get("startDate", "2026-10-15")
-        end_date_str = trip_data.get("endDate", "2026-10-19")
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        start_date_str = trip_data.get("startDate") or today_str
+        end_date_str = trip_data.get("endDate") or start_date_str
+        if start_date_str < today_str:
+            raise ValueError("Trip start date cannot be in the past.")
+        if end_date_str < start_date_str:
+            raise ValueError("Trip end date cannot be earlier than start date.")
+
         try:
             d1 = datetime.strptime(start_date_str, "%Y-%m-%d")
             d2 = datetime.strptime(end_date_str, "%Y-%m-%d")
@@ -2853,8 +2860,14 @@ def create_trip(
         raise HTTPException(status_code=400, detail=f"Invalid trip destination payload: {err_msg}")
 
     # 3. Calculate Days Duration
-    start_date_str = trip_data.get("startDate", "2026-10-15")
-    end_date_str = trip_data.get("endDate", "2026-10-19")
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    start_date_str = trip_data.get("startDate") or today_str
+    end_date_str = trip_data.get("endDate") or start_date_str
+    if start_date_str < today_str:
+        raise HTTPException(status_code=400, detail="Trip start date cannot be in the past.")
+    if end_date_str < start_date_str:
+        raise HTTPException(status_code=400, detail="Trip end date cannot be earlier than start date.")
+
     try:
         d1 = datetime.strptime(start_date_str, "%Y-%m-%d")
         d2 = datetime.strptime(end_date_str, "%Y-%m-%d")

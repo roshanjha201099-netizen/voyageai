@@ -19,6 +19,24 @@ const POPULAR_DESTINATIONS: DestinationReference[] = [
   { id: 'dest_varanasi', name: 'Varanasi', city: 'Uttar Pradesh', region: 'Uttar Pradesh', country: 'India', latitude: 25.3176, longitude: 82.9739, displayName: 'Varanasi, Uttar Pradesh, India' },
 ];
 
+const getTodayDateString = (): string => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getFutureDateString = (startDateStr: string, daysAhead: number = 4): string => {
+  const base = new Date(startDateStr);
+  const validBase = isNaN(base.getTime()) ? new Date() : base;
+  validBase.setDate(validBase.getDate() + daysAhead);
+  const year = validBase.getFullYear();
+  const month = String(validBase.getMonth() + 1).padStart(2, '0');
+  const day = String(validBase.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export const TripCreationWizard: React.FC = () => {
   const navigate = useNavigate();
   const { createTrip, draft, saveDraft, discardDraft, isLoading: isTripLoading } = useTrip();
@@ -35,8 +53,10 @@ export const TripCreationWizard: React.FC = () => {
   const [searchError, setSearchError] = useState<string | null>(null);
 
   const [selectedDestination, setSelectedDestination] = useState<DestinationReference | null>(null);
-  const [startDate, setStartDate] = useState<string>('2026-10-15');
-  const [endDate, setEndDate] = useState<string>('2026-10-19');
+  const todayStr = getTodayDateString();
+  const [startDate, setStartDate] = useState<string>(todayStr);
+  const [endDate, setEndDate] = useState<string>(getFutureDateString(todayStr, 4));
+  const [dateError, setDateError] = useState<string | null>(null);
   const [travelersCount, setTravelersCount] = useState<number>(2);
   const [selectedStyles, setSelectedStyles] = useState<TravelStyle[]>([]);
   const [selectedBudget, setSelectedBudget] = useState<BudgetLevel>('MODERATE');
@@ -127,8 +147,20 @@ export const TripCreationWizard: React.FC = () => {
   const handleResumeDraft = () => {
     if (draft) {
       if (draft.destination) setSelectedDestination(draft.destination);
-      if (draft.startDate) setStartDate(draft.startDate);
-      if (draft.endDate) setEndDate(draft.endDate);
+      const today = getTodayDateString();
+      if (draft.startDate) {
+        if (draft.startDate < today) {
+          setStartDate(today);
+          setEndDate(getFutureDateString(today, 4));
+        } else {
+          setStartDate(draft.startDate);
+          if (draft.endDate && draft.endDate >= draft.startDate) {
+            setEndDate(draft.endDate);
+          } else {
+            setEndDate(getFutureDateString(draft.startDate, 4));
+          }
+        }
+      }
       if (draft.travelersCount) setTravelersCount(draft.travelersCount);
       if (draft.tripStyle) setSelectedStyles(draft.tripStyle);
       if (draft.budgetLevel) setSelectedBudget(draft.budgetLevel);
@@ -142,14 +174,43 @@ export const TripCreationWizard: React.FC = () => {
     discardDraft();
     setSelectedDestination(null);
     setDestinationSearch('');
-    setStartDate('2026-10-15');
-    setEndDate('2026-10-19');
+    const today = getTodayDateString();
+    setStartDate(today);
+    setEndDate(getFutureDateString(today, 4));
+    setDateError(null);
     setTravelersCount(2);
     setSelectedStyles(userPreferences?.travelStyles || []);
     const defaultLevel = userPreferences?.budgetLevel || 'MODERATE';
     handleBudgetTierSelect(defaultLevel);
     setStep(1);
     setShowResumePrompt(false);
+  };
+
+  const handleStartDateChange = (val: string) => {
+    setDateError(null);
+    const today = getTodayDateString();
+    if (val < today) {
+      setDateError("Trip start date cannot be in the past.");
+      setStartDate(today);
+      if (endDate < today) {
+        setEndDate(getFutureDateString(today, 4));
+      }
+      return;
+    }
+    setStartDate(val);
+    if (endDate < val) {
+      setEndDate(getFutureDateString(val, 4));
+    }
+  };
+
+  const handleEndDateChange = (val: string) => {
+    setDateError(null);
+    if (val < startDate) {
+      setDateError("Trip end date cannot be earlier than start date.");
+      setEndDate(startDate);
+      return;
+    }
+    setEndDate(val);
   };
 
   const updateStep = (nextStep: number) => {
@@ -424,26 +485,48 @@ export const TripCreationWizard: React.FC = () => {
                   <label className="text-xs font-semibold text-slate-400 block mb-1.5">Start Date</label>
                   <input
                     type="date"
+                    min={todayStr}
                     value={startDate}
-                    onChange={e => setStartDate(e.target.value)}
+                    onChange={e => handleStartDateChange(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-3 px-4 text-slate-100 font-bold text-sm focus:outline-none focus:border-teal-500"
                   />
+                  <p className="text-[11px] text-slate-500 mt-1">Trips can only start today ({todayStr}) or later.</p>
                 </div>
 
                 <div>
                   <label className="text-xs font-semibold text-slate-400 block mb-1.5">End Date</label>
                   <input
                     type="date"
+                    min={startDate || todayStr}
                     value={endDate}
-                    onChange={e => setEndDate(e.target.value)}
+                    onChange={e => handleEndDateChange(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-3 px-4 text-slate-100 font-bold text-sm focus:outline-none focus:border-teal-500"
                   />
                 </div>
+
+                {dateError && (
+                  <div className="flex items-center gap-2 text-rose-400 text-xs font-semibold pt-1">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{dateError}</span>
+                  </div>
+                )}
               </div>
             </div>
 
             <PreferenceFooter
-              onContinue={() => updateStep(3)}
+              onContinue={() => {
+                const today = getTodayDateString();
+                if (startDate < today) {
+                  setDateError("Trip start date cannot be in the past.");
+                  return;
+                }
+                if (endDate < startDate) {
+                  setDateError("Trip end date cannot be earlier than start date.");
+                  return;
+                }
+                setDateError(null);
+                updateStep(3);
+              }}
             />
           </div>
         )}

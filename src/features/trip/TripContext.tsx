@@ -421,6 +421,16 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoading(true);
     const clientRequestId = payload.clientRequestId || `req_${Date.now()}`;
 
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (payload.startDate < todayStr) {
+      setIsLoading(false);
+      throw new Error('Trip start date cannot be in the past.');
+    }
+    if (payload.endDate < payload.startDate) {
+      setIsLoading(false);
+      throw new Error('Trip end date cannot be earlier than start date.');
+    }
+
     const start = new Date(payload.startDate);
     const end = new Date(payload.endDate);
     const diffTime = Math.abs(end.getTime() - start.getTime());
