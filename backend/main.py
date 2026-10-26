@@ -1,3 +1,4 @@
+from fastapi import requests
 from fastapi import FastAPI, HTTPException, Header, Depends, Response, Request, BackgroundTasks, status, WebSocket, WebSocketDisconnect, Query
 from fastapi.responses import HTMLResponse
 from fastapi.encoders import jsonable_encoder
@@ -55,7 +56,7 @@ async def broadcast_trip_update_to_clients(trip_id: str, payload: dict):
         if 'connection_registry' in globals():
             await connection_registry.broadcast_push("ITINERARY_READY", payload)
     except Exception as e:
-        logger.error(f"[WS BROADCAST ERROR] Failed to push WebSocket update: {e}")
+        print(f"[WS BROADCAST ERROR] Failed to push WebSocket update: {e}")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
