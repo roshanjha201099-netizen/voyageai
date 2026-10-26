@@ -111,8 +111,9 @@ export const FoodSheet: React.FC = () => {
                   <img
                     src={r.photos[0]}
                     alt={r.name}
-                    className="w-20 h-20 rounded-xl object-cover shrink-0"
+                    className="w-20 h-20 rounded-xl object-cover shrink-0 bg-slate-800"
                     loading="lazy"
+                    decoding="async"
                   />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between">

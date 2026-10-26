@@ -8,10 +8,10 @@ import {
 } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { getApiBaseUrl, DEFAULT_HEADERS } from '../../config/apiConfig';
+import { getApiBaseUrl, DEFAULT_HEADERS, getAuthHeaders } from '../../config/apiConfig';
 import { useAudioGuide } from '../../hooks/useAudioGuide';
 import { createUserLocationIcon, createPoiIcon } from './mapIcons';
-import { AddToItineraryModal, type AddToItineraryPayload } from '../itinerary/AddToItineraryModal';
+import { AddToItineraryModal, type ItineraryDayOption } from '../itinerary/AddToItineraryModal';
 import { sanitizeLocationName } from '../../utils/locationSanitizer';
 
 export interface PlaceItem {
@@ -60,7 +60,7 @@ const BOTTOM_NAV_HEIGHT = 72;
 
 export const MapView: React.FC = () => {
   const { userLocation, userLocationName, isFollowMode, setIsFollowMode } = useApp();
-  const { currentTrip, refetchItinerary } = useTrip();
+  const { currentTrip, currentItinerary, refetchItinerary } = useTrip();
   const { mapFocusTarget, setMapFocusTarget, navigateToExplore } = useNavigation();
 
   const tileLayerRef = useRef<L.TileLayer | null>(null);
@@ -88,25 +88,75 @@ export const MapView: React.FC = () => {
   // Day picker modal state & added place day map
   const [selectedPlaceForModal, setSelectedPlaceForModal] = useState<any | null>(null);
   const [addedPlaceDays, setAddedPlaceDays] = useState<Map<string, number>>(new Map());
+  const [isAddingToItinerary, setIsAddingToItinerary] = useState<boolean>(false);
+
+  const modalDays: ItineraryDayOption[] = useMemo(() => {
+    if (currentItinerary?.days && currentItinerary.days.length > 0) {
+      return currentItinerary.days.map((d) => ({
+        id: d.id,
+        dayNumber: d.dayNumber,
+        title: d.title || `Day ${d.dayNumber}`,
+      }));
+    }
+    const totalDays = currentTrip?.totalDays || 3;
+    return Array.from({ length: Math.max(totalDays, 1) }, (_, i) => ({
+      id: `day_${i + 1}`,
+      dayNumber: i + 1,
+      title: `Day ${i + 1} Highlights`,
+    }));
+  }, [currentItinerary, currentTrip]);
 
   // Handle Add to Itinerary confirmation from modal
-  const handleConfirmAddToItinerary = async (payload: AddToItineraryPayload) => {
+  const handleConfirmAddToItinerary = async (dayId: string, timeSlot: string) => {
+    if (!selectedPlaceForModal) return;
+    setIsAddingToItinerary(true);
+
+    const targetDay = modalDays.find((d) => d.id === dayId);
+    const dayNumber = targetDay?.dayNumber || 1;
+    const priceStr = selectedPlaceForModal.price_approx || 'Free Entry';
+    const digits = priceStr.replace(/[^\d]/g, '');
+    const costInt = digits ? parseInt(digits, 10) : 0;
+    const loc = sanitizeLocationName(selectedPlaceForModal.address || userLocationName);
+
+    const payload = {
+      trip_id: currentTrip?.id || 'active_trip',
+      destination: currentTrip?.destination?.name || userLocationName || 'Local Area',
+      item_id: selectedPlaceForModal.id,
+      day_id: dayId,
+      day_number: dayNumber,
+      time_slot: timeSlot,
+      title: selectedPlaceForModal.name,
+      location: loc,
+      location_name: loc,
+      tag: selectedPlaceForModal.category || 'spotlight',
+      price: priceStr,
+      estimated_cost_inr: costInt,
+      activity_type: selectedPlaceForModal.category || 'spotlight',
+      is_confirmed: true,
+    };
+
     try {
       const baseUrl = getApiBaseUrl();
       const res = await fetch(`${baseUrl}/api/trips/itinerary/add`, {
         method: 'POST',
-        headers: DEFAULT_HEADERS,
+        headers: {
+          ...DEFAULT_HEADERS,
+          ...getAuthHeaders(),
+        },
         body: JSON.stringify(payload),
       });
 
       if (res.ok) {
-        setAddedPlaceDays((prev) => new Map(prev).set(payload.item_id, payload.day_number));
+        setAddedPlaceDays((prev) => new Map(prev).set(selectedPlaceForModal.id, dayNumber));
+        setSelectedPlaceForModal(null);
         if (refetchItinerary) {
           await refetchItinerary(currentTrip?.id || payload.trip_id);
         }
       }
     } catch (err) {
       console.warn('[MAP] Add to itinerary error:', err);
+    } finally {
+      setIsAddingToItinerary(false);
     }
   };
 
@@ -608,16 +658,16 @@ export const MapView: React.FC = () => {
       {/* Interactive Day Selection Modal */}
       <AddToItineraryModal
         isOpen={Boolean(selectedPlaceForModal)}
-        onClose={() => setSelectedPlaceForModal(null)}
-        place={selectedPlaceForModal ? {
-          id: selectedPlaceForModal.id,
-          title: selectedPlaceForModal.name,
-          category: selectedPlaceForModal.category,
-          location: sanitizeLocationName(selectedPlaceForModal.address || userLocationName),
-          price_approx: selectedPlaceForModal.price_approx || 'Free Entry',
-        } : null}
-        currentTrip={currentTrip}
+        onClose={() => {
+          if (!isAddingToItinerary) setSelectedPlaceForModal(null);
+        }}
+        itemTitle={selectedPlaceForModal?.name || ''}
+        days={modalDays}
+        isSubmitting={isAddingToItinerary}
         onConfirm={handleConfirmAddToItinerary}
+        category={selectedPlaceForModal?.category}
+        location={sanitizeLocationName(selectedPlaceForModal?.address || userLocationName)}
+        price={selectedPlaceForModal?.price_approx}
       />
     </div>
   );

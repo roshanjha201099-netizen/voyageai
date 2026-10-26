@@ -24,8 +24,8 @@ export const PackageDetailView: React.FC<PackageDetailProps> = ({ pkg, onClose }
         
         {/* Top Floating Close Button */}
         <div className="relative shrink-0">
-          <div className="h-56 sm:h-64 relative overflow-hidden">
-            <img src={pkg.coverImage} alt={pkg.title} className="w-full h-full object-cover" />
+          <div className="h-56 sm:h-64 relative overflow-hidden bg-slate-900">
+            <img src={pkg.coverImage} alt={pkg.title} className="w-full h-full object-cover" loading="lazy" decoding="async" />
             <div className="absolute inset-0 bg-gradient-to-t from-[#080B10] via-[#080B10]/40 to-transparent" />
             
             <button
@@ -86,7 +86,7 @@ export const PackageDetailView: React.FC<PackageDetailProps> = ({ pkg, onClose }
           <div className="space-y-3">
             <h3 className="font-bold text-sm text-white uppercase tracking-wider text-slate-400">Your Accommodations</h3>
             <div className="p-4 rounded-2xl bg-[#11161F] border border-white/10 flex items-center gap-4">
-              <img src={pkg.inclusions.hotelImage} alt={pkg.inclusions.hotelName} className="w-20 h-20 rounded-xl object-cover shrink-0" />
+              <img src={pkg.inclusions.hotelImage} alt={pkg.inclusions.hotelName} className="w-20 h-20 rounded-xl object-cover shrink-0 bg-slate-900" loading="lazy" decoding="async" />
               <div className="space-y-1">
                 <span className="text-[10px] font-bold text-teal-400 uppercase tracking-wider flex items-center gap-1">
                   <Star className="w-3 h-3 fill-teal-400 text-teal-400" />

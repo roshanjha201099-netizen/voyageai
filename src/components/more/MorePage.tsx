@@ -42,7 +42,9 @@ export const MorePage: React.FC = () => {
           <img
             src={avatarUrl}
             alt={name}
-            className="w-16 h-16 rounded-full object-cover border-2 border-[#355F58]/40 shrink-0"
+            className="w-16 h-16 rounded-full object-cover border-2 border-[#355F58]/40 shrink-0 bg-[#D9DEDA]"
+            loading="lazy"
+            decoding="async"
           />
           <div className="min-w-0">
             <h2 className="text-lg sm:text-xl font-extrabold text-[#1F2522] truncate">{name}</h2>

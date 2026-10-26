@@ -43,8 +43,9 @@ export const ProfileSheet: React.FC = () => {
           <img
             src={avatarUrl}
             alt={name}
-            className="w-14 h-14 rounded-full object-cover border-2 border-[#355F58]/40 shrink-0"
+            className="w-14 h-14 rounded-full object-cover border-2 border-[#355F58]/40 shrink-0 bg-[#D9DEDA]"
             loading="lazy"
+            decoding="async"
           />
           <div className="min-w-0 flex-1">
             <h2 className="text-lg font-black text-[#1F2522] truncate">{name}</h2>

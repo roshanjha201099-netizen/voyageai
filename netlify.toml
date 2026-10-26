@@ -1,0 +1,36 @@
+# VoyageAI OS — Netlify Deployment & Edge Optimization Configuration
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# Single-Page Application (SPA) Catch-all routing
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Long-lived immutable caching for hashed production assets
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+    X-Content-Type-Options = "nosniff"
+
+# Revalidation caching for HTML entry points to guarantee users receive updates
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+# Netlify Image CDN allowlist for remote imagery transformations
+[images]
+  remote_images = ["https://images.unsplash.com/*"]

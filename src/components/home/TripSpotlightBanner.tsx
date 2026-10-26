@@ -1,9 +1,11 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { Calendar, MapPin, Plus, Check, Loader2, Clock } from 'lucide-react';
-import { getApiBaseUrl, DEFAULT_FETCH_OPTIONS } from '../../config/apiConfig';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
+import { Calendar, MapPin, Plus, Check, Loader2, Clock, AlertCircle } from 'lucide-react';
+import { getApiBaseUrl, DEFAULT_FETCH_OPTIONS, getAuthHeaders } from '../../config/apiConfig';
 import { MONTHS, formatDateRange, parseISODate, tripStatus } from './tripDates';
 import { isMockPayload } from '../../utils/mockIndicator';
 import { MockCardAlert } from '../common/MockCardAlert';
+import { AddToItineraryModal, type ItineraryDayOption } from '../itinerary/AddToItineraryModal';
+import { useTrip } from '../../features/trip/TripContext';
 
 interface Activity {
   id: string;
@@ -105,6 +107,8 @@ export const TripSpotlightBanner: React.FC<{
     ? `dest:${cleanDest.toLowerCase()}`
     : (coarseLat !== undefined && coarseLng !== undefined ? `geo:${coarseLat}_${coarseLng}` : '');
 
+  const { currentTrip, currentItinerary, refetchItinerary } = useTrip();
+
   const [data, setData] = useState<SpotlightData | null>(() => {
     return fetchKey ? spotlightCache.get(fetchKey) || null : null;
   });
@@ -114,6 +118,29 @@ export const TripSpotlightBanner: React.FC<{
   const [addedIds, setAddedIds] = useState<Record<string, boolean>>({});
   const [expanded, setExpanded] = useState(false);
 
+  // Modal State
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedItemForModal, setSelectedItemForModal] = useState<(Activity | UpcomingEvent) | null>(null);
+  const [selectedItemType, setSelectedItemType] = useState<'activity' | 'event'>('activity');
+  const [isSubmittingModal, setIsSubmittingModal] = useState(false);
+  const [feedbackToast, setFeedbackToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const modalDays: ItineraryDayOption[] = useMemo(() => {
+    if (currentItinerary?.days && currentItinerary.days.length > 0) {
+      return currentItinerary.days.map((d) => ({
+        id: d.id,
+        dayNumber: d.dayNumber,
+        title: d.title || `Day ${d.dayNumber}`,
+      }));
+    }
+    const totalDays = currentTrip?.totalDays || 3;
+    return Array.from({ length: Math.max(totalDays, 1) }, (_, i) => ({
+      id: `day_${i + 1}`,
+      dayNumber: i + 1,
+      title: `Day ${i + 1} Highlights`,
+    }));
+  }, [currentItinerary, currentTrip]);
+
   const lastFetchedKeyRef = useRef<string>('');
 
   useEffect(() => {
@@ -122,12 +149,10 @@ export const TripSpotlightBanner: React.FC<{
       return;
     }
 
-    // If we already fetched for this exact key and have data, skip entirely to eliminate flickering
     if (fetchKey === lastFetchedKeyRef.current && data) {
       return;
     }
 
-    // Instant cache hit: render immediately with zero network delay and zero layout shift
     if (spotlightCache.has(fetchKey)) {
       setData(spotlightCache.get(fetchKey)!);
       setLoading(false);
@@ -136,7 +161,6 @@ export const TripSpotlightBanner: React.FC<{
     }
 
     let isMounted = true;
-    // Stale-while-revalidate: only show skeleton if we have NO prior data
     if (!data) {
       setLoading(true);
     }
@@ -184,36 +208,86 @@ export const TripSpotlightBanner: React.FC<{
     };
   }, [fetchKey, cleanDest, latitude, longitude]);
 
-  const handleAddToItinerary = async (item: Activity | UpcomingEvent, itemType: 'activity' | 'event') => {
-    setAddingId(item.id);
+  const handleOpenAddModal = (item: Activity | UpcomingEvent, itemType: 'activity' | 'event') => {
+    setSelectedItemForModal(item);
+    setSelectedItemType(itemType);
+    setIsModalOpen(true);
+  };
+
+  const handleConfirmAddToItinerary = async (dayId: string, timeSlot: string) => {
+    if (!selectedItemForModal) return;
+    setIsSubmittingModal(true);
+    setAddingId(selectedItemForModal.id);
     setFailedId(null);
+
+    const targetDay = modalDays.find((d) => d.id === dayId);
+    const dayNumber = targetDay?.dayNumber || 1;
+    const priceStr = 'cost' in selectedItemForModal ? String(selectedItemForModal.cost) : String(selectedItemForModal.price);
+    const digits = priceStr.replace(/[^\d]/g, '');
+    const costInt = digits ? parseInt(digits, 10) : 0;
+    const loc = 'location' in selectedItemForModal ? selectedItemForModal.location : (data?.destination || destination || 'Local Area');
+
+    const payload = {
+      trip_id: currentTrip?.id || 'active_trip',
+      destination: data?.destination || destination || currentTrip?.destination?.name || 'Curated Trip',
+      item_id: selectedItemForModal.id,
+      day_id: dayId,
+      day_number: dayNumber,
+      time_slot: timeSlot,
+      title: selectedItemForModal.title,
+      location: loc,
+      location_name: loc,
+      tag: ('tag' in selectedItemForModal && selectedItemForModal.tag) ? selectedItemForModal.tag : (selectedItemType === 'event' ? 'EVENT' : 'SIGHTSEEING'),
+      price: priceStr,
+      estimated_cost_inr: costInt,
+      activity_type: ('tag' in selectedItemForModal && selectedItemForModal.tag) ? selectedItemForModal.tag : (selectedItemType === 'event' ? 'event' : 'spotlight'),
+      is_confirmed: true,
+    };
+
     const baseUrl = getApiBaseUrl();
     try {
-      const payload = {
-        destination: data?.destination || destination || 'Current Location',
-        item_id: item.id,
-        item_type: itemType,
-        title: item.title,
-        location: 'location' in item ? item.location : '',
-        tag: 'tag' in item ? item.tag : 'Event',
-        price: 'cost' in item ? String(item.cost) : String(item.price),
-      };
-
       const res = await fetch(`${baseUrl}/api/trips/itinerary/add`, {
         ...DEFAULT_FETCH_OPTIONS,
         method: 'POST',
+        headers: {
+          ...DEFAULT_FETCH_OPTIONS.headers,
+          ...getAuthHeaders(),
+        },
         body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
-        throw new Error(`Failed to add item. Status: ${res.status}`);
+        let detail = `Server responded with status ${res.status}`;
+        try {
+          const errJson = await res.json();
+          if (errJson.detail) detail = errJson.detail;
+          else if (errJson.message) detail = errJson.message;
+        } catch (_) {}
+        throw new Error(detail);
       }
 
-      setAddedIds((prev) => ({ ...prev, [item.id]: true }));
-    } catch (err) {
+      setAddedIds((prev) => ({ ...prev, [selectedItemForModal.id]: true }));
+      setIsModalOpen(false);
+      setFeedbackToast({
+        type: 'success',
+        message: `Added "${selectedItemForModal.title}" to Day ${dayNumber} (${timeSlot})!`,
+      });
+      setTimeout(() => setFeedbackToast(null), 3500);
+
+      // Revalidate itinerary cache & state without full page reload
+      if (refetchItinerary) {
+        await refetchItinerary(currentTrip?.id);
+      }
+    } catch (err: any) {
       console.error('❌ Failed to add to itinerary:', err);
-      setFailedId(item.id);
+      setFailedId(selectedItemForModal.id);
+      setFeedbackToast({
+        type: 'error',
+        message: err.message || 'Failed to add activity. Please try again.',
+      });
+      setTimeout(() => setFeedbackToast(null), 4000);
     } finally {
+      setIsSubmittingModal(false);
       setAddingId(null);
     }
   };
@@ -346,7 +420,7 @@ export const TripSpotlightBanner: React.FC<{
                   <AddButton
                     title={act.title}
                     state={stateFor(act.id)}
-                    onClick={() => handleAddToItinerary(act, 'activity')}
+                    onClick={() => handleOpenAddModal(act, 'activity')}
                   />
                 </div>
               </article>
@@ -414,7 +488,7 @@ export const TripSpotlightBanner: React.FC<{
                   <AddButton
                     title={evt.title}
                     state={stateFor(evt.id)}
-                    onClick={() => handleAddToItinerary(evt, 'event')}
+                    onClick={() => handleOpenAddModal(evt, 'event')}
                   />
                 </div>
               </article>
@@ -422,6 +496,43 @@ export const TripSpotlightBanner: React.FC<{
           );
         })}
       </ul>
+
+      {/* Floating Feedback Toast Notification */}
+      {feedbackToast && (
+        <div
+          role="alert"
+          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[10000] px-4 py-2.5 rounded-2xl text-xs font-black flex items-center gap-2 shadow-2xl animate-bounce ${
+            feedbackToast.type === 'success'
+              ? 'bg-emerald-500 text-slate-950 shadow-emerald-500/25'
+              : 'bg-rose-500 text-white shadow-rose-500/25'
+          }`}
+        >
+          {feedbackToast.type === 'success' ? (
+            <Check className="w-4 h-4 stroke-[3]" />
+          ) : (
+            <AlertCircle className="w-4 h-4" />
+          )}
+          <span>{feedbackToast.message}</span>
+        </div>
+      )}
+
+      {/* Add To Itinerary Day/Time Selection Modal */}
+      <AddToItineraryModal
+        isOpen={isModalOpen}
+        onClose={() => {
+          if (!isSubmittingModal) {
+            setIsModalOpen(false);
+            setSelectedItemForModal(null);
+          }
+        }}
+        onConfirm={handleConfirmAddToItinerary}
+        itemTitle={selectedItemForModal?.title || ''}
+        days={modalDays}
+        isSubmitting={isSubmittingModal}
+        category={selectedItemForModal?.tag || selectedItemForModal?.category || (selectedItemType === 'event' ? 'Event' : 'Activity')}
+        location={'location' in (selectedItemForModal || {}) ? (selectedItemForModal as any).location : ''}
+        price={'cost' in (selectedItemForModal || {}) ? (selectedItemForModal as any).cost : (selectedItemForModal as any)?.price}
+      />
     </section>
   );
 };

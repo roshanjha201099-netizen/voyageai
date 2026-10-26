@@ -97,7 +97,7 @@ export const HotelDetailModal: React.FC = () => {
             {/* Gallery Grid */}
             <div className="grid grid-cols-3 gap-2 h-44 rounded-2xl overflow-hidden">
               {selectedHotel.photos.map((p, idx) => (
-                <img key={idx} src={p} alt={selectedHotel.name} className="w-full h-full object-cover" />
+                <img key={idx} src={p} alt={`${selectedHotel.name} photo ${idx + 1}`} className="w-full h-full object-cover bg-slate-800" loading="lazy" decoding="async" />
               ))}
             </div>
 

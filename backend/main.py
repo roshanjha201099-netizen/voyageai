@@ -3,7 +3,7 @@ from fastapi import FastAPI, HTTPException, Header, Depends, Response, Request, 
 from fastapi.responses import HTMLResponse
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from sqlalchemy.orm import Session
 import json
 import uuid
@@ -2316,117 +2316,155 @@ def get_trip_highlights_endpoint(
         }
 
 class AddItineraryItemRequest(BaseModel):
-    trip_id: str = "active_trip"
-    destination: str
-    item_id: str
+    trip_id: Optional[str] = "active_trip"
+    destination: Optional[str] = ""
+    item_id: Optional[str] = None
     title: str
-    location: str
-    tag: str
-    price: str
-    day_number: int = 1
+    location: Optional[str] = ""
+    location_name: Optional[str] = None
+    tag: Optional[str] = None
+    price: Optional[Union[str, int, float]] = None
+    estimated_cost_inr: Optional[int] = None
+    day_id: Optional[str] = None
+    day_number: Optional[int] = 1
     time_slot: Optional[str] = "Morning"
     scheduled_time: Optional[str] = None
     order_index: Optional[int] = 0
+    activity_type: Optional[str] = None
+    is_confirmed: Optional[bool] = True
 
 @app.post("/api/trips/itinerary/add")
 def add_to_itinerary(
     req: AddItineraryItemRequest,
-    current_user: AuthUser = Depends(get_current_user),
+    user_data = Depends(get_current_user_or_guest),
     db: Session = Depends(get_db)
 ):
     from redis_client import redis_conn
     from models_trip import TripModel
     from models_itinerary import ItineraryModel, ItineraryDayModel, ItineraryActivityModel
 
+    current_user, user_profile, user_prefs, is_authenticated = user_data
+
     req_trip_id = (req.trip_id or "active_trip").strip()
     target_trip = None
+    candidates = [req_trip_id, f"trip_{req_trip_id}", req_trip_id.replace("trip_", "")]
 
     if req_trip_id and req_trip_id != "active_trip":
-        target_trip = db.query(TripModel).filter(TripModel.id == req_trip_id, TripModel.user_id == current_user.id).first()
+        target_trip = db.query(TripModel).filter(
+            TripModel.id.in_(candidates),
+            TripModel.user_id == current_user.id
+        ).first()
+        if not target_trip:
+            # Fallback without user restriction if trip exists
+            target_trip = db.query(TripModel).filter(TripModel.id.in_(candidates)).first()
 
     if not target_trip:
-        target_trip = db.query(TripModel).filter(TripModel.user_id == current_user.id).order_by(TripModel.created_at.desc()).first()
+        target_trip = db.query(TripModel).filter(
+            TripModel.user_id == current_user.id
+        ).order_by(TripModel.created_at.desc()).first()
 
     if not target_trip:
-        raise HTTPException(status_code=404, detail="No trip found for authenticated user")
+        # Fallback to the latest trip overall
+        target_trip = db.query(TripModel).order_by(TripModel.created_at.desc()).first()
+
+    if not target_trip:
+        raise HTTPException(status_code=404, detail="No active trip found. Please create a trip first.")
 
     target_trip_id = target_trip.id
     day_num = req.day_number or 1
 
     cost_val = 0
-    if req.price:
+    if req.estimated_cost_inr is not None:
+        cost_val = int(req.estimated_cost_inr)
+    elif req.price:
         import re
         digits = re.findall(r'\d+', str(req.price))
         if digits:
             cost_val = int("".join(digits))
 
+    loc_name = req.location_name or req.location or req.destination or "Local Spot"
+    act_type = req.activity_type or req.tag or "SIGHTSEEING"
+
     new_activity_payload = {
         "id": req.item_id or f"act_{uuid.uuid4().hex[:12]}",
         "title": req.title,
-        "location": req.location,
-        "tag": req.tag or "SIGHTSEEING",
-        "price": req.price or "Free Entry",
+        "location": loc_name,
+        "location_name": loc_name,
+        "tag": act_type,
+        "activity_type": act_type,
+        "price": f"₹{cost_val}" if cost_val > 0 else (str(req.price) if req.price else "Free Entry"),
+        "estimated_cost_inr": cost_val,
         "time_slot": req.time_slot or req.scheduled_time or "Morning",
-        "scheduled_time": req.scheduled_time or "10:00 AM"
+        "scheduled_time": req.scheduled_time or "10:00 AM",
+        "is_confirmed": True
     }
 
     # 1. Commit to PostgreSQL Database
-    if target_trip:
-        try:
-            now_iso = datetime.now(timezone.utc).isoformat()
-            itin = db.query(ItineraryModel).filter(ItineraryModel.trip_id == target_trip.id).first()
-            if not itin:
-                itin = ItineraryModel(
-                    id=f"itin_{uuid.uuid4().hex[:12]}",
-                    trip_id=target_trip.id,
-                    status="READY",
-                    created_at=now_iso,
-                    updated_at=now_iso
-                )
-                db.add(itin)
-                db.flush()
+    try:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        itin = db.query(ItineraryModel).filter(ItineraryModel.trip_id == target_trip.id).first()
+        if not itin:
+            itin = ItineraryModel(
+                id=f"itin_{uuid.uuid4().hex[:12]}",
+                trip_id=target_trip.id,
+                status="READY",
+                created_at=now_iso,
+                updated_at=now_iso
+            )
+            db.add(itin)
+            db.flush()
 
+        day_record = None
+        if req.day_id:
+            day_record = db.query(ItineraryDayModel).filter(ItineraryDayModel.id == req.day_id).first()
+
+        if not day_record:
             day_record = db.query(ItineraryDayModel).filter(
                 ItineraryDayModel.itinerary_id == itin.id,
                 ItineraryDayModel.day_number == day_num
             ).first()
-            if not day_record:
-                day_record = ItineraryDayModel(
-                    id=f"day_{uuid.uuid4().hex[:12]}",
-                    itinerary_id=itin.id,
-                    day_number=day_num,
-                    date=f"Day {day_num}",
-                    title=f"Day {day_num} Highlights",
-                    summary=f"Curated schedule for Day {day_num}"
-                )
-                db.add(day_record)
-                db.flush()
 
-            act_id = new_activity_payload["id"]
-            existing_act = db.query(ItineraryActivityModel).filter(
-                ItineraryActivityModel.day_id == day_record.id,
-                ItineraryActivityModel.title == req.title
-            ).first()
+        if not day_record:
+            day_record = ItineraryDayModel(
+                id=req.day_id or f"day_{uuid.uuid4().hex[:12]}",
+                itinerary_id=itin.id,
+                day_number=day_num,
+                date=f"Day {day_num}",
+                title=f"Day {day_num} Highlights",
+                summary=f"Curated schedule for Day {day_num}"
+            )
+            db.add(day_record)
+            db.flush()
 
-            if not existing_act:
-                new_act = ItineraryActivityModel(
-                    id=act_id,
-                    day_id=day_record.id,
-                    time_slot=new_activity_payload["time_slot"],
-                    title=req.title,
-                    description=f"Curated spot: {req.title} at {req.location}",
-                    activity_type=req.tag or "SIGHTSEEING",
-                    location_name=req.location,
-                    estimated_cost_inr=cost_val,
-                    booking_required=False,
-                    is_confirmed=True
-                )
-                db.add(new_act)
-                db.commit()
-                print(f"[DB ITINERARY ADD SUCCESS] Added '{req.title}' to PostgreSQL DB trip '{target_trip.id}' Day {day_num}", flush=True)
-        except Exception as db_err:
-            db.rollback()
-            print(f"[DB ITINERARY ADD WARN] {db_err}", flush=True)
+        day_num = day_record.day_number
+
+        act_id = new_activity_payload["id"]
+        existing_act = db.query(ItineraryActivityModel).filter(
+            ItineraryActivityModel.day_id == day_record.id,
+            ItineraryActivityModel.title == req.title
+        ).first()
+
+        if not existing_act:
+            new_act = ItineraryActivityModel(
+                id=act_id,
+                day_id=day_record.id,
+                time_slot=new_activity_payload["time_slot"],
+                title=req.title,
+                description=f"Curated spot: {req.title} at {loc_name}",
+                activity_type=act_type,
+                location_name=loc_name,
+                estimated_cost_inr=cost_val,
+                booking_required=False,
+                is_confirmed=True
+            )
+            db.add(new_act)
+            itin.status = "READY"
+            itin.updated_at = now_iso
+            db.commit()
+            print(f"[DB ITINERARY ADD SUCCESS] Added '{req.title}' to DB trip '{target_trip.id}' Day {day_num} ({new_activity_payload['time_slot']})", flush=True)
+    except Exception as db_err:
+        db.rollback()
+        print(f"[DB ITINERARY ADD WARN] {db_err}", flush=True)
 
     # 2. Commit to Redis Cache
     itinerary_key = f"trip:itinerary:{target_trip_id}"
@@ -2434,6 +2472,9 @@ def add_to_itinerary(
     trip_key = f"trip:{target_trip_id}"
     item_dict = req.dict()
     item_dict["trip_id"] = target_trip_id
+    item_dict["day_number"] = day_num
+    if day_record:
+        item_dict["day_id"] = day_record.id
     item_payload = json.dumps(item_dict)
 
     try:
@@ -2441,7 +2482,6 @@ def add_to_itinerary(
             redis_conn.rpush(itinerary_key, item_payload)
             redis_conn.rpush(day_key, item_payload)
 
-            # Update canonical trip json blob in Redis if present
             raw_trip_blob = redis_conn.get(trip_key)
             if raw_trip_blob:
                 if isinstance(raw_trip_blob, bytes):
@@ -2461,8 +2501,9 @@ def add_to_itinerary(
 
     return {
         "status": "success",
-        "message": f"Added {req.title} to Day {day_num}",
+        "message": f"Added {req.title} to Day {day_num} ({new_activity_payload['time_slot']})",
         "day_number": day_num,
+        "day_id": day_record.id if day_record else None,
         "trip_id": target_trip_id,
         "activity": new_activity_payload
     }

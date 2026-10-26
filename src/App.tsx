@@ -31,10 +31,13 @@ import { MorePage } from './components/more/MorePage';
 import { FoodPage } from './components/food/FoodPage';
 import { RidesPage } from './components/rides/RidesPage';
 import { ExpensesPage } from './components/expenses/ExpensesPage';
-import { MapView } from './components/map/MapView';
 import { TourGuidePage } from './components/tour-guide/TourGuidePage';
 import { ItineraryView } from './components/itinerary/ItineraryView';
 import { RefreshCw, AlertTriangle } from 'lucide-react';
+
+const MapView = React.lazy(() =>
+  import('./components/map/MapView').then((mod) => ({ default: mod.MapView }))
+);
 
 const MainContent: React.FC = () => {
   const { appUIState, setAppUIState, navigationTarget, setNavigationTarget, tripView, setTripView } = useApp();
@@ -73,7 +76,11 @@ const MainContent: React.FC = () => {
   }
 
   if ((navigationTarget || tripView === 'map') && (location.pathname === '/map' || location.pathname === '/trip/map' || location.pathname === '/')) {
-    return <MapView />;
+    return (
+      <React.Suspense fallback={<div className="h-full min-h-[350px] flex items-center justify-center p-12 text-[#355F58]"><RefreshCw className="w-8 h-8 animate-spin" /></div>}>
+        <MapView />
+      </React.Suspense>
+    );
   }
 
   if (tripView === 'food') {
@@ -91,8 +98,16 @@ const MainContent: React.FC = () => {
   return (
     <Routes>
       <Route path="/" element={<HomePage />} />
-      <Route path="/map" element={<MapView />} />
-      <Route path="/trip/map" element={<MapView />} />
+      <Route path="/map" element={
+        <React.Suspense fallback={<div className="h-full min-h-[350px] flex items-center justify-center p-12 text-[#355F58]"><RefreshCw className="w-8 h-8 animate-spin" /></div>}>
+          <MapView />
+        </React.Suspense>
+      } />
+      <Route path="/trip/map" element={
+        <React.Suspense fallback={<div className="h-full min-h-[350px] flex items-center justify-center p-12 text-[#355F58]"><RefreshCw className="w-8 h-8 animate-spin" /></div>}>
+          <MapView />
+        </React.Suspense>
+      } />
       <Route path="/food" element={<FoodPage />} />
       <Route path="/trip/food" element={<FoodPage />} />
       <Route path="/rides" element={<RidesPage />} />

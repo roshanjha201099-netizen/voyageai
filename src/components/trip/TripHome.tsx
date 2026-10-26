@@ -146,8 +146,8 @@ export const TripHome: React.FC = () => {
                     </p>
 
                     {act.photos && act.photos.length > 0 && !isDone && (
-                      <div className="mt-2.5 h-28 rounded-xl overflow-hidden relative">
-                        <img src={act.photos[0]} alt={act.title} className="w-full h-full object-cover" loading="lazy" />
+                      <div className="mt-2.5 h-28 rounded-xl overflow-hidden relative bg-slate-900">
+                        <img src={act.photos[0]} alt={act.title} className="w-full h-full object-cover" loading="lazy" decoding="async" />
                       </div>
                     )}
                   </div>

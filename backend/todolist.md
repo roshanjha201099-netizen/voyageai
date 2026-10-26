@@ -1,5 +1,7 @@
-# when a user add from the spotlight on home page it gets added but in tre trip detail it gets some wierd ui crossed on 
-  1) when i again go back to the same page it again shows the added thing 
+# [COMPLETED] when a user add from the spotlight on home page:
+  - Added modern AddToItineraryModal with Day (Day 1..N) and Time Slot selection (Morning/Afternoon/Evening/Night)
+  - Fixed strikethrough bug in ItineraryView (isConfirmed was incorrectly triggering isDone line-through)
+  - Added clean confirmed badge, location spacing, and non-blocking toast notifications
 # the  url [http://localhost:5173/en/home/trip/6cddb9082ff5] gets called again and again 
 
 # when ever i go to landing page it gets this guest_id saved in cookies for some reason 
@@ -11,18 +13,18 @@
 # on map page add filters to food stay and all 
 
 
-# Performance Audit Optimizations (Netlify / Frontend)
-  1) Create netlify.toml:
+# [COMPLETED] Performance Audit Optimizations (Netlify / Frontend)
+  1) Created netlify.toml:
      - Long-lived immutable caching for `/assets/*` (Cache-Control: public, max-age=31536000, immutable)
      - Must-revalidate caching for HTML/entry point (Cache-Control: public, max-age=0, must-revalidate)
      - SPA catch-all redirect rule (/* -> /index.html 200)
      - Allow images.unsplash.com in remote image CDN config
-  2) Eliminate render-blocking Leaflet CSS:
-     - Remove static unpkg Leaflet CSS link from index.html
-     - Dynamically import Leaflet CSS inside map view component only
-  3) Image Optimizations:
-     - Add loading="lazy" and decoding="async" to offscreen images (destination cards, hotel grids, profile avatar)
-     - Add explicit width/height or aspect-ratio wrappers to prevent layout shifts (CLS)
-     - Route Unsplash images through Netlify Image CDN or optimized query parameters
+  2) Eliminated render-blocking Leaflet CSS:
+     - Removed static unpkg Leaflet CSS link from index.html
+     - Isolated Leaflet CSS into lazy-loaded MapView and vendor-leaflet chunk
+  3) Image Optimizations & CLS:
+     - Added loading="lazy" and decoding="async" across all image components
+     - Preserved layout dimensions with aspect ratios and background placeholders
+     - Added optimizeUnsplashUrl utility with responsive query parameters
   4) Asset Filename Casing:
-     - Ensure index.html and Vite build output match filename casing consistently to prevent 404s on case-sensitive Linux/Netlify hosts
+     - Verified all public assets and index.html references use strict lowercase matching disk (manifest, favicon, etc.)

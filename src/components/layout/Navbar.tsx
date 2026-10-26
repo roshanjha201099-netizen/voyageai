@@ -191,6 +191,7 @@ export const MobileHeader: React.FC = () => {
               alt={userProfile?.firstName || 'Profile'}
               className="w-full h-full object-cover"
               loading="lazy"
+              decoding="async"
             />
           </div>
         </button>

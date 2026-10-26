@@ -6,10 +6,10 @@ import { useNavigation } from '../../context/NavigationContext';
 import { getApiBaseUrl, DEFAULT_FETCH_OPTIONS, getAuthHeaders } from '../../config/apiConfig';
 import {
   Compass, MapPin, Sparkles, Plus, Check, Calendar,
-  Clock, Tag, Star, Navigation, Layers, Bookmark
+  Clock, Tag, Star, Navigation, Layers, Bookmark, AlertCircle
 } from 'lucide-react';
 import type { ActivityItem, EventItem } from '../../types';
-import { AddToItineraryModal, type AddToItineraryPayload } from '../itinerary/AddToItineraryModal';
+import { AddToItineraryModal, type ItineraryDayOption } from '../itinerary/AddToItineraryModal';
 import { sanitizeLocationName } from '../../utils/locationSanitizer';
 import { isMockPayload } from '../../utils/mockIndicator';
 import { MockCardAlert } from '../common/MockCardAlert';
@@ -17,7 +17,7 @@ import { MockCardAlert } from '../common/MockCardAlert';
 export const ExplorePage: React.FC = () => {
   const navigate = useNavigate();
   const { userLocationName, userLocation } = useApp();
-  const { currentTrip, refetchItinerary } = useTrip();
+  const { currentTrip, currentItinerary, refetchItinerary } = useTrip();
   const { navigateToMap, exploreFocusTarget, setExploreFocusTarget } = useNavigation();
 
   // Dynamic live location city name
@@ -43,7 +43,7 @@ export const ExplorePage: React.FC = () => {
   const [isLoadingSpotlight, setIsLoadingSpotlight] = useState<boolean>(false);
 
   // Day picker modal state & added item day map
-  const [selectedPlaceForModal, setSelectedPlaceForModal] = useState<ActivityItem | null>(null);
+  const [selectedPlaceForModal, setSelectedPlaceForModal] = useState<any | null>(null);
   const [addedItemDays, setAddedItemDays] = useState<Map<string, number>>(new Map());
 
   // Saved Places Management State & Handlers
@@ -216,24 +216,96 @@ export const ExplorePage: React.FC = () => {
     }
   }, [exploreFocusTarget, setExploreFocusTarget]);
 
+  const [isAddingToItinerary, setIsAddingToItinerary] = useState(false);
+  const [exploreToast, setExploreToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const modalDays: ItineraryDayOption[] = React.useMemo(() => {
+    if (currentItinerary?.days && currentItinerary.days.length > 0) {
+      return currentItinerary.days.map((d) => ({
+        id: d.id,
+        dayNumber: d.dayNumber,
+        title: d.title || `Day ${d.dayNumber}`,
+      }));
+    }
+    const totalDays = currentTrip?.totalDays || 3;
+    return Array.from({ length: Math.max(totalDays, 1) }, (_, i) => ({
+      id: `day_${i + 1}`,
+      dayNumber: i + 1,
+      title: `Day ${i + 1} Highlights`,
+    }));
+  }, [currentItinerary, currentTrip]);
+
   // Handle Add to Itinerary confirmation from modal
-  const handleConfirmAddToItinerary = async (payload: AddToItineraryPayload) => {
+  const handleConfirmAddToItinerary = async (dayId: string, timeSlot: string) => {
+    if (!selectedPlaceForModal) return;
+    setIsAddingToItinerary(true);
+
+    const targetDay = modalDays.find((d) => d.id === dayId);
+    const dayNumber = targetDay?.dayNumber || 1;
+    const priceStr = selectedPlaceForModal.price_approx || (selectedPlaceForModal.cost ? String(selectedPlaceForModal.cost) : 'Free Entry');
+    const digits = priceStr.replace(/[^\d]/g, '');
+    const costInt = digits ? parseInt(digits, 10) : 0;
+    const loc = selectedPlaceForModal.location || selectedPlaceForModal.address || activeDestinationName;
+
+    const payload = {
+      trip_id: currentTrip?.id || 'active_trip',
+      destination: activeDestinationName,
+      item_id: selectedPlaceForModal.id,
+      day_id: dayId,
+      day_number: dayNumber,
+      time_slot: timeSlot,
+      title: selectedPlaceForModal.title || selectedPlaceForModal.name,
+      location: loc,
+      location_name: loc,
+      tag: selectedPlaceForModal.tag || selectedPlaceForModal.category || 'spotlight',
+      price: priceStr,
+      estimated_cost_inr: costInt,
+      activity_type: selectedPlaceForModal.item_type || 'spotlight',
+      is_confirmed: true,
+    };
+
     try {
       const baseUrl = getApiBaseUrl();
       const res = await fetch(`${baseUrl}/api/trips/itinerary/add`, {
         ...DEFAULT_FETCH_OPTIONS,
         method: 'POST',
+        headers: {
+          ...DEFAULT_FETCH_OPTIONS.headers,
+          ...getAuthHeaders(),
+        },
         body: JSON.stringify(payload),
       });
 
-      if (res.ok) {
-        setAddedItemDays((prev) => new Map(prev).set(payload.item_id, payload.day_number));
-        if (refetchItinerary) {
-          await refetchItinerary(currentTrip?.id || payload.trip_id);
-        }
+      if (!res.ok) {
+        let detail = `Failed to add item (Status: ${res.status})`;
+        try {
+          const errJson = await res.json();
+          if (errJson.detail) detail = errJson.detail;
+          else if (errJson.message) detail = errJson.message;
+        } catch (_) {}
+        throw new Error(detail);
       }
-    } catch (err) {
+
+      setAddedItemDays((prev) => new Map(prev).set(selectedPlaceForModal.id, dayNumber));
+      setSelectedPlaceForModal(null);
+      setExploreToast({
+        type: 'success',
+        message: `Added "${payload.title}" to Day ${dayNumber} (${timeSlot})!`,
+      });
+      setTimeout(() => setExploreToast(null), 3500);
+
+      if (refetchItinerary) {
+        await refetchItinerary(currentTrip?.id || payload.trip_id);
+      }
+    } catch (err: any) {
       console.warn('[EXPLORE] Add to itinerary API error:', err);
+      setExploreToast({
+        type: 'error',
+        message: err.message || 'Failed to add item to itinerary.',
+      });
+      setTimeout(() => setExploreToast(null), 4000);
+    } finally {
+      setIsAddingToItinerary(false);
     }
   };
 
@@ -394,7 +466,7 @@ export const ExplorePage: React.FC = () => {
                 className="shrink-0 w-64 rounded-2xl bg-white border border-gray-200 overflow-hidden shadow-sm space-y-2 p-3"
               >
                 <div className="h-32 rounded-xl overflow-hidden relative bg-gray-100">
-                  <img src={evt.image} alt={evt.title} className="w-full h-full object-cover" />
+                  <img src={evt.image} alt={evt.title} className="w-full h-full object-cover" loading="lazy" decoding="async" />
                   <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-white/90 text-[10px] font-semibold text-[#1F5A3F] border border-gray-200">
                     {evt.tag || evt.category}
                   </span>
@@ -405,6 +477,28 @@ export const ExplorePage: React.FC = () => {
                     <Clock className="w-3 h-3 text-gray-400" /> {evt.date} • {evt.time}
                   </p>
                   <p className="text-[11px] text-[#1F5A3F] font-semibold mt-1">₹{evt.price} per ticket</p>
+                  {contextMode === 'trip' && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPlaceForModal(evt)}
+                      className={`w-full mt-2 py-1.5 px-3 rounded-xl font-semibold text-xs flex items-center justify-center gap-1.5 transition-all press-scale ${
+                        addedItemDays.has(evt.id)
+                          ? 'bg-[#1F5A3F]/10 text-[#1F5A3F] border border-[#1F5A3F]/30'
+                          : 'bg-[#1F5A3F] hover:bg-[#194B34] text-white shadow-xs'
+                      }`}
+                    >
+                      {addedItemDays.has(evt.id) ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 stroke-[3]" /> Added to Day {addedItemDays.get(evt.id)}
+                        </>
+                      ) : (
+                        <>
+                          <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                          <span>Add to Itinerary</span>
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -460,6 +554,8 @@ export const ExplorePage: React.FC = () => {
                       src={act.photos?.[0] || getFallbackImage(act.category)}
                       alt={act.title}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      loading="lazy"
+                      decoding="async"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
 
@@ -567,11 +663,36 @@ export const ExplorePage: React.FC = () => {
       {/* Day Picker Bottom Sheet Modal */}
       <AddToItineraryModal
         isOpen={Boolean(selectedPlaceForModal)}
-        onClose={() => setSelectedPlaceForModal(null)}
-        place={selectedPlaceForModal}
-        currentTrip={currentTrip}
+        onClose={() => {
+          if (!isAddingToItinerary) setSelectedPlaceForModal(null);
+        }}
+        itemTitle={selectedPlaceForModal?.title || selectedPlaceForModal?.name || ''}
+        days={modalDays}
+        isSubmitting={isAddingToItinerary}
         onConfirm={handleConfirmAddToItinerary}
+        category={selectedPlaceForModal?.tag || selectedPlaceForModal?.category}
+        location={selectedPlaceForModal?.location || selectedPlaceForModal?.address}
+        price={selectedPlaceForModal?.cost ?? selectedPlaceForModal?.price}
       />
+
+      {/* Floating Feedback Toast Notification */}
+      {exploreToast && (
+        <div
+          role="alert"
+          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[10000] px-4 py-2.5 rounded-2xl text-xs font-black flex items-center gap-2 shadow-2xl animate-bounce ${
+            exploreToast.type === 'success'
+              ? 'bg-emerald-500 text-slate-950 shadow-emerald-500/25'
+              : 'bg-rose-500 text-white shadow-rose-500/25'
+          }`}
+        >
+          {exploreToast.type === 'success' ? (
+            <Check className="w-4 h-4 stroke-[3]" />
+          ) : (
+            <AlertCircle className="w-4 h-4" />
+          )}
+          <span>{exploreToast.message}</span>
+        </div>
+      )}
 
     </div>
   );

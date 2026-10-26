@@ -346,28 +346,37 @@ export const ItineraryView: React.FC = () => {
 
               <div className="space-y-3">
                 {selectedDay.activities.map((act, idx) => {
-                  const isDone = act.isConfirmed;
+                  const isDone = Boolean((act as any).isCompleted);
                   return (
                     <div
                       key={act.id}
                       className="bg-white border border-[#D9DEDA] rounded-2xl p-4 space-y-3 shadow-xs hover:border-[#355F58]/40 transition-all"
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <span className="text-[10px] uppercase font-bold text-[#355F58] tracking-wider block">
-                            Activity {idx + 1} · {act?.timeSlot ?? 'Flexible'}
-                          </span>
-                          <h3 className={`text-base font-extrabold ${isDone ? 'text-[#5F6863] line-through' : 'text-[#1F2522]'}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1 space-y-1.5">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[10px] uppercase font-bold text-[#355F58] tracking-wider px-2 py-0.5 rounded-md bg-[#E8F0EE] border border-[#355F58]/20">
+                              Activity {idx + 1} · {act?.timeSlot ?? 'Flexible'}
+                            </span>
+                            {act.isConfirmed && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 rounded-md">
+                                <Check className="w-3 h-3 stroke-[2.5]" /> Confirmed
+                              </span>
+                            )}
+                          </div>
+
+                          <h3 className={`text-base font-extrabold leading-snug break-words ${isDone ? 'text-[#5F6863] line-through' : 'text-[#1F2522]'}`}>
                             {act.title}
                           </h3>
-                          <p className="text-xs text-[#5F6863] flex items-center gap-1 mt-0.5 font-medium">
+
+                          <p className="text-xs text-[#5F6863] flex items-center gap-1 font-medium pt-0.5">
                             <MapPin className="w-3.5 h-3.5 text-[#355F58] shrink-0" />
-                            <span>{act.locationName || destName}</span>
+                            <span className="truncate">{act.locationName || destName}</span>
                           </p>
                         </div>
 
                         {act.estimatedCostInr != null && (
-                          <span className="text-xs font-bold text-[#355F58] bg-[#E8F0EE] px-2.5 py-1 rounded-full border border-[#D9DEDA] shrink-0">
+                          <span className="text-xs font-bold text-[#355F58] bg-[#E8F0EE] px-2.5 py-1 rounded-full border border-[#D9DEDA] shrink-0 self-start">
                             ₹{act.estimatedCostInr}
                           </span>
                         )}

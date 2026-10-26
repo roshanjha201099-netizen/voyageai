@@ -128,8 +128,9 @@ export const CabBookingModal: React.FC = () => {
                       <img 
                         src={c.image} 
                         alt={c.name} 
-                        className="w-14 h-11 object-cover rounded-xl border border-[#D9DEDA] shrink-0" 
+                        className="w-14 h-11 object-cover rounded-xl border border-[#D9DEDA] shrink-0 bg-white" 
                         loading="lazy"
+                        decoding="async"
                       />
                       <div className="min-w-0">
                         <div className="font-extrabold text-sm text-[#1F2522] truncate">{c.name}</div>

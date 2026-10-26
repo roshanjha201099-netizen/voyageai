@@ -44,3 +44,13 @@ export const getTripCoverImage = (trip: any): string => {
   // Default travel fallback image
   return 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?auto=format&fit=crop&w=800&q=80';
 };
+
+/**
+ * Appends responsive format, width, and quality parameters to Unsplash image URLs
+ * to prevent requesting full raw photos and minimize payload size.
+ */
+export const optimizeUnsplashUrl = (url: string, width: number = 600, quality: number = 80): string => {
+  if (!url || typeof url !== 'string' || !url.includes('images.unsplash.com')) return url;
+  const [base] = url.split('?');
+  return `${base}?auto=format&fit=crop&w=${width}&q=${quality}`;
+};
