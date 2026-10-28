@@ -86,23 +86,70 @@ export const MAP_CATEGORY_CONFIG: Record<string, CategoryStyle> = {
   }
 };
 
+export type CanonicalCategoryKey = 'all' | 'sights' | 'food' | 'hotels' | 'experiences';
+
 /**
- * Returns canonical category config object based on category string.
+ * Maps raw place categories and names to one of 4 unified categories:
+ * - 'food': Restaurants, cafes, dhabas, bakeries, eateries
+ * - 'hotels': Stays, resorts, guest houses, lodging
+ * - 'experiences': Activities, markets, entertainment, adventures
+ * - 'sights': Landmarks, monuments, temples, forts, parks, points of interest
  */
-export const getCategoryConfig = (category: string): CategoryStyle => {
-  const cat = (category || 'all').toLowerCase();
-  if (cat.includes('food') || cat.includes('restaurant') || cat.includes('cafe') || cat.includes('dhaba')) return MAP_CATEGORY_CONFIG.food;
-  if (cat.includes('hotel') || cat.includes('stay') || cat.includes('resort') || cat.includes('lodging')) return MAP_CATEGORY_CONFIG.hotels;
-  if (cat.includes('culture') || cat.includes('temple') || cat.includes('historic') || cat.includes('monument')) return MAP_CATEGORY_CONFIG.culture;
-  if (cat.includes('sight') || cat.includes('fort') || cat.includes('attraction')) return MAP_CATEGORY_CONFIG.sights;
-  if (cat.includes('experience') || cat.includes('activity')) return MAP_CATEGORY_CONFIG.experiences;
-  return MAP_CATEGORY_CONFIG.all;
+export const getCanonicalCategory = (category: string = '', name: string = ''): 'sights' | 'food' | 'hotels' | 'experiences' => {
+  const cat = (category || '').toLowerCase();
+  const n = (name || '').toLowerCase();
+
+  // 1. Food & Dining
+  if (
+    cat.includes('food') || cat.includes('restaurant') || cat.includes('cafe') || 
+    cat.includes('dhaba') || cat.includes('bakery') || cat.includes('bar') || 
+    cat.includes('meal') || cat.includes('dining') || cat.includes('sweet') ||
+    cat.includes('bistro') || n.includes('dhaba') || n.includes('bhojanalay') || 
+    n.includes('sweets') || n.includes('kitchen') || n.includes('restro') || n.includes('tandoori')
+  ) {
+    return 'food';
+  }
+
+  // 2. Stays / Lodging (hotels, guest houses, resorts)
+  if (
+    cat.includes('lodging') || cat.includes('resort') || cat.includes('stay') ||
+    cat.includes('motel') || cat.includes('inn') || cat.includes('guest house') || 
+    cat.includes('guesthouse') || cat.includes('hostel') || cat.includes('bed and breakfast') || 
+    cat.includes('villa') || (cat.includes('hotel') && !cat.includes('restaurant') && !n.includes('dhaba') && !n.includes('restro'))
+  ) {
+    return 'hotels';
+  }
+
+  // 3. Experiences & Activities
+  if (
+    cat.includes('experience') || cat.includes('activity') || cat.includes('tour') || 
+    cat.includes('adventure') || cat.includes('entertainment') || cat.includes('amusement') ||
+    cat.includes('cinema') || cat.includes('theater') || cat.includes('zoo') || 
+    cat.includes('aquarium') || cat.includes('stadium') || cat.includes('sports') ||
+    cat.includes('market') || cat.includes('shopping') || n.includes('bazaar') || n.includes('market') ||
+    cat.includes('fair') || n.includes('mela')
+  ) {
+    return 'experiences';
+  }
+
+  // 4. Sights & Landmarks (default for points of interest, temples, monuments, parks, nature, etc.)
+  return 'sights';
+};
+
+/**
+ * Returns canonical category config object based on category string and place name.
+ */
+export const getCategoryConfig = (category: string, name: string = ''): CategoryStyle => {
+  const cat = (category || '').toLowerCase();
+  if (cat === 'all') return MAP_CATEGORY_CONFIG.all;
+  const canonical = getCanonicalCategory(category, name);
+  return MAP_CATEGORY_CONFIG[canonical] || MAP_CATEGORY_CONFIG.sights;
 };
 
 /**
  * Returns high-quality cover photo URL based on category.
  */
-export const getPlaceImage = (category: string, _name?: string): string => {
-  const cfg = getCategoryConfig(category);
+export const getPlaceImage = (category: string, name?: string): string => {
+  const cfg = getCategoryConfig(category, name);
   return cfg.coverImage;
 };

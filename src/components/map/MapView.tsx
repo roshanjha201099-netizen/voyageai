@@ -13,11 +13,13 @@ import { useAudioGuide } from '../../hooks/useAudioGuide';
 import { createUserLocationIcon, createPoiIcon } from './mapIcons';
 import { AddToItineraryModal, type ItineraryDayOption } from '../itinerary/AddToItineraryModal';
 import { sanitizeLocationName } from '../../utils/locationSanitizer';
+import { getCanonicalCategory, type CanonicalCategoryKey } from './mapCategoryConfig';
 
 export interface PlaceItem {
   id: string;
   name: string;
   category: string;
+  canonicalCategory?: CanonicalCategoryKey;
   latitude: number;
   longitude: number;
   distanceMeters?: number;
@@ -76,9 +78,10 @@ export const MapView: React.FC = () => {
     return null;
   }, [userLocation, currentTrip]);
 
-  const [places, setPlaces] = useState<PlaceItem[]>([]);
+  const [allPlaces, setAllPlaces] = useState<PlaceItem[]>([]);
   const [selectedPlace, setSelectedPlace] = useState<PlaceItem | null>(null);
-  const [activeCategory, setActiveCategory] = useState<'hotels' | 'food' | 'sights' | 'experiences' | 'all'>('all');
+  const [activeCategory, setActiveCategory] = useState<CanonicalCategoryKey>('all');
+  const [isLoadingPlaces, setIsLoadingPlaces] = useState<boolean>(false);
 
   // Audio Guide hooks
   const { playBase64Audio, stopAudio } = useAudioGuide();
@@ -218,16 +221,16 @@ export const MapView: React.FC = () => {
     }
   }, [playingPlaceId, playBase64Audio, stopAudio]);
 
-  // Fetch POIs from /api/places/nearby or fallback
+  // Fetch ALL nearby POIs once per location anchor (never on category filter click!)
   const fetchMapPlaces = useCallback(async (
     centerLat: number,
-    centerLng: number,
-    category: string = 'all'
+    centerLng: number
   ) => {
+    setIsLoadingPlaces(true);
     try {
       const baseUrl = getApiBaseUrl();
-      const categoryParam = category !== 'all' ? `&category=${encodeURIComponent(category)}` : '';
-      const url = `${baseUrl}/api/places/nearby?lat=${centerLat}&lng=${centerLng}&radius=5000&limit=40${categoryParam}`;
+      // Fetch all nearby POIs in one call so category filtering is completely client-side
+      const url = `${baseUrl}/api/places/nearby?lat=${centerLat}&lng=${centerLng}&radius=5000&limit=40`;
 
       const res = await fetch(url, { headers: DEFAULT_HEADERS });
 
@@ -238,34 +241,41 @@ export const MapView: React.FC = () => {
           : (data.places || data.results || []);
 
         if (Array.isArray(rawItems) && rawItems.length > 0) {
-          const fetchedPlaces: PlaceItem[] = rawItems.map((p: any) => ({
-            id: p.id || `poi-${p.latitude}-${p.longitude}`,
-            name: p.name || 'Unnamed Spot',
-            category: (p.category || category).toLowerCase(),
-            latitude: p.latitude,
-            longitude: p.longitude,
-            distanceMeters: p.distance_meters || p.distanceMeters || Math.round(calculateDistance(centerLat, centerLng, p.latitude, p.longitude)),
-            address: p.address || p.description || 'Near live location',
-            rating: p.rating || 4.7,
-            price_approx: p.price_approx || '₹500 - ₹1,500',
-            description: p.description || 'Popular local spot on your route.',
-          }));
-          setPlaces(fetchedPlaces);
+          const fetchedPlaces: PlaceItem[] = rawItems.map((p: any) => {
+            const rawCat = p.category || 'Sight';
+            const canonical = getCanonicalCategory(rawCat, p.name || '');
+            return {
+              id: p.id || `poi-${p.latitude}-${p.longitude}`,
+              name: p.name || 'Unnamed Spot',
+              category: rawCat,
+              canonicalCategory: canonical,
+              latitude: p.latitude,
+              longitude: p.longitude,
+              distanceMeters: p.distance_meters || p.distanceMeters || Math.round(calculateDistance(centerLat, centerLng, p.latitude, p.longitude)),
+              address: p.address || p.description || 'Near live location',
+              rating: p.rating || 4.7,
+              price_approx: p.price_approx || '₹500 - ₹1,500',
+              description: p.description || 'Popular local spot on your route.',
+            };
+          });
+          setAllPlaces(fetchedPlaces);
           return;
         }
       }
     } catch (err: any) {
       console.warn('[MAP] Failed to fetch nearby POIs:', err);
+    } finally {
+      setIsLoadingPlaces(false);
     }
 
-    setPlaces([]);
+    setAllPlaces([]);
   }, []);
 
-  // Initial load
+  // Initial load: Only fetches when coordinates anchor changes
   useEffect(() => {
     if (!activeCoords) return;
     const [lat, lng] = activeCoords;
-    fetchMapPlaces(lat, lng, activeCategory);
+    fetchMapPlaces(lat, lng);
   }, [activeCoords, fetchMapPlaces]);
 
   // ── MAP INITIALIZATION & CLEANUP ──
@@ -345,11 +355,21 @@ export const MapView: React.FC = () => {
     }
   }, [userLocation, activeCoords, isFollowMode]);
 
-  // Filter & Diff Markers
+  // Count of places in each category
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: allPlaces.length };
+    for (const p of allPlaces) {
+      const cat = p.canonicalCategory || getCanonicalCategory(p.category, p.name);
+      counts[cat] = (counts[cat] || 0) + 1;
+    }
+    return counts;
+  }, [allPlaces]);
+
+  // Instant client-side filter — NO network requests when category tab is selected
   const filteredPlaces = useMemo(() => {
-    if (activeCategory === 'all') return places;
-    return places.filter(p => p.category === activeCategory);
-  }, [places, activeCategory]);
+    if (activeCategory === 'all') return allPlaces;
+    return allPlaces.filter(p => (p.canonicalCategory || getCanonicalCategory(p.category, p.name)) === activeCategory);
+  }, [allPlaces, activeCategory]);
 
   // Nearest-first order for the scrollable card row
   const sortedPlaces = useMemo(() => {
@@ -519,26 +539,33 @@ export const MapView: React.FC = () => {
         aria-label="Filter places by category"
         className="absolute top-[60px] left-3 right-3 z-[500] flex items-center gap-2 overflow-x-auto no-scrollbar pointer-events-auto py-1"
       >
-        {CATEGORY_FILTERS.map(({ key, label }) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => {
-              setActiveCategory(key);
-              if (activeCoords) {
-                const [lat, lng] = activeCoords;
-                fetchMapPlaces(lat, lng, key);
-              }
-            }}
-            aria-pressed={activeCategory === key}
-            className={`shrink-0 min-h-[32px] px-3.5 rounded-full text-xs font-semibold transition-colors border shadow-sm ${activeCategory === key
-                ? 'bg-[#1F5A3F] text-white border-[#1F5A3F]'
-                : 'bg-white text-gray-600 border-gray-200 hover:text-gray-900'
-              }`}
-          >
-            {label}
-          </button>
-        ))}
+        {CATEGORY_FILTERS.map(({ key, label }) => {
+          const count = categoryCounts[key] ?? 0;
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => {
+                // Instant client-side filter — NO redundant network requests!
+                setActiveCategory(key);
+              }}
+              aria-pressed={activeCategory === key}
+              className={`shrink-0 min-h-[32px] px-3.5 rounded-full text-xs font-semibold transition-all border shadow-sm flex items-center gap-1.5 press-scale ${activeCategory === key
+                  ? 'bg-[#1F5A3F] text-white border-[#1F5A3F]'
+                  : 'bg-white text-gray-600 border-gray-200 hover:text-gray-900'
+                }`}
+            >
+              <span>{label}</span>
+              {count > 0 && (
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                  activeCategory === key ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'
+                }`}>
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* Bottom sheet: scrollable row of place cards, nearest first */}
@@ -646,11 +673,33 @@ export const MapView: React.FC = () => {
             );
           })}
         </div>
+      ) : isLoadingPlaces ? (
+        <div className="absolute bottom-3 left-3 right-3 z-[500] pointer-events-auto animate-slideUp">
+          <div className="rounded-3xl bg-white border border-gray-200 p-4 shadow-lg flex items-center justify-center gap-3">
+            <Loader2 className="w-5 h-5 text-[#1F5A3F] animate-spin" />
+            <p className="text-sm font-medium text-gray-700">Finding nearby places...</p>
+          </div>
+        </div>
       ) : (
         <div className="absolute bottom-3 left-3 right-3 z-[500] pointer-events-auto animate-slideUp">
           <div className="rounded-3xl bg-white border border-gray-200 p-4 shadow-lg text-center">
-            <p className="text-sm font-semibold text-gray-900">No places found here yet</p>
-            <p className="mt-0.5 text-xs text-gray-500">Try a different category, or pan the map to explore.</p>
+            <p className="text-sm font-semibold text-gray-900">
+              {activeCategory !== 'all' ? `No ${activeCategory} found nearby` : 'No places found here yet'}
+            </p>
+            <p className="mt-0.5 text-xs text-gray-500">
+              {activeCategory !== 'all'
+                ? `There are no spots categorized under "${activeCategory}" within 5km.`
+                : 'Pan the map or move closer to explore.'}
+            </p>
+            {activeCategory !== 'all' && allPlaces.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setActiveCategory('all')}
+                className="mt-3 inline-flex items-center justify-center px-4 py-2 rounded-xl bg-[#1F5A3F] text-white text-xs font-semibold press-scale hover:bg-[#194B34] transition-colors"
+              >
+                View all {allPlaces.length} places
+              </button>
+            )}
           </div>
         </div>
       )}

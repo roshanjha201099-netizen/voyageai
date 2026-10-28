@@ -17,7 +17,11 @@
   - Frontend Layer: Centralized API client in `src/services/savedPlacesApi.ts` (and `src/api/savedPlaces.ts`). Migrated `ExplorePage.tsx`, `PlaceDetailSheet.tsx`, and `SavedPlacesPage.tsx` to the unified client. Eliminated all hardcoded `/api/user/saved-places` fetches. Direct navigation from `/more` to `/saved-places`.
 
 
-# on map page add filters to food stay and all 
+# [COMPLETED] on map page add filters to food stay and all:
+  - Eliminated redundant network roundtrips: Map page fetches all nearby POIs once per coordinate anchor (/api/places/nearby?lat=...&lng=...&radius=5000&limit=40) without category param.
+  - Client-side filtering: Tapping category pills (All, Sights, Food, Stays, Experiences) filters in-memory with zero backend API requests.
+  - Robust canonical categorization: Created `getCanonicalCategory` mapping raw Google Places types & names (e.g. "Family Restaurant" -> food, lodging -> stays, temples/monuments -> sights).
+  - Dynamic UI: Added place count badges to category filter pills, dynamic empty states with "View all places" reset action, and loading spinner during initial fetch.
 
 
 # [COMPLETED] Performance Audit Optimizations (Netlify / Frontend)

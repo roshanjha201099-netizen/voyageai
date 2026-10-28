@@ -119,6 +119,9 @@ DEFAULT_NEARBY_TYPES = [
     "cultural_center",
     "restaurant",
     "cafe",
+    "lodging",
+    "hotel",
+    "hindu_temple",
 ]
 
 
@@ -226,8 +229,9 @@ async def search_nearby_places(
     Outputs formatted schema with is_mock=False.
     """
     # Clamp radius between 500m and 50000m
-    clamped_radius = max(500, min(radius, 50000))
-    cache_key = f"places:nearby:{round(lat, 3)}:{round(lng, 3)}:{clamped_radius}"
+    clamped_radius = max(500, min(int(radius or 5000), 50000))
+    type_tag = "_".join(sorted(place_types)) if place_types else "all"
+    cache_key = f"places:nearby:{round(lat, 3)}:{round(lng, 3)}:{clamped_radius}:{type_tag}"
     cached_places = await cache.get(cache_key)
     if cached_places is not None and isinstance(cached_places, list):
         return cached_places
