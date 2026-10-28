@@ -1,9 +1,9 @@
 import React, { useEffect } from 'react';
-import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useLocation, useParams, useNavigate } from 'react-router-dom';
 import { AppProvider, useApp } from './context/AppContext';
 import { AuthProvider } from './auth/AuthContext';
 import { AuthGuard } from './auth/AuthGuard';
-import { TripProvider } from './features/trip/TripContext';
+import { TripProvider, useTrip } from './features/trip/TripContext';
 import { NavigationProvider } from './context/NavigationContext';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 
@@ -38,6 +38,44 @@ import { RefreshCw, AlertTriangle } from 'lucide-react';
 const MapView = React.lazy(() =>
   import('./components/map/MapView').then((mod) => ({ default: mod.MapView }))
 );
+
+const TripRouteRedirect: React.FC = () => {
+  const { tripId } = useParams<{ tripId: string }>();
+  const { setCurrentTripId, currentTripId } = useTrip();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (tripId) {
+      const cleanId = tripId.trim();
+      const normalizedId = cleanId.startsWith('trip_') ? cleanId : `trip_${cleanId}`;
+      if (currentTripId !== normalizedId && currentTripId !== cleanId) {
+        setCurrentTripId(normalizedId);
+      }
+      navigate('/trip/itinerary', { replace: true });
+    }
+  }, [tripId, currentTripId, setCurrentTripId, navigate]);
+
+  return (
+    <div className="py-16 text-center space-y-3">
+      <RefreshCw className="w-8 h-8 text-[#355F58] animate-spin mx-auto" />
+      <h2 className="text-base font-bold text-[#1F2522]">Loading trip details...</h2>
+    </div>
+  );
+};
+
+const LocaleRedirect: React.FC = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    // Slices off language prefixes like /en, /es, /hi from path (e.g. /en/home -> / or /en/trips -> /trips)
+    const stripped = location.pathname.replace(/^\/[a-zA-Z]{2}(\/|$)/, '/');
+    const target = stripped.startsWith('/') ? stripped : `/${stripped}`;
+    navigate(target || '/', { replace: true });
+  }, [location.pathname, navigate]);
+
+  return null;
+};
 
 const MainContent: React.FC = () => {
   const { appUIState, setAppUIState, navigationTarget, setNavigationTarget, tripView, setTripView } = useApp();
@@ -98,6 +136,14 @@ const MainContent: React.FC = () => {
   return (
     <Routes>
       <Route path="/" element={<HomePage />} />
+      <Route path="/home" element={<HomePage />} />
+      <Route path="/home/trip/:tripId" element={<TripRouteRedirect />} />
+      <Route path="/trip/:tripId" element={<TripRouteRedirect />} />
+      <Route path="/:lang/home/trip/:tripId" element={<TripRouteRedirect />} />
+      <Route path="/:lang/trip/:tripId" element={<TripRouteRedirect />} />
+      <Route path="/:lang/home" element={<HomePage />} />
+      <Route path="/:lang" element={<HomePage />} />
+      <Route path="/:lang/*" element={<LocaleRedirect />} />
       <Route path="/map" element={
         <React.Suspense fallback={<div className="h-full min-h-[350px] flex items-center justify-center p-12 text-[#355F58]"><RefreshCw className="w-8 h-8 animate-spin" /></div>}>
           <MapView />

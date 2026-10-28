@@ -37,18 +37,19 @@ export const HomePage: React.FC = () => {
     return 'Good evening';
   };
 
+  const userLat = userLocation ? Number(userLocation[0].toFixed(4)) : null;
+  const userLng = userLocation ? Number(userLocation[1].toFixed(4)) : null;
+
   // Dispatch Redux fetch on coordinates available (thunk condition automatically guards against <500m refetches)
   useEffect(() => {
-    if (!userLocation && navigator.geolocation) {
+    if (!userLat && !userLng && navigator.geolocation) {
       requestGPSLocation().catch(() => { });
     }
 
-    if (userLocation) {
-      const lat = userLocation[0];
-      const lng = userLocation[1];
-      dispatch(fetchNearbyPlaces({ lat, lng, radius: 5000 }));
+    if (userLat !== null && userLng !== null) {
+      dispatch(fetchNearbyPlaces({ lat: userLat, lng: userLng, radius: 5000 }));
     }
-  }, [userLocation, requestGPSLocation, dispatch]);
+  }, [userLat, userLng, requestGPSLocation, dispatch]);
 
   // Transform raw Redux places to UI PlaceDetailItem shape
   const nearbyPlaces: PlaceDetailItem[] = useMemo(() => {

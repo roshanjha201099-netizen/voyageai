@@ -176,7 +176,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addressName?: string,
     source: 'gps' | 'manual' = 'gps'
   ) => {
-    setUserLocation([lat, lng]);
+    setUserLocation(prev => {
+      if (prev && Math.abs(prev[0] - lat) < 0.0001 && Math.abs(prev[1] - lng) < 0.0001) {
+        return prev;
+      }
+      return [lat, lng];
+    });
     if (accuracyMeters !== undefined) setUserLocationAccuracy(accuracyMeters);
 
     let resolvedName = addressName ? sanitizeLocationName(addressName) : '';

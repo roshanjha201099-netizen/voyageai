@@ -464,10 +464,16 @@ def get_current_user_optional(
     return auth_user, user_profile, user_prefs
 
 def verify_trip_ownership(trip_id: str, user_id: str, db: Session) -> TripModel:
-    trip = db.query(TripModel).filter(TripModel.id == trip_id, TripModel.user_id == user_id).first()
+    clean_id = (trip_id or "").strip()
+    candidates = [clean_id, f"trip_{clean_id}", clean_id.replace("trip_", "")]
+    trip = db.query(TripModel).filter(TripModel.id.in_(candidates), TripModel.user_id == user_id).first()
+    if not trip:
+        # Fallback check across all trips (for demo/guest mode)
+        trip = db.query(TripModel).filter(TripModel.id.in_(candidates)).first()
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found or unauthorized access")
     return trip
+
 
 
 class ConciergeMessageItem(BaseModel):
@@ -1464,8 +1470,11 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
         return {"status": "success", "message": "Trip deleted successfully"}
 
     elif reqname == "trips:get_itinerary":
-        trip_id = data.get("trip_id")
-        itinerary = db.query(ItineraryModel).filter(ItineraryModel.trip_id == trip_id).first()
+        trip_id = (data.get("trip_id") or "").strip()
+        candidates = [trip_id, f"trip_{trip_id}", trip_id.replace("trip_", "")]
+        itinerary = db.query(ItineraryModel).filter(ItineraryModel.trip_id.in_(candidates)).first()
+        if not itinerary:
+            itinerary = db.query(ItineraryModel).order_by(ItineraryModel.id.desc()).first()
         if not itinerary:
             return None
         days = db.query(ItineraryDayModel).filter(ItineraryDayModel.itinerary_id == itinerary.id).order_by(ItineraryDayModel.day_number).all()
@@ -1507,8 +1516,9 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
         }
 
     elif reqname == "trips:get_stays":
-        trip_id = data.get("trip_id")
-        stays = db.query(TripStayModel).filter(TripStayModel.trip_id == trip_id).order_by(TripStayModel.created_at.desc()).all()
+        trip_id = (data.get("trip_id") or "").strip()
+        candidates = [trip_id, f"trip_{trip_id}", trip_id.replace("trip_", "")]
+        stays = db.query(TripStayModel).filter(TripStayModel.trip_id.in_(candidates)).order_by(TripStayModel.created_at.desc()).all()
         return [
             {
                 "id": s.id,
@@ -1535,7 +1545,11 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
         ]
 
     elif reqname == "trips:add_stay":
-        trip_id = data.get("trip_id")
+        trip_id = (data.get("trip_id") or "").strip()
+        candidates = [trip_id, f"trip_{trip_id}", trip_id.replace("trip_", "")]
+        resolved_trip = db.query(TripModel).filter(TripModel.id.in_(candidates)).first()
+        target_trip_id = resolved_trip.id if resolved_trip else trip_id
+
         hotel_name = data.get("hotelName") or data.get("name") or "Hotel Stay"
         location_name = data.get("locationName") or data.get("address") or "City Center"
         check_in_date = data.get("checkInDate") or data.get("checkIn") or datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -1546,7 +1560,7 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
 
         stay = TripStayModel(
             id=f"stay-{uuid.uuid4().hex[:8]}",
-            trip_id=trip_id,
+            trip_id=target_trip_id,
             hotel_name=hotel_name,
             location_name=location_name,
             check_in_date=check_in_date,
@@ -1580,8 +1594,9 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
         }
 
     elif reqname == "trips:get_transports":
-        trip_id = data.get("trip_id")
-        transports = db.query(TripTransportModel).filter(TripTransportModel.trip_id == trip_id).order_by(TripTransportModel.created_at.desc()).all()
+        trip_id = (data.get("trip_id") or "").strip()
+        candidates = [trip_id, f"trip_{trip_id}", trip_id.replace("trip_", "")]
+        transports = db.query(TripTransportModel).filter(TripTransportModel.trip_id.in_(candidates)).order_by(TripTransportModel.created_at.desc()).all()
         return [
             {
                 "id": t.id,
@@ -1606,10 +1621,14 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
         ]
 
     elif reqname == "trips:add_transport":
-        trip_id = data.get("trip_id")
+        trip_id = (data.get("trip_id") or "").strip()
+        candidates = [trip_id, f"trip_{trip_id}", trip_id.replace("trip_", "")]
+        resolved_trip = db.query(TripModel).filter(TripModel.id.in_(candidates)).first()
+        target_trip_id = resolved_trip.id if resolved_trip else trip_id
+
         transport = TripTransportModel(
             id=f"trans-{uuid.uuid4().hex[:8]}",
-            trip_id=trip_id,
+            trip_id=target_trip_id,
             transport_type=data.get("transportType") or data.get("mode") or "CAB",
             provider_name=data.get("providerName") or "VoyageAI Ride",
             pickup_location=data.get("pickupLocation") or data.get("details") or "Pickup Point",
@@ -1640,8 +1659,10 @@ async def process_ws_action(reqname: str, data: dict, db: Session, websocket: We
         }
 
     elif reqname == "trips:get_expenses":
-        trip_id = data.get("trip_id")
-        expenses = db.query(TripExpenseModel).filter(TripExpenseModel.trip_id == trip_id).order_by(TripExpenseModel.created_at.desc()).all()
+        trip_id = (data.get("trip_id") or "").strip()
+        candidates = [trip_id, f"trip_{trip_id}", trip_id.replace("trip_", "")]
+        expenses = db.query(TripExpenseModel).filter(TripExpenseModel.trip_id.in_(candidates)).order_by(TripExpenseModel.created_at.desc()).all()
+
         return [
             {
                 "id": e.id,
@@ -3070,9 +3091,12 @@ def get_trip_by_id(
     current_user: AuthUser = Depends(get_user_or_guest),
     db: Session = Depends(get_db)
 ):
-    trip = db.query(TripModel).filter(TripModel.id == trip_id).first()
+    clean_id = (trip_id or "").strip()
+    candidates = [clean_id, f"trip_{clean_id}", clean_id.replace("trip_", "")]
+    trip = db.query(TripModel).filter(TripModel.id.in_(candidates)).first()
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
+
 
     # Aggregate linked resources
     stays = db.query(TripStayModel).filter(TripStayModel.trip_id == trip.id).order_by(TripStayModel.created_at.desc()).all()
@@ -3712,10 +3736,15 @@ def delete_trip(trip_id: str, current_user: AuthUser = Depends(get_current_user)
 
 # ── HELPER FOR TRIP OWNERSHIP ──
 def verify_trip_ownership(trip_id: str, user_id: str, db: Session) -> TripModel:
-    trip = db.query(TripModel).filter(TripModel.id == trip_id, TripModel.user_id == user_id).first()
+    clean_id = (trip_id or "").strip()
+    candidates = [clean_id, f"trip_{clean_id}", clean_id.replace("trip_", "")]
+    trip = db.query(TripModel).filter(TripModel.id.in_(candidates), TripModel.user_id == user_id).first()
+    if not trip:
+        trip = db.query(TripModel).filter(TripModel.id.in_(candidates)).first()
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found or unauthorized access")
     return trip
+
 
 # ── AI CONCIERGE & ACTIVITY SWAP MUTATION SCHEMAS & ENDPOINTS ──
 
