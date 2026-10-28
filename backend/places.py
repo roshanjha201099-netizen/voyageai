@@ -98,7 +98,7 @@ def validate_destination_payload(dest: Dict[str, Any]) -> Tuple[bool, str]:
 
     country = (dest.get("country") or "").strip().lower()
     if country and country not in ("india", "in"):
-        return False, "VoyageAI currently supports destinations within India only. Please select a destination within India."
+        return False, "Cruiser currently supports destinations within India only. Please select a destination within India."
 
     lat = dest.get("latitude")
     lon = dest.get("longitude")
@@ -116,7 +116,7 @@ def validate_destination_payload(dest: Dict[str, Any]) -> Tuple[bool, str]:
 
         # India bounding box validation: ~6° N to 37.5° N, ~68° E to 97.5° E
         if not (6.0 <= lat_f <= 37.5 and 68.0 <= lon_f <= 97.5):
-            return False, "VoyageAI currently supports destinations within India only. Please select a location within India."
+            return False, "Cruiser currently supports destinations within India only. Please select a location within India."
 
     except (ValueError, TypeError):
         return False, "Latitude and Longitude must be valid numbers"

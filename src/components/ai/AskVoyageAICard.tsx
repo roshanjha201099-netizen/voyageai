@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Sparkles, ArrowRight, Compass, Utensils, Map, Car } from 'lucide-react';
+import { ArrowRight, Compass, Utensils, Map, Car } from 'lucide-react';
 
 export const AskVoyageAICard: React.FC = () => {
   const { openAiAssistant } = useApp();
@@ -24,11 +24,11 @@ export const AskVoyageAICard: React.FC = () => {
   return (
     <div className="surface-card p-5 space-y-4 border-[#D9DEDA] bg-white shadow-xs rounded-3xl">
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-2xl bg-[#E8F0EE] border border-[#D9DEDA] flex items-center justify-center text-[#355F58] shrink-0">
-          <Sparkles className="w-5 h-5 text-[#355F58]" />
+        <div className="w-10 h-10 rounded-2xl overflow-hidden bg-[#E8F0EE] border border-[#D9DEDA] flex items-center justify-center shrink-0 shadow-xs">
+          <img src="/favicon.png" alt="Cruiser" className="w-full h-full object-cover" />
         </div>
         <div>
-          <h2 className="text-lg font-extrabold text-[#1F2522]">Ask VoyageAI</h2>
+          <h2 className="text-lg font-extrabold text-[#1F2522]">Ask Cruiser</h2>
           <p className="text-xs text-[#5F6863] font-medium">What would you like to do today?</p>
         </div>
       </div>
@@ -45,7 +45,7 @@ export const AskVoyageAICard: React.FC = () => {
           type="submit"
           disabled={!query.trim()}
           className="w-10 h-10 rounded-xl bg-[#355F58] hover:bg-[#2C504A] text-white flex items-center justify-center shrink-0 press-scale disabled:opacity-30 transition-all"
-          aria-label="Send query to VoyageAI"
+          aria-label="Send query to Cruiser"
         >
           <ArrowRight className="w-5 h-5 font-bold text-white" />
         </button>

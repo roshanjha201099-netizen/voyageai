@@ -185,7 +185,7 @@ export const AIAssistantSheet: React.FC = () => {
         } else {
           const replyText = typeof data.reply === 'object'
             ? (data.reply?.reply || data.reply?.text || JSON.stringify(data.reply))
-            : String(data.reply || "I am your VoyageAI Assistant. How can I help with your journey?");
+            : String(data.reply || "I am your Cruiser Assistant. How can I help with your journey?");
           const actionType = typeof data.reply === 'object' ? data.reply?.actionType : data.actionType;
           const actionPayload = typeof data.reply === 'object' ? data.reply?.actionPayload : data.actionPayload;
 
@@ -285,7 +285,7 @@ export const AIAssistantSheet: React.FC = () => {
           setSwapContext(null);
         }}
         height={messages.length > 0 ? 'expanded' : 'half'}
-        title={swapContext ? `Swap Activity: ${swapContext.activityName}` : "VoyageAI Concierge"}
+        title={swapContext ? `Swap Activity: ${swapContext.activityName}` : "Cruiser Concierge"}
       >
         <div className="flex flex-col h-full">
           

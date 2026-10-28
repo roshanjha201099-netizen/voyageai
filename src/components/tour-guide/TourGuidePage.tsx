@@ -131,7 +131,7 @@ export const TourGuidePage: React.FC = () => {
         {
           id: 'welcome',
           role: 'assistant',
-          content: "Namaste! I'm your VoyageAI personal travel concierge. Ask me about authentic spots, street food, hacks, or itinerary planning.",
+          content: "Namaste! I'm your Cruiser personal travel concierge. Ask me about authentic spots, street food, hacks, or itinerary planning.",
           metadata: {
             chips: ["Top food nearby", "What to see today?", "Hidden gems"]
           }
@@ -627,7 +627,7 @@ export const TourGuidePage: React.FC = () => {
 
             {/* Body Copy */}
             <p className="mt-2.5 text-slate-300 text-sm leading-relaxed">
-              Your message exceeds the 1,000 character limit for the standard tier. Please shorten your message or upgrade to VoyageAI Pro for unlimited long-form travel planning and priority LLM routing.
+              Your message exceeds the 1,000 character limit for the standard tier. Please shorten your message or upgrade to Cruiser Pro for unlimited long-form travel planning and priority LLM routing.
             </p>
 
             {/* Character Overflow Info Box */}

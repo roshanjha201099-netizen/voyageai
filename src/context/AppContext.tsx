@@ -345,7 +345,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (tripView === 'reservations') return 'Manage bookings';
       return 'What should I do?';
     }
-    return 'Ask VoyageAI Copilot';
+    return 'Ask Cruiser Copilot';
   }, [activeTab, tripView]);
 
   const [swapContext, setSwapContext] = useState<SwapActivityPayload | null>(null);

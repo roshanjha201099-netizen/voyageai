@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
-import { Sparkles, ShieldCheck, Mail, Lock, User, ArrowRight } from 'lucide-react';
+import { ShieldCheck, Mail, Lock, User, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export const LoginScreen: React.FC = () => {
@@ -64,16 +64,16 @@ export const LoginScreen: React.FC = () => {
       
       {/* Brand Header */}
       <div className="pt-8 space-y-4 text-center">
-        <div className="w-14 h-14 rounded-2xl bg-[#355F58]/10 border border-[#355F58]/20 flex items-center justify-center mx-auto shadow-sm">
-          <Sparkles className="w-7 h-7 text-[#355F58]" />
+        <div className="w-16 h-16 rounded-3xl overflow-hidden bg-white border border-[#D9DEDA] flex items-center justify-center mx-auto shadow-md">
+          <img src="/icon-192.png" alt="Cruiser" className="w-full h-full object-cover" />
         </div>
 
         <div className="space-y-1">
           <h1 className="text-3xl font-extrabold text-[#1F2522] tracking-tight">
-            Welcome to Voyage<span className="text-[#355F58]">AI</span>
+            Welcome to Cruiser
           </h1>
           <p className="text-sm text-[#5F6863]">
-            {isRegister ? 'Create your VoyageAI account to personalize your journey' : 'Sign in to access your journeys and itineraries'}
+            {isRegister ? 'Create your Cruiser account to personalize your journey' : 'Sign in to access your journeys and itineraries'}
           </p>
         </div>
       </div>

@@ -63,7 +63,7 @@ export const ContextSwitcher: React.FC = () => {
             <div className="flex items-center justify-between border-b border-[#D9DEDA] pb-3">
               <div>
                 <h3 className="text-lg font-extrabold text-[#1F2522]">Choose Exploration Context</h3>
-                <p className="text-xs text-[#5F6863] font-medium">Select where VoyageAI focuses recommendations</p>
+                <p className="text-xs text-[#5F6863] font-medium">Select where Cruiser focuses recommendations</p>
               </div>
               <button
                 type="button"
@@ -131,7 +131,7 @@ export const ContextSwitcher: React.FC = () => {
               className="w-full py-3.5 rounded-2xl bg-[#F0F2EF] border border-[#D9DEDA] text-[#355F58] font-extrabold text-sm flex items-center justify-center gap-2 hover:border-[#355F58]/40"
             >
               <Sparkles className="w-4 h-4 text-[#355F58]" />
-              <span>Ask VoyageAI about this context</span>
+              <span>Ask Cruiser about this context</span>
             </button>
 
           </div>

@@ -131,7 +131,7 @@ export const MorePage: React.FC = () => {
           {/* Action 4: Ask AI Support */}
           <button
             type="button"
-            onClick={() => openAiAssistant('How do I use VoyageAI to plan trips or get directions?')}
+            onClick={() => openAiAssistant('How do I use Cruiser to plan trips or get directions?')}
             className="w-full p-4 rounded-2xl bg-white border border-[#D9DEDA] hover:border-[#355F58]/40 text-left flex items-center justify-between transition-all press-scale shadow-xs min-h-[60px]"
           >
             <div className="flex items-center gap-3.5">
@@ -157,7 +157,7 @@ export const MorePage: React.FC = () => {
             className="w-full py-4 rounded-2xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-extrabold text-base flex items-center justify-center gap-2 press-scale transition-all"
           >
             <LogOut className="w-5 h-5 text-rose-600" />
-            <span>Sign Out of VoyageAI</span>
+            <span>Sign Out of Cruiser</span>
           </button>
         ) : (
           <div className="p-5 rounded-2xl bg-rose-50 border border-rose-200 space-y-3 text-center animate-fadeIn">

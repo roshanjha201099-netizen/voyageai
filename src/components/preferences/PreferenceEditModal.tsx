@@ -71,7 +71,7 @@ export const PreferenceEditModal: React.FC<PreferenceEditModalProps> = ({
         <div className="flex items-center justify-between p-5 border-b border-[#D9DEDA] shrink-0 bg-white">
           <div>
             <h3 className="text-lg font-black text-[#1F2522]">Edit Travel Preferences</h3>
-            <p className="text-xs text-[#5F6863] font-medium">Tune how VoyageAI personalizes your trips</p>
+            <p className="text-xs text-[#5F6863] font-medium">Tune how Cruiser personalizes your trips</p>
           </div>
           <button
             type="button"

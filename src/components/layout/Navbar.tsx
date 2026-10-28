@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../auth/AuthContext';
 import { useTrip } from '../../features/trip/TripContext';
-import { Sparkles, ArrowLeft, MapPin, Compass, ChevronDown, Check } from 'lucide-react';
+import { ArrowLeft, MapPin, Compass, ChevronDown, Check } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 export const MobileHeader: React.FC = () => {
@@ -71,11 +71,11 @@ export const MobileHeader: React.FC = () => {
             className="flex items-center gap-2 cursor-pointer shrink-0 press-scale"
             onClick={() => navigate('/')}
           >
-            <div className="w-8 h-8 rounded-xl bg-[#E8F0EE] border border-[#D9DEDA] flex items-center justify-center">
-              <Sparkles className="w-4 h-4 text-[#355F58]" />
+            <div className="w-8 h-8 rounded-xl overflow-hidden bg-[#E8F0EE] border border-[#D9DEDA] flex items-center justify-center shadow-xs">
+              <img src="/favicon.png" alt="Cruiser" className="w-full h-full object-cover" />
             </div>
             <span className="text-lg font-extrabold text-[#1F2522] tracking-tight">
-              Voyage<span className="text-[#355F58]">AI</span>
+              Cruiser
             </span>
           </div>
         )}

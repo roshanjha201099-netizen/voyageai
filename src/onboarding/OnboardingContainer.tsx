@@ -144,7 +144,7 @@ export const OnboardingContainer: React.FC = () => {
       {/* Footer disclaimer */}
       <div className="text-center pt-2 pb-4">
         <p className="text-[11px] text-[#5F6863]">
-          Preferences help VoyageAI suggest better stays, food & activities.
+          Preferences help Cruiser suggest better stays, food & activities.
         </p>
       </div>
     </div>

@@ -133,7 +133,7 @@ export const ItineraryView: React.FC = () => {
       });
       text += '\n';
     });
-    text += `\nGenerated with VoyageAI Concierge`;
+    text += `\nGenerated with Cruiser Concierge`;
 
     if (navigator.clipboard) {
       navigator.clipboard.writeText(text).then(() => {

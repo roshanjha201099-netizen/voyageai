@@ -18,7 +18,7 @@ export const FloatingAIButton: React.FC = () => {
       onClick={() => openAiAssistant()}
       className="fixed z-30 right-4 press-scale animate-scaleIn"
       style={{ bottom: 'calc(var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px) + 12px)' }}
-      aria-label={`Ask VoyageAI: ${aiContextLabel}`}
+      aria-label={`Ask Cruiser: ${aiContextLabel}`}
     >
       <div className="flex items-center gap-2 px-4 py-3 rounded-full bg-[#355F58] hover:bg-[#2C504A] text-white font-extrabold text-xs shadow-lg border border-[#D9DEDA] transition-all">
         <Sparkles className="w-4 h-4 text-white" />

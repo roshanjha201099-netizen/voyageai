@@ -30,7 +30,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onNext, onSkip }) 
           Welcome, {name}
         </h2>
         <p className="text-sm text-[#5F6863] max-w-xs mx-auto font-medium">
-          Let's make VoyageAI work better for you in 30 seconds.
+          Let's make Cruiser work better for you in 30 seconds.
         </p>
       </div>
 

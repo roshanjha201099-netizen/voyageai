@@ -122,7 +122,7 @@ export const TripCreationWizard: React.FC = () => {
           });
 
           if (data.length > 0 && indiaResults.length === 0) {
-            setSearchError('VoyageAI currently supports destinations within India only. Please select a city or region in India.');
+            setSearchError('Cruiser currently supports destinations within India only. Please select a city or region in India.');
             setSearchResults([]);
           } else if (indiaResults.length === 0) {
             setSearchError('No places found in India. Try a nearby city or a more specific Indian location.');
@@ -336,7 +336,7 @@ export const TripCreationWizard: React.FC = () => {
                 </span>
               </div>
               <p className="text-sm text-slate-400">
-                VoyageAI currently supports destinations within India only.
+                Cruiser currently supports destinations within India only.
               </p>
             </div>
 

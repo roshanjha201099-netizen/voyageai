@@ -27,7 +27,7 @@ class TripTransportModel(Base):
     trip_id = Column(String, ForeignKey("trips.id", ondelete="CASCADE"), nullable=False, index=True)
     activity_id = Column(String, ForeignKey("itinerary_activities.id", ondelete="SET NULL"), nullable=True, index=True)
     transport_type = Column(String, nullable=False, default="CAB") # CAB, FLIGHT, TRAIN, RENTAL
-    provider_name = Column(String, nullable=False, default="VoyageAI Ride")
+    provider_name = Column(String, nullable=False, default="Cruiser Ride")
     pickup_location = Column(String, nullable=False)
     dropoff_location = Column(String, nullable=False)
     pickup_time = Column(String, nullable=False)

@@ -11,7 +11,7 @@ export const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children })
     return (
       <div className="min-h-dvh bg-[#080B10] text-slate-100 flex flex-col items-center justify-center p-6 space-y-4">
         <RefreshCw className="w-8 h-8 text-teal-400 animate-spin" />
-        <p className="text-sm font-bold text-white">Restoring your VoyageAI session...</p>
+        <p className="text-sm font-bold text-white">Restoring your Cruiser session...</p>
       </div>
     );
   }

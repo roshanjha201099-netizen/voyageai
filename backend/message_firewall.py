@@ -6,7 +6,7 @@ from typing import Tuple
 # GATE 0: Exact Match Canned Cache ($0)
 # ==========================================
 EXACT_REPLIES = {
-    "hi": "Hey! VoyageAI concierge here. Where are we heading today?",
+    "hi": "Hey! Cruiser concierge here. Where are we heading today?",
     "hello": "Hello! Looking for places to eat, sights, or trip planning?",
     "help": "Tell me your destination or ask for food, spots, and local hacks around you.",
     "kaha jau": "Apna current location ya planned city batao, best spots batata hoon.",

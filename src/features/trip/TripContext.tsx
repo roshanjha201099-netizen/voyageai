@@ -362,7 +362,7 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
         tripId: currentTripId,
         activityId: payload.activityId,
         transportType: payload.transportType || 'CAB',
-        providerName: payload.providerName || 'VoyageAI Ride',
+        providerName: payload.providerName || 'Cruiser Ride',
         pickupLocation: payload.pickupLocation || 'Current Location',
         dropoffLocation: payload.dropoffLocation || 'Destination',
         pickupTime: payload.pickupTime || 'Immediate',

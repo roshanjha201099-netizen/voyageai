@@ -22,7 +22,7 @@ export const ProfileSheet: React.FC = () => {
     ? authUser.email.split('@')[0]
     : 'Traveler';
 
-  const emailOrPhone = authUser?.email || authUser?.phone || 'user@voyageai.local';
+  const emailOrPhone = authUser?.email || authUser?.phone || 'user@cruiser.local';
   const avatarUrl = userProfile?.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80';
   const travelStyles = userPreferences?.travelStyles?.length ? userPreferences.travelStyles : ['RELAXED', 'FOODIE'];
 
