@@ -33,6 +33,7 @@ import { RidesPage } from './components/rides/RidesPage';
 import { ExpensesPage } from './components/expenses/ExpensesPage';
 import { TourGuidePage } from './components/tour-guide/TourGuidePage';
 import { ItineraryView } from './components/itinerary/ItineraryView';
+import { SavedPlacesPage } from './components/places/SavedPlacesPage';
 import { RefreshCw, AlertTriangle } from 'lucide-react';
 
 const MapView = React.lazy(() =>
@@ -170,6 +171,7 @@ const MainContent: React.FC = () => {
       <Route path="/tour-guide" element={<TourGuidePage />} />
       <Route path="/guide" element={<TourGuidePage />} />
       <Route path="/more" element={<MorePage />} />
+      <Route path="/saved-places" element={<SavedPlacesPage />} />
       <Route path="*" element={<HomePage />} />
     </Routes>
   );

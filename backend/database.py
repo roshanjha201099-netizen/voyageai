@@ -149,6 +149,24 @@ def init_db():
                 ON trips (user_id);
 
                 ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);
+
+                CREATE TABLE IF NOT EXISTS saved_places (
+                    id VARCHAR PRIMARY KEY,
+                    user_id VARCHAR NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+                    place_id VARCHAR NOT NULL,
+                    title VARCHAR NOT NULL,
+                    category VARCHAR,
+                    rating NUMERIC(2, 1),
+                    location_name VARCHAR,
+                    distance_text VARCHAR,
+                    duration_text VARCHAR,
+                    cost_text VARCHAR,
+                    description TEXT,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    CONSTRAINT uq_user_place UNIQUE (user_id, place_id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_saved_places_user_id ON saved_places(user_id);
             """))
             conn.commit()
             print(f"[DATABASE INIT] Neon schema sync complete. Registered tables: {sorted(Base.metadata.tables.keys())}")

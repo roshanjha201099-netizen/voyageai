@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
-import { MapPin, Star, Navigation, Sparkles, X, Car } from 'lucide-react';
+import { MapPin, Star, Navigation, Sparkles, X, Car, Heart, Check, Loader2 } from 'lucide-react';
+import { checkPlaceSaved, savePlace, removeSavedPlace } from '../../services/savedPlacesApi';
 
 export interface PlaceDetailItem {
   id: string;
@@ -26,9 +27,63 @@ interface PlaceDetailSheetProps {
 export const PlaceDetailSheet: React.FC<PlaceDetailSheetProps> = ({ item, onClose }) => {
   const { openInAppNavigation, openCabModal, openAiAssistant } = useApp();
 
+  const [isSaved, setIsSaved] = useState<boolean>(false);
+  const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    if (item?.id) {
+      checkPlaceSaved(item.id).then((saved) => {
+        if (active) setIsSaved(saved);
+      });
+    } else {
+      setIsSaved(false);
+    }
+    return () => {
+      active = false;
+    };
+  }, [item?.id]);
+
   if (!item) return null;
 
   const hasCoordinates = typeof item.latitude === 'number' && typeof item.longitude === 'number' && !isNaN(item.latitude) && !isNaN(item.longitude);
+
+  const handleToggleSave = async () => {
+    if (!item || isSaving) return;
+    setIsSaving(true);
+    const previous = isSaved;
+    const nextState = !previous;
+    setIsSaved(nextState);
+
+    try {
+      if (nextState) {
+        await savePlace({
+          place_id: item.id,
+          title: item.name,
+          category: item.category,
+          rating: item.rating,
+          location_name: item.address || item.name,
+          location: item.address || item.name,
+          coordinates: hasCoordinates ? [item.latitude!, item.longitude!] : undefined,
+          distance_text: item.distanceText,
+          duration_text: item.durationText,
+          cost_text: item.estimatedCost ? `₹${item.estimatedCost}` : 'Free',
+          description: item.description,
+        });
+        setToastMessage('Saved to your places');
+      } else {
+        await removeSavedPlace(item.id);
+        setToastMessage('Removed from saved places');
+      }
+    } catch (err: any) {
+      setIsSaved(previous);
+      setToastMessage(err.message || 'Action failed. Please try again.');
+    } finally {
+      setIsSaving(false);
+      setTimeout(() => setToastMessage(null), 3000);
+    }
+  };
 
   const handleNavigate = () => {
     if (!hasCoordinates || item.latitude === undefined || item.longitude === undefined) return;
@@ -52,8 +107,16 @@ export const PlaceDetailSheet: React.FC<PlaceDetailSheetProps> = ({ item, onClos
 
   return (
     <div className="fixed inset-0 z-[99999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-[#1F2522]/40 backdrop-blur-xs animate-fadeIn">
-      <div className="w-full max-w-lg max-h-[85vh] sm:max-h-[90vh] overflow-y-auto bg-white border border-[#D9DEDA] rounded-t-3xl sm:rounded-3xl p-6 pb-20 sm:pb-6 mb-16 sm:mb-0 space-y-5 shadow-2xl animate-slideUp text-[#1F2522]">
+      <div className="w-full max-w-lg max-h-[85vh] sm:max-h-[90vh] overflow-y-auto bg-white border border-[#D9DEDA] rounded-t-3xl sm:rounded-3xl p-6 pb-20 sm:pb-6 mb-16 sm:mb-0 space-y-5 shadow-2xl animate-slideUp text-[#1F2522] relative">
         
+        {/* Floating Toast Notification */}
+        {toastMessage && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-[#1F2522] text-white text-xs font-bold shadow-lg animate-fadeIn flex items-center gap-2">
+            <Check className="w-4 h-4 text-teal-400" />
+            <span>{toastMessage}</span>
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex items-start justify-between gap-4 border-b border-[#D9DEDA] pb-4">
           <div className="space-y-1 min-w-0">
@@ -77,14 +140,35 @@ export const PlaceDetailSheet: React.FC<PlaceDetailSheetProps> = ({ item, onClos
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-10 h-10 rounded-full bg-[#F0F2EF] flex items-center justify-center text-[#5F6863] hover:text-[#1F2522] shrink-0"
-            aria-label="Close details"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleToggleSave}
+              disabled={isSaving}
+              className={`w-10 h-10 rounded-full flex items-center justify-center transition-all press-scale border ${
+                isSaved
+                  ? 'bg-rose-50 border-rose-200 text-rose-600'
+                  : 'bg-[#F0F2EF] border-[#D9DEDA] text-[#5F6863] hover:text-rose-600'
+              }`}
+              aria-label={isSaved ? 'Remove from saved places' : 'Save this spot'}
+              title={isSaved ? 'Saved to Favorites' : 'Save Spot'}
+            >
+              {isSaving ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Heart className={`w-5 h-5 transition-transform ${isSaved ? 'fill-rose-600 text-rose-600 scale-110' : ''}`} />
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-10 h-10 rounded-full bg-[#F0F2EF] border border-[#D9DEDA] flex items-center justify-center text-[#5F6863] hover:text-[#1F2522]"
+              aria-label="Close details"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Info Blocks */}

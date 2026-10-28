@@ -13,6 +13,7 @@ import { AddToItineraryModal, type ItineraryDayOption } from '../itinerary/AddTo
 import { sanitizeLocationName } from '../../utils/locationSanitizer';
 import { isMockPayload } from '../../utils/mockIndicator';
 import { MockCardAlert } from '../common/MockCardAlert';
+import { getSavedPlaces, savePlace, removeSavedPlace } from '../../services/savedPlacesApi';
 
 export const ExplorePage: React.FC = () => {
   const navigate = useNavigate();
@@ -50,28 +51,21 @@ export const ExplorePage: React.FC = () => {
   const [savedPlaceIds, setSavedPlaceIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
+    let active = true;
     const fetchSavedPlaces = async () => {
       try {
-        const baseUrl = getApiBaseUrl();
-        const res = await fetch(`${baseUrl}/api/user/saved-places`, {
-          ...DEFAULT_FETCH_OPTIONS,
-          headers: {
-            ...getAuthHeaders(),
-            'Accept': 'application/json',
-          }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (Array.isArray(data)) {
-            setSavedPlaceIds(new Set(data.map((p: any) => p.place_id || p.id)));
-            return;
-          }
+        const data = await getSavedPlaces();
+        if (active && Array.isArray(data)) {
+          setSavedPlaceIds(new Set(data.map((p) => p.place_id)));
         }
       } catch (err) {
         console.warn('[FETCH SAVED PLACES WARN]', err);
       }
     };
     fetchSavedPlaces();
+    return () => {
+      active = false;
+    };
   }, []);
 
   const handleToggleSave = async (item: ActivityItem) => {
@@ -85,24 +79,25 @@ export const ExplorePage: React.FC = () => {
     setSavedPlaceIds(nextSet);
 
     try {
-      const baseUrl = getApiBaseUrl();
-      await fetch(`${baseUrl}/api/user/saved-places`, {
-        ...DEFAULT_FETCH_OPTIONS,
-        headers: {
-          ...getAuthHeaders(),
-          'Content-Type': 'application/json',
-        },
-        method: isSaved ? 'DELETE' : 'POST',
-        body: JSON.stringify({
+      if (isSaved) {
+        await removeSavedPlace(item.id);
+      } else {
+        await savePlace({
           place_id: item.id,
           title: item.title,
           category: item.category,
+          location_name: item.location,
           location: item.location,
-          coordinates: item.coordinates
-        })
-      });
+          coordinates: item.coordinates,
+          rating: item.rating,
+          cost_text: item.cost ? `₹${item.cost}` : undefined,
+          duration_text: item.duration,
+          description: item.description,
+        });
+      }
     } catch (err) {
       console.warn('[SAVE PLACE ERROR]', err);
+      setSavedPlaceIds(savedPlaceIds);
     }
   };
 

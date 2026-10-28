@@ -1,5 +1,5 @@
 import json
-from sqlalchemy import Column, String, Boolean, Text, ForeignKey
+from sqlalchemy import Column, String, Boolean, Text, ForeignKey, Numeric, DateTime, UniqueConstraint, func
 from database import Base
 
 class AuthUserModel(Base):
@@ -95,4 +95,25 @@ class SessionModel(Base):
     expires_at = Column(String, nullable=False)
     last_used_at = Column(String, nullable=False)
     revoked_at = Column(String, nullable=True)
+
+class SavedPlaceModel(Base):
+    __tablename__ = "saved_places"
+
+    id = Column(String, primary_key=True, index=True)
+    user_id = Column(String, ForeignKey("auth_users.id", ondelete="CASCADE"), nullable=False, index=True)
+    place_id = Column(String, nullable=False)
+    title = Column(String, nullable=False)
+    category = Column(String, nullable=True)
+    rating = Column(Numeric(2, 1), nullable=True)
+    location_name = Column(String, nullable=True)
+    distance_text = Column(String, nullable=True)
+    duration_text = Column(String, nullable=True)
+    cost_text = Column(String, nullable=True)
+    description = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'place_id', name='uq_user_place'),
+    )
+
 

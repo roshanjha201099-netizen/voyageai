@@ -95,7 +95,7 @@ export const MorePage: React.FC = () => {
           {/* Action 2: Saved Places */}
           <button
             type="button"
-            onClick={() => openAiAssistant('Show me all my saved places and recommendations')}
+            onClick={() => navigate('/saved-places')}
             className="w-full p-4 rounded-2xl bg-white border border-[#D9DEDA] hover:border-[#355F58]/40 text-left flex items-center justify-between transition-all press-scale shadow-xs min-h-[60px]"
           >
             <div className="flex items-center gap-3.5">

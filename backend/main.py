@@ -702,63 +702,6 @@ def get_user_profile(
         raise HTTPException(status_code=404, detail="Profile not found")
     return auth.to_pydantic_user_profile(profile)
 
-class SavePlaceRequest(BaseModel):
-    place_id: str
-    title: str
-    category: Optional[str] = "Sights"
-    location: Optional[str] = ""
-    coordinates: Optional[List[float]] = None
-
-@app.post("/api/user/saved-places")
-def save_place(
-    req: SavePlaceRequest,
-    current_user: AuthUser = Depends(get_user_or_guest)
-):
-    from redis_client import redis_conn
-    if redis_conn:
-        try:
-            key = f"user:{current_user.id}:saved_places"
-            redis_conn.hset(key, req.place_id, json.dumps(req.dict()))
-            return {"status": "success", "message": f"Saved {req.title}"}
-        except Exception as e:
-            print(f"[SAVE PLACE REDIS ERROR] {e}", flush=True)
-    return {"status": "success", "message": f"Saved {req.title}"}
-
-@app.delete("/api/user/saved-places")
-def unsave_place(
-    req: SavePlaceRequest,
-    current_user: AuthUser = Depends(get_user_or_guest)
-):
-    from redis_client import redis_conn
-    if redis_conn:
-        try:
-            key = f"user:{current_user.id}:saved_places"
-            redis_conn.hdel(key, req.place_id)
-            return {"status": "success", "message": f"Unsaved {req.title}"}
-        except Exception as e:
-            print(f"[UNSAVE PLACE REDIS ERROR] {e}", flush=True)
-    return {"status": "success", "message": f"Unsaved {req.title}"}
-
-@app.get("/api/user/saved-places")
-def get_saved_places(
-    current_user: AuthUser = Depends(get_user_or_guest)
-):
-    if not current_user or current_user.id.startswith("guest_"):
-        return []
-    from redis_client import redis_conn
-    if redis_conn:
-        try:
-            key = f"user:{current_user.id}:saved_places"
-            raw = redis_conn.hgetall(key)
-            results = []
-            for k, v in raw.items():
-                if isinstance(v, bytes):
-                    v = v.decode("utf-8")
-                results.append(json.loads(v))
-            return results
-        except Exception as e:
-            print(f"[GET SAVED PLACES REDIS ERROR] {e}", flush=True)
-    return []
 
 class LocationPayload(BaseModel):
     latitude: float
@@ -2335,6 +2278,210 @@ def get_trip_highlights_endpoint(
             ],
             "events": []
         }
+
+# ── SAVED PLACES (BOOKMARKS) SCHEMAS & ENDPOINTS ──
+
+# ── SAVED PLACES (BOOKMARKS) SCHEMAS & ENDPOINTS ──
+
+class SavePlaceRequest(BaseModel):
+    place_id: str
+    title: str
+    category: Optional[str] = None
+    rating: Optional[float] = None
+    location_name: Optional[str] = None
+    location: Optional[str] = None
+    coordinates: Optional[List[float]] = None
+    distance_text: Optional[str] = None
+    duration_text: Optional[str] = None
+    cost_text: Optional[str] = None
+    description: Optional[str] = None
+
+@app.post("/api/places/save")
+@app.post("/api/user/saved-places")
+def save_place(
+    req: SavePlaceRequest,
+    current_user: AuthUser = Depends(get_user_or_guest),
+    db: Session = Depends(get_db)
+):
+    from redis_client import redis_conn
+    from models_db import SavedPlaceModel, AuthUserModel
+
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required to save places")
+
+    user_id = current_user.id
+    # Ensure user exists in auth_users table (e.g., guest sessions) to preserve foreign key integrity
+    user_record = db.query(AuthUserModel.id).filter(AuthUserModel.id == user_id).first()
+    if not user_record:
+        try:
+            now_iso = auth.get_current_iso_time()
+            guest_record = AuthUserModel(
+                id=user_id,
+                provider="GUEST",
+                provider_user_id=user_id,
+                email=f"{user_id}@guest.voyageai",
+                phone=None,
+                email_verified=False,
+                phone_verified=False,
+                status="GUEST",
+                created_at=now_iso,
+                last_login_at=now_iso
+            )
+            db.add(guest_record)
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            print(f"[SAVED PLACES USER SYNC WARN]: {e}", flush=True)
+
+    loc = req.location_name or req.location or ""
+
+    existing = db.query(SavedPlaceModel).filter(
+        SavedPlaceModel.user_id == user_id,
+        SavedPlaceModel.place_id == req.place_id
+    ).first()
+
+    if existing:
+        existing.title = req.title
+        existing.category = req.category
+        existing.rating = req.rating
+        existing.location_name = loc
+        existing.distance_text = req.distance_text
+        existing.duration_text = req.duration_text
+        existing.cost_text = req.cost_text
+        existing.description = req.description
+    else:
+        new_place = SavedPlaceModel(
+            id=f"sp_{uuid.uuid4().hex[:12]}",
+            user_id=user_id,
+            place_id=req.place_id,
+            title=req.title,
+            category=req.category,
+            rating=req.rating,
+            location_name=loc,
+            distance_text=req.distance_text,
+            duration_text=req.duration_text,
+            cost_text=req.cost_text,
+            description=req.description
+        )
+        db.add(new_place)
+
+    db.commit()
+
+    # Atomically invalidate/update Redis cache
+    try:
+        redis_conn.delete(f"saved_places:{user_id}")
+    except Exception as e:
+        print(f"[SAVED PLACES CACHE WARN]: {e}", flush=True)
+
+    return {"status": "saved", "place_id": req.place_id}
+
+@app.delete("/api/places/save/{place_id}")
+@app.delete("/api/user/saved-places/{place_id}")
+def remove_saved_place(
+    place_id: str,
+    current_user: AuthUser = Depends(get_user_or_guest),
+    db: Session = Depends(get_db)
+):
+    from redis_client import redis_conn
+    from models_db import SavedPlaceModel
+
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    user_id = current_user.id
+    db.query(SavedPlaceModel).filter(
+        SavedPlaceModel.user_id == user_id,
+        SavedPlaceModel.place_id == place_id
+    ).delete()
+
+    db.commit()
+
+    # Invalidate cache
+    try:
+        redis_conn.delete(f"saved_places:{user_id}")
+    except Exception as e:
+        print(f"[SAVED PLACES CACHE WARN]: {e}", flush=True)
+
+    return {"status": "removed", "place_id": place_id}
+
+@app.delete("/api/user/saved-places")
+def remove_saved_place_legacy_body(
+    req: SavePlaceRequest,
+    current_user: AuthUser = Depends(get_user_or_guest),
+    db: Session = Depends(get_db)
+):
+    return remove_saved_place(req.place_id, current_user, db)
+
+@app.get("/api/places/saved")
+@app.get("/api/user/saved-places")
+def get_saved_places(
+    current_user: AuthUser = Depends(get_user_or_guest),
+    db: Session = Depends(get_db)
+):
+    if not current_user:
+        return []
+
+    from redis_client import redis_conn
+    from models_db import SavedPlaceModel
+
+    user_id = current_user.id
+    cache_key = f"saved_places:{user_id}"
+
+    # Cache-aside pattern
+    try:
+        cached = redis_conn.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception as e:
+        print(f"[SAVED PLACES CACHE READ WARN]: {e}", flush=True)
+
+    places = db.query(SavedPlaceModel).filter(
+        SavedPlaceModel.user_id == user_id
+    ).order_by(SavedPlaceModel.created_at.desc()).all()
+
+    results = []
+    for sp in places:
+        created_str = sp.created_at.isoformat() if hasattr(sp.created_at, "isoformat") else str(sp.created_at)
+        results.append({
+            "id": sp.id,
+            "place_id": sp.place_id,
+            "title": sp.title,
+            "category": sp.category,
+            "rating": float(sp.rating) if sp.rating is not None else None,
+            "location_name": sp.location_name,
+            "location": sp.location_name,
+            "distance_text": sp.distance_text,
+            "duration_text": sp.duration_text,
+            "cost_text": sp.cost_text,
+            "description": sp.description,
+            "created_at": created_str
+        })
+
+    try:
+        redis_conn.setex(cache_key, 600, json.dumps(results))
+    except Exception as e:
+        print(f"[SAVED PLACES CACHE WRITE WARN]: {e}", flush=True)
+
+    return results
+
+@app.get("/api/places/saved/check/{place_id}")
+def check_place_saved(
+    place_id: str,
+    current_user: AuthUser = Depends(get_user_or_guest),
+    db: Session = Depends(get_db)
+):
+    if not current_user:
+        return {"is_saved": False}
+
+    from models_db import SavedPlaceModel
+
+    exists = db.query(SavedPlaceModel.id).filter(
+        SavedPlaceModel.user_id == current_user.id,
+        SavedPlaceModel.place_id == place_id
+    ).first()
+
+    return {"is_saved": bool(exists)}
+
 
 class AddItineraryItemRequest(BaseModel):
     trip_id: Optional[str] = "active_trip"

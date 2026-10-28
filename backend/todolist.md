@@ -11,7 +11,10 @@
 # when ever i go to landing page it gets this guest_id saved in cookies for some reason 
 
 
-# where are saved places kept verify it and make a section for saved places if not already
+# [COMPLETED] where are saved places kept verify it and make a section for saved places if not already:
+  - Database Layer: Added PostgreSQL `saved_places` table with `uq_user_place` unique constraint and `idx_saved_places_user_id` index.
+  - Backend Layer: Unified canonical routes (`POST /api/places/save`, `DELETE /api/places/save/{place_id}`, `GET /api/places/saved`, `GET /api/places/saved/check/{place_id}`) with atomic Redis caching (`saved_places:{user_id}`, 10-minute TTL). Added legacy route aliases (`POST /api/user/saved-places`, `DELETE /api/user/saved-places`, `GET /api/user/saved-places`) for seamless backward compatibility.
+  - Frontend Layer: Centralized API client in `src/services/savedPlacesApi.ts` (and `src/api/savedPlaces.ts`). Migrated `ExplorePage.tsx`, `PlaceDetailSheet.tsx`, and `SavedPlacesPage.tsx` to the unified client. Eliminated all hardcoded `/api/user/saved-places` fetches. Direct navigation from `/more` to `/saved-places`.
 
 
 # on map page add filters to food stay and all 
