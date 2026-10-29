@@ -14,6 +14,8 @@ import { createUserLocationIcon, createPoiIcon } from './mapIcons';
 import { AddToItineraryModal, type ItineraryDayOption } from '../itinerary/AddToItineraryModal';
 import { sanitizeLocationName } from '../../utils/locationSanitizer';
 import { getCanonicalCategory, type CanonicalCategoryKey } from './mapCategoryConfig';
+import { useTheme } from '../../context/ThemeContext';
+import { GOOGLE_MAP_DARK_STYLES } from '../../utils/googleMapStyles';
 
 export interface PlaceItem {
   id: string;
@@ -60,10 +62,20 @@ const formatDistance = (meters?: number) => {
 const HEADER_HEIGHT = 64;
 const BOTTOM_NAV_HEIGHT = 72;
 
-export const MapView: React.FC = () => {
+export const MapView: React.FC<{ mapInstance?: any }> = ({ mapInstance }) => {
   const { userLocation, userLocationName, isFollowMode, setIsFollowMode } = useApp();
   const { currentTrip, currentItinerary, refetchItinerary } = useTrip();
   const { mapFocusTarget, setMapFocusTarget, navigateToExplore } = useNavigation();
+  const { theme } = useTheme();
+
+  // If a Google Maps JS API map instance is supplied, apply custom dark JSON styles dynamically
+  useEffect(() => {
+    if (mapInstance && typeof mapInstance.setOptions === 'function') {
+      mapInstance.setOptions({
+        styles: theme === 'dark' ? GOOGLE_MAP_DARK_STYLES : [],
+      });
+    }
+  }, [theme, mapInstance]);
 
   const tileLayerRef = useRef<L.TileLayer | null>(null);
 
@@ -502,7 +514,7 @@ export const MapView: React.FC = () => {
 
   return (
     <div
-      className="relative w-full overflow-hidden bg-[#EFF1ED] select-none"
+      className="relative w-full overflow-hidden bg-[#EFF1ED] dark:bg-zinc-950 select-none transition-colors"
       style={{ height: `calc(100dvh - ${HEADER_HEIGHT}px - ${BOTTOM_NAV_HEIGHT}px)` }}
     >
       {/* Map */}
@@ -513,9 +525,9 @@ export const MapView: React.FC = () => {
         <button
           type="button"
           onClick={() => navigateToExplore()}
-          className="pointer-events-auto min-h-[40px] px-3.5 rounded-full bg-white hover:bg-gray-50 text-[#1F2522] border border-gray-200 shadow-sm font-semibold text-xs flex items-center gap-1.5 press-scale"
+          className="pointer-events-auto min-h-[40px] px-3.5 rounded-full bg-white dark:bg-zinc-900 hover:bg-gray-50 dark:hover:bg-zinc-800 text-[#1F2522] dark:text-zinc-100 border border-gray-200 dark:border-zinc-800 shadow-sm font-semibold text-xs flex items-center gap-1.5 press-scale transition-colors"
         >
-          <ArrowLeft className="w-4 h-4 text-[#1F5A3F]" aria-hidden="true" />
+          <ArrowLeft className="w-4 h-4 text-[#1F5A3F] dark:text-emerald-400" aria-hidden="true" />
           <span>Explore</span>
         </button>
 
@@ -525,8 +537,8 @@ export const MapView: React.FC = () => {
           aria-label="Recenter on my location"
           title="Recenter on my location"
           className={`pointer-events-auto w-10 h-10 shrink-0 rounded-full border shadow-sm transition-colors press-scale flex items-center justify-center ${isFollowMode
-              ? 'bg-[#1F5A3F] text-white border-[#1F5A3F]'
-              : 'bg-white text-gray-600 border-gray-200 hover:border-[#1F5A3F]/40'
+              ? 'bg-[#1F5A3F] dark:bg-emerald-600 text-white border-[#1F5A3F] dark:border-emerald-600'
+              : 'bg-white dark:bg-zinc-900 text-gray-600 dark:text-zinc-300 border-gray-200 dark:border-zinc-800 hover:border-[#1F5A3F]/40'
             }`}
         >
           <Crosshair className="w-4 h-4" aria-hidden="true" />
@@ -551,14 +563,14 @@ export const MapView: React.FC = () => {
               }}
               aria-pressed={activeCategory === key}
               className={`shrink-0 min-h-[32px] px-3.5 rounded-full text-xs font-semibold transition-all border shadow-sm flex items-center gap-1.5 press-scale ${activeCategory === key
-                  ? 'bg-[#1F5A3F] text-white border-[#1F5A3F]'
-                  : 'bg-white text-gray-600 border-gray-200 hover:text-gray-900'
+                  ? 'bg-[#1F5A3F] dark:bg-emerald-600 text-white border-[#1F5A3F] dark:border-emerald-600'
+                  : 'bg-white dark:bg-zinc-900 text-gray-600 dark:text-zinc-300 border-gray-200 dark:border-zinc-800 hover:text-gray-900 dark:hover:text-zinc-100'
                 }`}
             >
               <span>{label}</span>
               {count > 0 && (
                 <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                  activeCategory === key ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'
+                  activeCategory === key ? 'bg-white/20 text-white' : 'bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400'
                 }`}>
                   {count}
                 </span>
@@ -592,23 +604,23 @@ export const MapView: React.FC = () => {
                     focusPlace(place);
                   }
                 }}
-                className={`w-[270px] sm:w-[300px] shrink-0 snap-center rounded-3xl bg-white border p-4 shadow-lg space-y-3 cursor-pointer transition-colors ${isSelected ? 'border-[#1F5A3F] ring-2 ring-[#1F5A3F]/20' : 'border-gray-200'
+                className={`w-[270px] sm:w-[300px] shrink-0 snap-center rounded-3xl bg-white dark:bg-zinc-900 border p-4 shadow-lg space-y-3 cursor-pointer transition-colors ${isSelected ? 'border-[#1F5A3F] dark:border-emerald-500 ring-2 ring-[#1F5A3F]/20 dark:ring-emerald-500/20' : 'border-gray-200 dark:border-zinc-800'
                   }`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 space-y-0.5">
                     <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 rounded-md bg-[#1F5A3F]/10 text-[#1F5A3F] border border-[#1F5A3F]/20 text-[10px] font-semibold uppercase">
+                      <span className="px-2 py-0.5 rounded-md bg-[#1F5A3F]/10 dark:bg-emerald-950/60 text-[#1F5A3F] dark:text-emerald-400 border border-[#1F5A3F]/20 dark:border-emerald-800/40 text-[10px] font-semibold uppercase">
                         {sentenceCase(place.category)}
                       </span>
-                      <span className="text-[11px] font-medium text-gray-400">
+                      <span className="text-[11px] font-medium text-gray-400 dark:text-zinc-400">
                         {formatDistance(place.distanceMeters)}
                       </span>
                     </div>
-                    <h3 className="text-base font-semibold text-gray-900 truncate">
+                    <h3 className="text-base font-semibold text-gray-900 dark:text-zinc-100 truncate">
                       {place.name}
                     </h3>
-                    <p className="text-xs text-gray-500 truncate">
+                    <p className="text-xs text-gray-500 dark:text-zinc-400 truncate">
                       {place.address}
                     </p>
                   </div>
@@ -621,7 +633,7 @@ export const MapView: React.FC = () => {
                     aria-label={playingPlaceId === place.id ? 'Stop audio guide' : 'Play audio guide'}
                     className={`w-10 h-10 shrink-0 rounded-full border transition-colors press-scale flex items-center justify-center ${playingPlaceId === place.id
                         ? 'bg-amber-500 text-white border-amber-500'
-                        : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-[#1F5A3F]/40'
+                        : 'bg-gray-50 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 border-gray-200 dark:border-zinc-700 hover:border-[#1F5A3F]/40 dark:hover:border-zinc-600'
                       }`}
                   >
                     {audioLoadingId === place.id ? (
@@ -629,12 +641,12 @@ export const MapView: React.FC = () => {
                     ) : playingPlaceId === place.id ? (
                       <VolumeX className="w-5 h-5" aria-hidden="true" />
                     ) : (
-                      <Volume2 className="w-5 h-5 text-[#1F5A3F]" aria-hidden="true" />
+                      <Volume2 className="w-5 h-5 text-[#1F5A3F] dark:text-emerald-400" aria-hidden="true" />
                     )}
                   </button>
                 </div>
 
-                <div className="flex items-center justify-between gap-2 pt-2 border-t border-gray-100">
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-gray-100 dark:border-zinc-800">
                   <button
                     type="button"
                     onClick={(e) => {
@@ -642,7 +654,7 @@ export const MapView: React.FC = () => {
                       setSelectedPlaceForModal(place);
                     }}
                     className={`flex-1 min-h-[44px] px-3 rounded-xl font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors press-scale ${addedPlaceDays.has(place.id)
-                        ? 'bg-[#1F5A3F]/10 text-[#1F5A3F] border border-[#1F5A3F]/30'
+                        ? 'bg-[#1F5A3F]/10 dark:bg-emerald-950/60 text-[#1F5A3F] dark:text-emerald-400 border border-[#1F5A3F]/30 dark:border-emerald-800/40'
                         : 'bg-[#1F5A3F] hover:bg-[#194B34] text-white shadow-sm'
                       }`}
                   >
@@ -663,10 +675,10 @@ export const MapView: React.FC = () => {
                       e.stopPropagation();
                       navigateToExplore(place.id, place.category);
                     }}
-                    className="min-h-[44px] px-4 rounded-xl bg-white hover:bg-gray-50 text-gray-900 border border-gray-200 font-semibold text-xs flex items-center gap-1.5 press-scale"
+                    className="min-h-[44px] px-4 rounded-xl bg-white dark:bg-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-700 text-gray-900 dark:text-zinc-100 border border-gray-200 dark:border-zinc-700 font-semibold text-xs flex items-center gap-1.5 press-scale transition-colors"
                   >
                     <span>Details</span>
-                    <ExternalLink className="w-3.5 h-3.5 text-[#1F5A3F]" aria-hidden="true" />
+                    <ExternalLink className="w-3.5 h-3.5 text-[#1F5A3F] dark:text-emerald-400" aria-hidden="true" />
                   </button>
                 </div>
               </div>
@@ -675,18 +687,18 @@ export const MapView: React.FC = () => {
         </div>
       ) : isLoadingPlaces ? (
         <div className="absolute bottom-3 left-3 right-3 z-[500] pointer-events-auto animate-slideUp">
-          <div className="rounded-3xl bg-white border border-gray-200 p-4 shadow-lg flex items-center justify-center gap-3">
-            <Loader2 className="w-5 h-5 text-[#1F5A3F] animate-spin" />
-            <p className="text-sm font-medium text-gray-700">Finding nearby places...</p>
+          <div className="rounded-3xl bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 p-4 shadow-lg flex items-center justify-center gap-3">
+            <Loader2 className="w-5 h-5 text-[#1F5A3F] dark:text-emerald-400 animate-spin" />
+            <p className="text-sm font-medium text-gray-700 dark:text-zinc-300">Finding nearby places...</p>
           </div>
         </div>
       ) : (
         <div className="absolute bottom-3 left-3 right-3 z-[500] pointer-events-auto animate-slideUp">
-          <div className="rounded-3xl bg-white border border-gray-200 p-4 shadow-lg text-center">
-            <p className="text-sm font-semibold text-gray-900">
+          <div className="rounded-3xl bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 p-4 shadow-lg text-center">
+            <p className="text-sm font-semibold text-gray-900 dark:text-zinc-100">
               {activeCategory !== 'all' ? `No ${activeCategory} found nearby` : 'No places found here yet'}
             </p>
-            <p className="mt-0.5 text-xs text-gray-500">
+            <p className="mt-0.5 text-xs text-gray-500 dark:text-zinc-400">
               {activeCategory !== 'all'
                 ? `There are no spots categorized under "${activeCategory}" within 5km.`
                 : 'Pan the map or move closer to explore.'}
@@ -695,7 +707,7 @@ export const MapView: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setActiveCategory('all')}
-                className="mt-3 inline-flex items-center justify-center px-4 py-2 rounded-xl bg-[#1F5A3F] text-white text-xs font-semibold press-scale hover:bg-[#194B34] transition-colors"
+                className="mt-3 inline-flex items-center justify-center px-4 py-2 rounded-xl bg-[#1F5A3F] hover:bg-[#194B34] text-white text-xs font-semibold press-scale transition-colors"
               >
                 View all {allPlaces.length} places
               </button>

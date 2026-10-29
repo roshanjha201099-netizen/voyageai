@@ -69,7 +69,7 @@ export const DesktopSidebar: React.FC = () => {
   const showUpcomingWidget = currentTrip && !hasTripStarted && isTripContextActive;
 
   return (
-    <aside className="hidden lg:flex flex-col w-60 sticky top-14 h-[calc(100dvh-56px)] border-r border-[#D9DEDA] bg-white p-4 justify-between">
+    <aside className="hidden lg:flex flex-col w-60 sticky top-14 h-[calc(100dvh-56px)] border-r border-[#D9DEDA] dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 justify-between transition-colors">
       <div className="space-y-5">
         <nav className="space-y-1">
           {navItems.map(({ id, label, path, icon: Icon }) => {
@@ -81,11 +81,11 @@ export const DesktopSidebar: React.FC = () => {
                 onClick={() => handleNavClick(id, path)}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
                   isActive
-                    ? 'bg-[#E8F0EE] text-[#355F58] font-bold border border-[#D9DEDA]'
-                    : 'text-[#5F6863] hover:text-[#1F2522] hover:bg-[#F0F2EF]'
+                    ? 'bg-[#E8F0EE] dark:bg-emerald-950/60 text-[#355F58] dark:text-emerald-400 font-bold border border-[#D9DEDA] dark:border-zinc-700'
+                    : 'text-[#5F6863] dark:text-zinc-400 hover:text-[#1F2522] dark:hover:text-zinc-100 hover:bg-[#F0F2EF] dark:hover:bg-zinc-800'
                 }`}
               >
-                <Icon className={`w-[18px] h-[18px] ${isActive ? 'text-[#355F58]' : ''}`} />
+                <Icon className={`w-[18px] h-[18px] ${isActive ? 'text-[#355F58] dark:text-emerald-400' : ''}`} />
                 <span>{label}</span>
               </button>
             );
@@ -94,15 +94,15 @@ export const DesktopSidebar: React.FC = () => {
 
         {/* Active Journey Widget — Rendered ONLY when trip has started & context is active */}
         {showActiveWidget && (
-          <div className="p-3.5 rounded-2xl bg-[#F0F2EF] border border-[#D9DEDA] space-y-2.5">
+          <div className="p-3.5 rounded-2xl bg-[#F0F2EF] dark:bg-zinc-800/80 border border-[#D9DEDA] dark:border-zinc-700 space-y-2.5">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-wider text-[#355F58]">Active Journey</span>
-              <span className="text-[10px] font-mono text-[#5F6863] font-bold">Day {currentDayNumber}</span>
+              <span className="text-[10px] font-black uppercase tracking-wider text-[#355F58] dark:text-emerald-400">Active Journey</span>
+              <span className="text-[10px] font-mono text-[#5F6863] dark:text-zinc-400 font-bold">Day {currentDayNumber}</span>
             </div>
 
             <div>
-              <div className="text-sm font-extrabold text-[#1F2522] truncate">{destinationName} Trip</div>
-              <div className="text-[11px] text-[#5F6863] truncate">{tripDates}</div>
+              <div className="text-sm font-extrabold text-[#1F2522] dark:text-zinc-100 truncate">{destinationName} Trip</div>
+              <div className="text-[11px] text-[#5F6863] dark:text-zinc-400 truncate">{tripDates}</div>
             </div>
 
             {/* Sub Navigation Tools */}
@@ -113,13 +113,13 @@ export const DesktopSidebar: React.FC = () => {
                   setActiveTab('trips');
                   navigate('/trip/map');
                 }}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white hover:bg-[#E8F0EE] text-xs font-bold text-[#1F2522] border border-[#D9DEDA] transition-all"
+                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white dark:bg-zinc-900 hover:bg-[#E8F0EE] dark:hover:bg-zinc-800 text-xs font-bold text-[#1F2522] dark:text-zinc-100 border border-[#D9DEDA] dark:border-zinc-700 transition-all"
               >
                 <span className="flex items-center gap-2">
-                  <MapPin className="w-3.5 h-3.5 text-[#355F58]" />
+                  <MapPin className="w-3.5 h-3.5 text-[#355F58] dark:text-emerald-400" />
                   <span>Route Map</span>
                 </span>
-                <span className="text-[10px] text-[#355F58] font-mono font-bold">Live</span>
+                <span className="text-[10px] text-[#355F58] dark:text-emerald-400 font-mono font-bold">Live</span>
               </button>
 
               <button
@@ -127,13 +127,13 @@ export const DesktopSidebar: React.FC = () => {
                 onClick={() => {
                   navigate('/trip/food');
                 }}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white hover:bg-[#E8F0EE] text-xs font-bold text-[#1F2522] border border-[#D9DEDA] transition-all"
+                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white dark:bg-zinc-900 hover:bg-[#E8F0EE] dark:hover:bg-zinc-800 text-xs font-bold text-[#1F2522] dark:text-zinc-100 border border-[#D9DEDA] dark:border-zinc-700 transition-all"
               >
                 <span className="flex items-center gap-2">
-                  <UtensilsCrossed className="w-3.5 h-3.5 text-[#355F58]" />
+                  <UtensilsCrossed className="w-3.5 h-3.5 text-[#355F58] dark:text-emerald-400" />
                   <span>Food Guide</span>
                 </span>
-                <span className="text-[10px] text-amber-700 font-mono font-bold">Local</span>
+                <span className="text-[10px] text-amber-700 dark:text-amber-400 font-mono font-bold">Local</span>
               </button>
 
               <button
@@ -141,13 +141,13 @@ export const DesktopSidebar: React.FC = () => {
                 onClick={() => {
                   navigate('/trip/rides');
                 }}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white hover:bg-[#E8F0EE] text-xs font-bold text-[#1F2522] border border-[#D9DEDA] transition-all"
+                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white dark:bg-zinc-900 hover:bg-[#E8F0EE] dark:hover:bg-zinc-800 text-xs font-bold text-[#1F2522] dark:text-zinc-100 border border-[#D9DEDA] dark:border-zinc-700 transition-all"
               >
                 <span className="flex items-center gap-2">
-                  <Car className="w-3.5 h-3.5 text-[#355F58]" />
+                  <Car className="w-3.5 h-3.5 text-[#355F58] dark:text-emerald-400" />
                   <span>Rides & Cabs</span>
                 </span>
-                <span className="text-[10px] text-[#355F58] font-mono font-bold">Instant</span>
+                <span className="text-[10px] text-[#355F58] dark:text-emerald-400 font-mono font-bold">Instant</span>
               </button>
 
               <button
@@ -156,13 +156,13 @@ export const DesktopSidebar: React.FC = () => {
                   setActiveTab('trips');
                   navigate('/trip/expenses');
                 }}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white hover:bg-[#E8F0EE] text-xs font-bold text-[#1F2522] border border-[#D9DEDA] transition-all"
+                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white dark:bg-zinc-900 hover:bg-[#E8F0EE] dark:hover:bg-zinc-800 text-xs font-bold text-[#1F2522] dark:text-zinc-100 border border-[#D9DEDA] dark:border-zinc-700 transition-all"
               >
                 <span className="flex items-center gap-2">
-                  <Wallet className="w-3.5 h-3.5 text-[#355F58]" />
+                  <Wallet className="w-3.5 h-3.5 text-[#355F58] dark:text-emerald-400" />
                   <span>Expense Ledger</span>
                 </span>
-                <span className="text-[10px] text-[#355F58] font-mono font-bold">Budget</span>
+                <span className="text-[10px] text-[#355F58] dark:text-emerald-400 font-mono font-bold">Budget</span>
               </button>
             </div>
           </div>
@@ -170,15 +170,15 @@ export const DesktopSidebar: React.FC = () => {
 
         {/* Upcoming Trip Widget — Rendered ONLY when context is switched to a future trip */}
         {showUpcomingWidget && (
-          <div className="p-3.5 rounded-2xl bg-[#F0F2EF] border border-[#D9DEDA] space-y-2">
+          <div className="p-3.5 rounded-2xl bg-[#F0F2EF] dark:bg-zinc-800/80 border border-[#D9DEDA] dark:border-zinc-700 space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-wider text-amber-800">Upcoming Trip</span>
-              <span className="text-[10px] font-mono text-[#5F6863] font-bold">Starts {currentTrip.startDate}</span>
+              <span className="text-[10px] font-black uppercase tracking-wider text-amber-800 dark:text-amber-400">Upcoming Trip</span>
+              <span className="text-[10px] font-mono text-[#5F6863] dark:text-zinc-400 font-bold">Starts {currentTrip.startDate}</span>
             </div>
 
             <div>
-              <div className="text-sm font-extrabold text-[#1F2522] truncate">{destinationName} Trip</div>
-              <div className="text-[11px] text-[#5F6863] truncate">{tripDates}</div>
+              <div className="text-sm font-extrabold text-[#1F2522] dark:text-zinc-100 truncate">{destinationName} Trip</div>
+              <div className="text-[11px] text-[#5F6863] dark:text-zinc-400 truncate">{tripDates}</div>
             </div>
 
             <button
@@ -187,7 +187,7 @@ export const DesktopSidebar: React.FC = () => {
                 setActiveTab('trips');
                 navigate('/trip');
               }}
-              className="w-full mt-1 py-1.5 px-2.5 rounded-lg bg-white hover:bg-[#E8F0EE] text-xs font-bold text-[#355F58] border border-[#D9DEDA] text-center transition-all"
+              className="w-full mt-1 py-1.5 px-2.5 rounded-lg bg-white dark:bg-zinc-900 hover:bg-[#E8F0EE] dark:hover:bg-zinc-800 text-xs font-bold text-[#355F58] dark:text-emerald-400 border border-[#D9DEDA] dark:border-zinc-700 text-center transition-all"
             >
               View Plan Details
             </button>
@@ -198,13 +198,13 @@ export const DesktopSidebar: React.FC = () => {
       <button
         type="button"
         onClick={() => openAiAssistant()}
-        className="p-3.5 rounded-2xl bg-[#F0F2EF] border border-[#D9DEDA] hover:bg-[#E8F0EE] transition-colors group text-left"
+        className="p-3.5 rounded-2xl bg-[#F0F2EF] dark:bg-zinc-800 border border-[#D9DEDA] dark:border-zinc-700 hover:bg-[#E8F0EE] dark:hover:bg-zinc-700/70 transition-colors group text-left"
       >
         <div className="flex items-center gap-2 mb-1">
-          <Sparkles className="w-4 h-4 text-[#355F58]" />
-          <span className="text-xs font-bold text-[#1F2522]">AI Concierge</span>
+          <Sparkles className="w-4 h-4 text-[#355F58] dark:text-emerald-400" />
+          <span className="text-xs font-bold text-[#1F2522] dark:text-zinc-100">AI Concierge</span>
         </div>
-        <p className="text-[11px] text-[#5F6863] leading-snug">Ask for recommendations, plan updates or trip help</p>
+        <p className="text-[11px] text-[#5F6863] dark:text-zinc-400 leading-snug">Ask for recommendations, plan updates or trip help</p>
       </button>
     </aside>
   );
