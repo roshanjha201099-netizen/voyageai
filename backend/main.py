@@ -3733,7 +3733,7 @@ def render_itinerary_print_template(data: dict) -> str:
 def export_trip_itinerary_endpoint(
     trip_id: str,
     request: Request,
-    format: str = Query("json", enum=["json", "html", "pdf", "print", "html_print"]),
+    format: str = Query("json", pattern="^(json|html|pdf|print|html_print)$"),
     current_user: AuthUser = Depends(get_user_or_guest),
     db: Session = Depends(get_db)
 ):
