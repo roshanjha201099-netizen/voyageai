@@ -1,33 +1,33 @@
 version: '3.8'
 
 # ==============================================================================
-# Cruiser / VoyageAI - Backend & Infrastructure Services
-# (FastAPI API + Async Worker + Redis)
+# Cruiser - 3-Tier Full Stack Deployment:
+# 1. frontend (React + Vite + Nginx)
+# 2. backend  (FastAPI Python REST & WebSocket API)
+# 3. db       (PostgreSQL Database)
+#
+# Run: docker compose up -d --build
 # ==============================================================================
 
 services:
   # ----------------------------------------------------------------------------
-  # Redis Cache & Message Broker (Pub/Sub & Task Queue)
+  # 1. Frontend Service (React + Vite served by Nginx with API/WS reverse proxy)
   # ----------------------------------------------------------------------------
-  redis:
-    image: redis:7-alpine
-    container_name: cruiser-redis
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cruiser-frontend
     restart: unless-stopped
     ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    command: redis-server --appendonly yes
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - "80:80"
+    depends_on:
+      - backend
     networks:
-      - backend-network
+      - cruiser-network
 
   # ----------------------------------------------------------------------------
-  # FastAPI Backend API Server
+  # 2. Backend Service (FastAPI Server)
   # ----------------------------------------------------------------------------
   backend:
     build:
@@ -38,44 +38,43 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/cruiser
       - PORT=8000
     env_file:
       - ./backend/.env
     depends_on:
-      redis:
+      db:
         condition: service_healthy
     networks:
-      - backend-network
+      - cruiser-network
 
   # ----------------------------------------------------------------------------
-  # Background Task Worker (Async Itinerary Processing)
+  # 3. Database Service (PostgreSQL 16)
   # ----------------------------------------------------------------------------
-  worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: cruiser-worker
+  db:
+    image: postgres:16-alpine
+    container_name: cruiser-db
     restart: unless-stopped
-    command: ["python", "worker.py"]
     environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-    env_file:
-      - ./backend/.env
-    depends_on:
-      redis:
-        condition: service_healthy
-      backend:
-        condition: service_started
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: cruiser
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cruiser"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     networks:
-      - backend-network
+      - cruiser-network
 
 volumes:
-  redis_data:
+  postgres_data:
     driver: local
 
 networks:
-  backend-network:
+  cruiser-network:
     driver: bridge

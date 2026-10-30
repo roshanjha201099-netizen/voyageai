@@ -1,42 +1,52 @@
 # ==============================================================================
-# Cruiser / VoyageAI - FastAPI Backend Dockerfile (Root Context)
-# Build command from project root: docker build -t cruiser-backend .
+# Cruiser / VoyageAI - React + Vite Frontend Dockerfile
+# Multi-stage build: Node.js (build) -> Nginx Alpine (production server & proxy)
 # ==============================================================================
-FROM python:3.11-slim
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PORT=8000
+# Stage 1: Build the React application
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Install minimal OS dependencies for psycopg2 and curl for healthcheck
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libpq-dev \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+# Copy package manifests
+COPY package.json package-lock.json ./
 
-# Copy backend requirements first to leverage Docker build cache
-COPY backend/requirements.txt ./requirements.txt
+# Install dependencies cleanly
+RUN npm ci
 
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+# Copy frontend source code
+COPY . .
 
-# Copy backend application source code
-COPY backend/ .
+# Optional Build-time environment variables for Vite
+ARG VITE_API_URL=""
+ARG VITE_WS_URL=""
+ARG VITE_CARTO_BASEMAP_KEY=""
+ARG VITE_GOOGLE_MAP_DEMO_KEY=""
 
-# Create a non-root user for security
-RUN useradd -m -u 1000 appuser && \
-    chown -R appuser:appuser /app
+ENV VITE_API_URL=$VITE_API_URL \
+    VITE_WS_URL=$VITE_WS_URL \
+    VITE_CARTO_BASEMAP_KEY=$VITE_CARTO_BASEMAP_KEY \
+    VITE_GOOGLE_MAP_DEMO_KEY=$VITE_GOOGLE_MAP_DEMO_KEY
 
-USER appuser
+# Build production bundle
+RUN npm run build
 
-EXPOSE 8000
+# Stage 2: Serve with lightweight Nginx
+FROM nginx:alpine AS runner
 
-# Health check to ensure FastAPI is responsive
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:${PORT}/ || exit 1
+# Remove default static files
+RUN rm -rf /usr/share/nginx/html/*
 
-# Start FastAPI with Uvicorn
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Copy built production assets from builder stage
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Copy custom Nginx configuration
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD wget -qO- http://localhost/healthz || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]

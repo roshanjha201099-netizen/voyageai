@@ -1,13 +1,16 @@
-# Ignore everything except backend for root docker builds
 node_modules
 dist
-src
-public
 .git
 .gitignore
 .env
+.env.*
+.env.production
 backend/venv
 backend/.venv
 backend/__pycache__
 *.pyc
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
