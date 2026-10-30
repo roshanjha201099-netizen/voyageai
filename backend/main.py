@@ -100,6 +100,7 @@ async def websocket_trip_endpoint(websocket: WebSocket, trip_id: str):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        "https://f36e-2401-4900-8f65-ac03-fd43-939f-cf8b-ff75.ngrok-free.app",
         "https://de23-2401-4900-8f65-29a5-15e0-b6ee-9747-80c5.ngrok-free.app",
         "https://5cf2-2401-4900-8f64-358c-2843-25c-eb6e-6225.ngrok-free.app",
         "https://754e-2401-4900-8f64-358c-cdc7-21e3-d903-8910.ngrok-free.app",
