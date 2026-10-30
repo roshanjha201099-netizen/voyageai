@@ -5,7 +5,7 @@
  * Simply update `DEFAULT_BACKEND_URL` below or edit `VITE_API_URL` in `.env` / `.env.production`.
  */
 
-export const DEFAULT_BACKEND_URL = 'https://f36e-2401-4900-8f65-ac03-fd43-939f-cf8b-ff75.ngrok-free.app';
+export const DEFAULT_BACKEND_URL = 'https://1ba2-2401-4900-8f65-ac03-5052-abe4-b35-4d92.ngrok-free.app';
 
 /**
  * Returns the active HTTP/HTTPS API base URL.
