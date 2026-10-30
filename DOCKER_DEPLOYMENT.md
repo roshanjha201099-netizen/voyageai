@@ -4,43 +4,49 @@ Full-stack 3-tier containerized deployment:
 - **2 Dockerfiles**:
   - `Dockerfile` (Frontend: React + Vite + Nginx)
   - `backend/Dockerfile` (Backend: FastAPI + Python 3.11)
-- **1 Docker Compose (`docker-compose.yml`)** with **3 services**:
-  - `frontend` (Port `80`)
-  - `backend` (Port `8000`)
-  - `db` (PostgreSQL 16 on Port `5432`)
+- **1 Docker Compose (`docker-compose.yml`)** with **3 services on the same internal network**:
+  - `frontend` (Port `80:80` forwarded to host — **ONLY public port**)
+  - `backend` (Internal port `8000` — private to Docker network)
+  - `db` (PostgreSQL 16 on internal port `5432` — private to Docker network)
 
 ---
 
-## Architecture Overview
+## Network & Security Architecture
 
 ```
-               [ User Browser ]
-                      │
-               ( Port 80 / HTTP )
-                      ▼
-        ┌───────────────────────────┐
-        │     cruiser-frontend      │
-        │       (Nginx SPA)         │
-        └───────┬───────────┬───────┘
-                │           │
-     /api/proxy │           │ /ws/proxy
-                ▼           ▼
-        ┌───────────────────────────┐
-        │      cruiser-backend      │
-        │    (FastAPI on :8000)     │
-        └─────────────┬─────────────┘
-                      │
-                      │ SQL Connection
-                      ▼
-        ┌───────────────────────────┐
-        │        cruiser-db         │
-        │     (PostgreSQL :5432)    │
-        └───────────────────────────┘
+                                [ Public Internet / Users ]
+                                             │
+                                      ( Host Port 80 )
+                                             ▼
+═══════════════════════════════════════════════════════════════════════════════════════════════
+  DOCKER NETWORK: cruiser-network (Bridge)
+═══════════════════════════════════════════════════════════════════════════════════════════════
+        ┌─────────────────────────────────────────────────────────┐
+        │                    cruiser-frontend                     │
+        │                       (Nginx SPA)                       │
+        │               [ONLY PORT FORWARDED TO HOST]             │
+        └──────────────┬───────────────────────────┬──────────────┘
+                       │                           │
+          http://backend:8000/api/                 │ ws://backend:8000/ws/
+                       ▼                           ▼
+        ┌─────────────────────────────────────────────────────────┐
+        │                     cruiser-backend                     │
+        │                   (FastAPI on :8000)                    │
+        │              [INTERNAL ONLY - NO HOST PORT]             │
+        └────────────────────────────┬────────────────────────────┘
+                                     │
+                                     │ postgresql://db:5432/cruiser
+                                     ▼
+        ┌─────────────────────────────────────────────────────────┐
+        │                       cruiser-db                        │
+        │                   (PostgreSQL :5432)                    │
+        │              [INTERNAL ONLY - NO HOST PORT]             │
+        └─────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 1. Quick Start: Launch All 3 Services
+## 1. Launch All 3 Services
 
 From the project root:
 
@@ -58,33 +64,16 @@ docker compose ps
 docker compose down
 ```
 
-### URLs once running:
-- **Frontend App**: `http://<server-ip>/` (Port `80`)
-- **Backend API**: `http://<server-ip>:8000/` (Port `8000`)
-- **PostgreSQL Database**: `localhost:5432` (`user=postgres`, `password=postgres`, `db=cruiser`)
+### Accessing the App:
+- **Web Application**: Open `http://<server-ip>/` in your browser.
+- All `/api/*` and `/ws/*` calls are routed internally by Nginx to the backend container.
+- Neither the backend nor the database expose ports to the outside world.
 
 ---
 
-## 2. Standalone Docker Builds (2 Dockerfiles)
+## 2. Database & Environment Configuration
 
-### Frontend (`Dockerfile`)
-```bash
-docker build -t cruiser-frontend .
-docker run -d --name cruiser-frontend -p 80:80 cruiser-frontend
-```
-
-### Backend (`backend/Dockerfile`)
-```bash
-cd backend
-docker build -t cruiser-backend .
-docker run -d --name cruiser-backend -p 8000:8000 --env-file .env cruiser-backend
-```
-
----
-
-## 3. Database & Environment Configuration
-
-In `docker-compose.yml`, the backend automatically connects to the PostgreSQL container using:
+In `docker-compose.yml`, the backend automatically connects to the PostgreSQL container over the Docker network using:
 ```
 DATABASE_URL=postgresql://postgres:postgres@db:5432/cruiser
 ```

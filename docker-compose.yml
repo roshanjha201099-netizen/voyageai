@@ -2,16 +2,16 @@ version: '3.8'
 
 # ==============================================================================
 # Cruiser - 3-Tier Full Stack Deployment:
-# 1. frontend (React + Vite + Nginx)
-# 2. backend  (FastAPI Python REST & WebSocket API)
-# 3. db       (PostgreSQL Database)
+# 1. frontend (React + Vite + Nginx) -> ONLY service with host port forward (80)
+# 2. backend  (FastAPI Python REST & WebSocket API) -> Internal to Docker network
+# 3. db       (PostgreSQL Database) -> Internal to Docker network
 #
 # Run: docker compose up -d --build
 # ==============================================================================
 
 services:
   # ----------------------------------------------------------------------------
-  # 1. Frontend Service (React + Vite served by Nginx with API/WS reverse proxy)
+  # 1. Frontend Service (Public Entrypoint: Reverse proxies /api & /ws to backend)
   # ----------------------------------------------------------------------------
   frontend:
     build:
@@ -27,7 +27,7 @@ services:
       - cruiser-network
 
   # ----------------------------------------------------------------------------
-  # 2. Backend Service (FastAPI Server)
+  # 2. Backend Service (FastAPI Server - Internal Only)
   # ----------------------------------------------------------------------------
   backend:
     build:
@@ -35,8 +35,8 @@ services:
       dockerfile: Dockerfile
     container_name: cruiser-backend
     restart: unless-stopped
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/cruiser
       - PORT=8000
@@ -49,18 +49,18 @@ services:
       - cruiser-network
 
   # ----------------------------------------------------------------------------
-  # 3. Database Service (PostgreSQL 16)
+  # 3. Database Service (PostgreSQL 16 - Internal Only)
   # ----------------------------------------------------------------------------
   db:
     image: postgres:16-alpine
     container_name: cruiser-db
     restart: unless-stopped
+    expose:
+      - "5432"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: cruiser
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
