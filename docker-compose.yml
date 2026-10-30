@@ -1,80 +1,54 @@
 version: '3.8'
 
-# ==============================================================================
-# Cruiser - 3-Tier Full Stack Deployment:
-# 1. frontend (React + Vite + Nginx) -> ONLY service with host port forward (80)
-# 2. backend  (FastAPI Python REST & WebSocket API) -> Internal to Docker network
-# 3. db       (PostgreSQL Database) -> Internal to Docker network
-#
-# Run: docker compose up -d --build
-# ==============================================================================
-
 services:
-  # ----------------------------------------------------------------------------
-  # 1. Frontend Service (Public Entrypoint: Reverse proxies /api & /ws to backend)
-  # ----------------------------------------------------------------------------
-  frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: cruiser-frontend
-    restart: unless-stopped
+  db:
+    image: postgres:15-alpine
+    container_name: cruiser_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-cruiser_db}
     ports:
-      - "80:80"
-    depends_on:
-      - backend
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     networks:
-      - cruiser-network
+      - cruiser_net
 
-  # ----------------------------------------------------------------------------
-  # 2. Backend Service (FastAPI Server - Internal Only)
-  # ----------------------------------------------------------------------------
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: cruiser-backend
-    restart: unless-stopped
-    expose:
-      - "8000"
-    environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/cruiser
-      - PORT=8000
+    container_name: cruiser_backend
+    restart: always
     env_file:
       - ./backend/.env
+    ports:
+      - "5247:8000"
     depends_on:
-      db:
-        condition: service_healthy
+      - db
     networks:
-      - cruiser-network
+      - cruiser_net
 
-  # ----------------------------------------------------------------------------
-  # 3. Database Service (PostgreSQL 16 - Internal Only)
-  # ----------------------------------------------------------------------------
-  db:
-    image: postgres:16-alpine
-    container_name: cruiser-db
-    restart: unless-stopped
-    expose:
-      - "5432"
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: cruiser
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d cruiser"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL}
+    container_name: cruiser_frontend
+    restart: always
+    ports:
+      - "5248:80"
+    depends_on:
+      - backend
     networks:
-      - cruiser-network
+      - cruiser_net
 
 volumes:
   postgres_data:
-    driver: local
 
 networks:
-  cruiser-network:
+  cruiser_net:
     driver: bridge

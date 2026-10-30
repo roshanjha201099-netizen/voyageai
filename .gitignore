@@ -10,9 +10,11 @@ lerna-debug.log*
 # Environment & Secrets
 .env
 .env.*
+!.env.example
 .env.production
 *.env
 backend/.env
+!backend/.env.example
 backend/keys/*.json
 !backend/keys/.gitkeep
 
